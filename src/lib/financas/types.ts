@@ -41,3 +41,22 @@ export const CATEGORY_KIND_LABEL: Record<CategoryKind, string> = {
   receita: "Receitas",
   transferencia: "Transferências (fora dos totais)",
 };
+
+export type Bill = {
+  id: string;
+  name: string;
+  amount: number;
+  due_day: number;
+  category_id: string | null;
+  account_id: string | null;
+  active: boolean;
+};
+export type BillPayment = {
+  id: string;
+  bill_id: string;
+  month: string;
+  transaction_id: string | null;
+  paid_on: string;
+  amount: number;
+};
+export type Goal = { id: string; name: string; target: number; account_id: string | null; target_date: string | null };
