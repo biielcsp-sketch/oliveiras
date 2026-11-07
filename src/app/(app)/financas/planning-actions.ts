@@ -35,13 +35,6 @@ export async function saveBudget(_: PlanState, form: FormData): Promise<PlanStat
   const targetMonth = scope === "mes" ? month : null;
 
   const supabase = await createClient();
-  const { data: category } = await supabase
-    .from("fin_categories")
-    .select("kind")
-    .eq("id", categoryId)
-    .eq("household_id", household.id)
-    .maybeSingle();
-  if (category?.kind !== "despesa") return { error: "Orçamento só vale para categorias de despesa." };
   const raw = str(form, "amount");
   if (!raw) {
     let del = supabase.from("fin_budgets").delete().eq("household_id", household.id).eq("category_id", categoryId);
@@ -52,6 +45,14 @@ export async function saveBudget(_: PlanState, form: FormData): Promise<PlanStat
   }
   const amount = parseBRL(raw);
   if (amount === null || amount < 0 || amount > MAX) return { error: "Valor inválido." };
+  // Remover é sempre permitido; criar/alterar só em categoria de despesa.
+  const { data: category } = await supabase
+    .from("fin_categories")
+    .select("kind")
+    .eq("id", categoryId)
+    .eq("household_id", household.id)
+    .maybeSingle();
+  if (category?.kind !== "despesa") return { error: "Orçamento só vale para categorias de despesa." };
 
   const { error } = await supabase
     .from("fin_budgets")
