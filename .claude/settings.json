@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./node_modules/**)",
+      "Read(./.next/**)",
+      "Read(./package-lock.json)",
+      "Read(./.lighthouseci/**)",
+      "Read(./playwright-report/**)",
+      "Read(./test-results/**)",
+      "Read(./.env.local)"
+    ]
+  }
+}

@@ -3,6 +3,7 @@ import { ChevronRight } from "lucide-react";
 import { getAppContext } from "@/lib/data";
 import { ASSISTANT, MODULES } from "@/lib/modules";
 import { Card } from "@/components/ui";
+import { greetingFor } from "@/lib/format";
 
 export const metadata = { title: "Início" };
 
@@ -12,9 +13,7 @@ function greeting() {
       new Date(),
     ),
   );
-  if (h < 12) return "Bom dia";
-  if (h < 18) return "Boa tarde";
-  return "Boa noite";
+  return greetingFor(h);
 }
 
 export default async function InicioPage() {

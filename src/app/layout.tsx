@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { connection } from "next/server";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { RegisterSW } from "@/components/register-sw";
@@ -25,7 +26,9 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Renderização dinâmica em todas as páginas: necessária para o nonce da CSP.
+  await connection();
   return (
     <html
       lang="pt-BR"
