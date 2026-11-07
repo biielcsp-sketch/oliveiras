@@ -21,7 +21,7 @@ export default async function LancamentosPage({ searchParams }: { searchParams: 
     category: sp.categoria || undefined,
     q: sp.q?.trim() || undefined,
   });
-  const { income, expense } = summarize(transactions, categories);
+  const { income, expense } = summarize(transactions, categories, new Set(accounts.filter((a) => a.kind === "cartao").map((a) => a.id)));
 
   return (
     <div className="flex flex-col gap-4">

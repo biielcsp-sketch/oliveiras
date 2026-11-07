@@ -32,7 +32,7 @@ export default async function FinancasPage({ searchParams }: { searchParams: Pro
   const available = active.filter((a) => a.kind !== "cartao").reduce((s, a) => s + Math.round(a.balance * 100), 0) / 100;
   const cards = active.filter((a) => a.kind === "cartao");
   const cardDebt = cards.reduce((s, a) => s + Math.round(a.balance * 100), 0) / 100;
-  const { income, expense, result, expenseByCategory } = summarize(transactions, categories);
+  const { income, expense, result, expenseByCategory } = summarize(transactions, categories, new Set(accounts.filter((a) => a.kind === "cartao").map((a) => a.id)));
   const catById = new Map(categories.map((c) => [c.id, c]));
   const maxCat = expenseByCategory[0]?.total ?? 0;
 

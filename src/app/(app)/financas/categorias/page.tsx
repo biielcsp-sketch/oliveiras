@@ -65,7 +65,7 @@ export default async function CategoriasPage() {
         ))}
         <p className="mt-5 text-[13px] text-muted">
           Ao remover uma categoria, os lançamentos dela ficam “sem categoria”. Transferências (como pagamento de fatura) não
-          entram em entradas e saídas, para a compra no cartão não ser contada duas vezes.
+          entram em entradas e saídas, para a compra no cartão não ser contada duas vezes. Crédito sem categoria em cartão também fica fora; um estorno com categoria de despesa abate o gasto.
         </p>
       </Card>
     </div>

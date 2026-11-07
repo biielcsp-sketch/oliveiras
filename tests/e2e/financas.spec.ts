@@ -70,9 +70,10 @@ test("finanças: contas, lançamento manual, importação OFX/CSV sem duplicar e
     await page.getByLabel("Arquivo OFX ou CSV do banco").setInputFiles("tests/fixtures/fatura-cartao.csv");
     await page.getByRole("button", { name: "Pré-visualizar" }).click();
     await expect(page.getByLabel(/Inverter sinais/)).toBeChecked();
-    await expectText(page, "4 novos");
-    await page.getByRole("button", { name: "Importar 4 lançamentos" }).click();
-    await expect(page.getByRole("status")).toContainText("4 lançamentos importados");
+    await expectText(page, "5 novos");
+    await expect(page.getByText("Pagamento de fatura", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Importar 5 lançamentos" }).click();
+    await expect(page.getByRole("status")).toContainText("5 lançamentos importados");
   });
 
   await test.step("resumo de novembro/2026 confere", async () => {
@@ -80,12 +81,13 @@ test("finanças: contas, lançamento manual, importação OFX/CSV sem duplicar e
     const main = page.locator("main");
     // Conta: 1000 − 150,50 − 152,30 + 3500 − 89,90 = 4.107,30
     await expect(main).toContainText("R$ 4.107,30", { useInnerText: true });
-    // Cartão: −45,90 −45,90 −23,10 +10 = −104,90
-    expect(brl(await main.innerText())).toContain("-R$ 104,90");
-    // Entradas 3.500 + estorno 10; saídas 150,50 + 152,30 + 91,80 + 23,10; fatura fora dos totais
-    expect(brl(await main.innerText())).toContain("R$ 3.510,00");
+    // Cartão: −45,90 −45,90 −23,10 +10 +500 (pagamento) = 395,10
+    expect(brl(await main.innerText())).toContain("Cartões: R$ 395,10");
+    // Entradas: só o salário. Pagamento da fatura (nos dois lados) e estorno sem categoria
+    // no cartão ficam fora, para o dinheiro não contar duas vezes.
+    expect(brl(await main.innerText())).toContain("R$ 3.500,00");
     expect(brl(await main.innerText())).toContain("-R$ 417,70");
-    expect(brl(await main.innerText())).toContain("R$ 3.092,30");
+    expect(brl(await main.innerText())).toContain("R$ 3.082,30");
   });
 
   await test.step("edita e exclui lançamento", async () => {

@@ -78,7 +78,7 @@ describe("CSV", () => {
   it("fatura com vírgula e ponto decimal", () => {
     const { transactions, errors } = parseCsv(decodeStatement(fixture("fatura-cartao.csv")));
     expect(errors).toEqual([]);
-    expect(transactions.map((t) => t.amount)).toEqual([45.9, 45.9, 23.1, -10]);
+    expect(transactions.map((t) => t.amount)).toEqual([45.9, 45.9, 23.1, -10, -500]);
     expect(transactions[0]).toMatchObject({ date: "2026-11-02", description: "Ifood *Restaurante", externalId: null });
   });
 
@@ -130,8 +130,8 @@ describe("resumo do mês", () => {
     { id: "sal", name: "Salário", kind: "receita" as const, color: "#000000" },
     { id: "fat", name: "Pagamento de fatura", kind: "transferencia" as const, color: "#000000" },
   ];
-  const tx = (amount: number, category_id: string | null) => ({
-    id: Math.random().toString(), account_id: "a", date: "2026-11-01", description: "x",
+  const tx = (amount: number, category_id: string | null, account_id = "a") => ({
+    id: Math.random().toString(), account_id, date: "2026-11-01", description: "x",
     amount, category_id, member_id: null, notes: null, source: "manual",
   });
 
@@ -142,5 +142,22 @@ describe("resumo do mês", () => {
       { category_id: "merc", total: 100.1 },
       { category_id: null, total: 0.2 },
     ]);
+  });
+
+  // Regressão: o pagamento da fatura aparece como crédito no cartão. Sem categoria,
+  // ele era somado em Entradas e o mesmo dinheiro contava duas vezes.
+  it("crédito sem categoria em cartão não vira entrada", () => {
+    const s = summarize([tx(3500, "sal"), tx(-900, "fat"), tx(900, null, "card")], categories, new Set(["card"]));
+    expect(s.income).toBe(3500);
+  });
+
+  it("estorno categorizado como despesa abate o gasto da categoria", () => {
+    const s = summarize([tx(-100, "merc", "card"), tx(30, "merc", "card")], categories, new Set(["card"]));
+    expect(s).toMatchObject({ income: 0, expense: 70 });
+    expect(s.expenseByCategory).toEqual([{ category_id: "merc", total: 70 }]);
+  });
+
+  it("crédito sem categoria em conta corrente continua sendo entrada", () => {
+    expect(summarize([tx(250, null)], categories, new Set(["card"])).income).toBe(250);
   });
 });

@@ -131,6 +131,7 @@ begin
   select p_household, r.pattern, c.id
   from (values
     ('pagamento de fatura', 'Pagamento de fatura'), ('pgto fatura', 'Pagamento de fatura'),
+    ('pagamento recebido', 'Pagamento de fatura'),
     ('ifood', 'Alimentação fora'), ('uber', 'Transporte'), ('dizimo', 'Igreja e doações')
   ) as r(pattern, category)
   join public.fin_categories c on c.household_id = p_household and c.name = r.category
