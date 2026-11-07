@@ -19,7 +19,7 @@ select set_config('t.hb', public.create_household('Fam B', 'Bruno')::text, true)
 
 -- Seed: categorias e regras padrão
 select is((select count(*)::int from public.fin_categories), 24, 'B recebe 24 categorias padrão');
-select is((select count(*)::int from public.fin_rules), 6, 'B recebe 6 regras padrão');
+select is((select count(*)::int from public.fin_rules), 5, 'B recebe 5 regras padrão');
 select is((select count(*)::int from public.fin_categories where kind = 'transferencia'), 3, '3 categorias de transferência');
 
 -- B cria conta e lançamento

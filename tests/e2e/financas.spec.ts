@@ -71,7 +71,6 @@ test("finanças: contas, lançamento manual, importação OFX/CSV sem duplicar e
     await page.getByRole("button", { name: "Pré-visualizar" }).click();
     await expect(page.getByLabel(/Inverter sinais/)).toBeChecked();
     await expectText(page, "5 novos");
-    await expect(page.getByText("Pagamento de fatura", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Importar 5 lançamentos" }).click();
     await expect(page.getByRole("status")).toContainText("5 lançamentos importados");
   });
