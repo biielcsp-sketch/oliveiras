@@ -18,12 +18,13 @@ export default async function PagarPage({
 }) {
   const { id } = await params;
   const month = parseMonth((await searchParams).mes);
-  const [{ accounts }, bills, linked] = await Promise.all([getFinanceBase(), getBills(), getLinkedTransactionIds()]);
+  const [{ accounts }, bills] = await Promise.all([getFinanceBase(), getBills()]);
   const bill = bills.find((b) => b.id === id);
   if (!bill) notFound();
 
   const due = dateInMonth(month, bill.due_day);
   const txs = await getTransactionsAround(month, bill.account_id ? [bill.account_id] : undefined);
+  const linked = await getLinkedTransactionIds(txs.filter((t) => t.amount < 0).map((t) => t.id));
   const accountName = new Map(accounts.map((a) => [a.id, a.name]));
   const suggestions = suggestPayments(bill.amount, due, txs, linked).map((t) => ({
     ...t,

@@ -115,7 +115,8 @@ export function goalProgress(balance: number, target: number, targetDate: string
     const [ty, tm] = targetDate.split("-").map(Number);
     const [cy, cm] = today.split("-").map(Number);
     monthsLeft = Math.max((ty - cy) * 12 + (tm - cm), 0);
-    perMonth = remaining === 0 ? 0 : Math.ceil((remaining / Math.max(monthsLeft, 1)) * 100) / 100;
+    // Em centavos inteiros: dividir reais e arredondar para cima somava 1 centavo a mais (ex.: 1,10 → 1,11).
+    perMonth = remaining === 0 ? 0 : Math.ceil(Math.round(remaining * 100) / Math.max(monthsLeft, 1)) / 100;
   }
   return { saved, remaining, pct, monthsLeft, perMonth };
 }

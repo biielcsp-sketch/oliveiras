@@ -100,6 +100,15 @@ describe("metas", () => {
       saved: 12000, remaining: 18000, pct: 0.4, monthsLeft: 12, perMonth: 1500,
     });
   });
+  // Regressão: 1,10 / 1 mês mostrava 1,11 (erro de ponto flutuante arredondado para cima).
+  it.each([
+    [29998.9, "2026-12-31", 1.1],
+    [29699.9, "2026-12-31", 300.1],
+    [29900, "2027-02-28", 33.34],
+  ])("guardar por mês sem centavo a mais (saldo %d)", (balance, date, expected) => {
+    expect(goalProgress(balance, 30000, date, "2026-11-07").perMonth).toBe(expected);
+  });
+
   it("meta atingida", () => {
     expect(goalProgress(31000, 30000, null, "2026-11-07")).toMatchObject({ remaining: 0, pct: 1, perMonth: null });
   });

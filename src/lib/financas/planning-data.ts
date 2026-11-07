@@ -36,16 +36,20 @@ export async function getBillPayments(month: string): Promise<BillPayment[]> {
   return (data ?? []).map((p) => ({ ...p, amount: num(p.amount) }));
 }
 
-/** Ids de lançamentos já vinculados a alguma conta paga (qualquer mês). */
-export async function getLinkedTransactionIds(): Promise<Set<string>> {
+/** Dos lançamentos informados, quais já estão vinculados a alguma conta paga. */
+export async function getLinkedTransactionIds(transactionIds: string[]): Promise<Set<string>> {
   const { household } = await getAppContext();
   const supabase = await createClient();
-  const { data } = await supabase
-    .from("fin_bill_payments")
-    .select("transaction_id")
-    .eq("household_id", household.id)
-    .not("transaction_id", "is", null);
-  return new Set((data ?? []).map((r) => r.transaction_id as string));
+  const linked = new Set<string>();
+  for (let i = 0; i < transactionIds.length; i += 300) {
+    const { data } = await supabase
+      .from("fin_bill_payments")
+      .select("transaction_id")
+      .eq("household_id", household.id)
+      .in("transaction_id", transactionIds.slice(i, i + 300));
+    (data ?? []).forEach((r) => r.transaction_id && linked.add(r.transaction_id));
+  }
+  return linked;
 }
 
 export async function getGoals(): Promise<Goal[]> {

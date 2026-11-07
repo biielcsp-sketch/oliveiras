@@ -1,6 +1,6 @@
 -- Orçamento, contas a pagar, pagamentos e metas: isolamento e integridade.
 begin;
-select plan(18);
+select plan(22);
 
 insert into auth.users (id, email, aud, role) values
   ('00000000-0000-0000-0000-0000000000e1', 'pa@teste.invalid', 'authenticated', 'authenticated'),
@@ -61,6 +61,16 @@ select throws_ok(format($$ insert into public.fin_bill_payments (household_id, b
   values (%L, %L, '2026-11', '2026-11-06', 1800) $$, current_setting('t.hb'), current_setting('t.bill_b')),
   '23505', null, 'mesma conta não é paga duas vezes no mês');
 
+-- Um lançamento paga no máximo uma conta
+insert into public.fin_bills (household_id, name, amount, due_day) values (current_setting('t.hb')::uuid, 'Condomínio', 600, 5);
+reset role;
+select set_config('t.bill_b2', (select id::text from public.fin_bills where household_id = current_setting('t.hb')::uuid and name = 'Condomínio'), true);
+set local role authenticated;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000e2');
+select throws_ok(format($$ insert into public.fin_bill_payments (household_id, bill_id, month, transaction_id, paid_on, amount)
+  values (%L, %L, '2026-11', %L, '2026-11-05', 1800) $$, current_setting('t.hb'), current_setting('t.bill_b2'), current_setting('t.tx_b')),
+  '23505', null, 'mesmo lançamento não paga duas contas');
+
 select lives_ok(format($$ insert into public.fin_goals (household_id, name, target, account_id) values (%L, 'Reserva', 30000, %L) $$,
   current_setting('t.hb'), current_setting('t.acc_b')), 'B cria meta');
 
@@ -87,6 +97,12 @@ select throws_ok(format($$ insert into public.fin_bill_payments (household_id, b
   values (%L, %L, '2026-11', %L, '2026-11-05', 200) $$, current_setting('t.ha'), current_setting('t.bill_a'), current_setting('t.tx_b2')),
   '23503', null, 'A não liga lançamento de B ao seu pagamento');
 delete from public.fin_bills where household_id = current_setting('t.hb')::uuid;
+update public.fin_budgets set amount = 1 where household_id = current_setting('t.hb')::uuid;
+delete from public.fin_budgets where household_id = current_setting('t.hb')::uuid;
+update public.fin_goals set target = 1 where household_id = current_setting('t.hb')::uuid;
+delete from public.fin_goals where household_id = current_setting('t.hb')::uuid;
+update public.fin_bill_payments set amount = 1 where household_id = current_setting('t.hb')::uuid;
+delete from public.fin_bill_payments where household_id = current_setting('t.hb')::uuid;
 
 -- Excluir o lançamento mantém o pagamento (vínculo vira nulo)
 select pg_temp.as_user('00000000-0000-0000-0000-0000000000e2');
@@ -94,7 +110,10 @@ delete from public.fin_transactions where id = current_setting('t.tx_b')::uuid;
 reset role;
 select is((select transaction_id from public.fin_bill_payments where bill_id = current_setting('t.bill_b')::uuid), null,
   'lançamento excluído: pagamento continua, sem vínculo');
-select is((select count(*)::int from public.fin_bills where household_id = current_setting('t.hb')::uuid), 1, 'A não apaga conta a pagar de B');
+select is((select count(*)::int from public.fin_bills where household_id = current_setting('t.hb')::uuid), 2, 'A não apaga contas a pagar de B');
+select is((select sum(amount)::numeric from public.fin_budgets where household_id = current_setting('t.hb')::uuid), 3800::numeric, 'A não altera orçamento de B');
+select is((select target from public.fin_goals where household_id = current_setting('t.hb')::uuid), 30000::numeric, 'A não altera nem apaga meta de B');
+select is((select amount from public.fin_bill_payments where household_id = current_setting('t.hb')::uuid), 1800::numeric, 'A não altera nem apaga pagamento de B');
 select is((select count(*)::int from public.fin_budgets where household_id = current_setting('t.hb')::uuid), 2, 'orçamentos de B intactos');
 
 select * from finish();
