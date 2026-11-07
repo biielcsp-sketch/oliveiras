@@ -1,26 +1,59 @@
 @import "tailwindcss";
 
+/* Oliveira's — tokens de design (claro / escuro) */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --bg: #f7f7f3;
+  --surface: #ffffff;
+  --surface-2: #f0f0ea;
+  --line: #e4e4dc;
+  --ink: #1b1c18;
+  --muted: #6e7066;
+  --olive: #556b2f;
+  --olive-soft: #e8edd9;
+  --danger: #b4432f;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --bg: #121310;
+    --surface: #1a1b17;
+    --surface-2: #22241f;
+    --line: #2e3029;
+    --ink: #ecede6;
+    --muted: #9a9c91;
+    --olive: #a3b86c;
+    --olive-soft: #2a3220;
+    --danger: #e0785f;
   }
 }
 
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-olive: var(--olive);
+  --color-olive-soft: var(--olive-soft);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+/* Espaço para a barra inferior + área segura do iPhone */
+.pb-nav {
+  padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
+}
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
 }
