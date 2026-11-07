@@ -1,10 +1,20 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { buildCsp, createNonce } from "@/lib/security-headers";
 
 const PUBLIC_PATHS = ["/login", "/auth"];
 
 export async function updateSession(request: NextRequest) {
-  let response = NextResponse.next({ request });
+  const nonce = createNonce();
+  const csp = buildCsp(nonce, process.env.NODE_ENV === "development");
+
+  // O Next lê o nonce do header CSP da requisição e o aplica nos scripts.
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-nonce", nonce);
+  requestHeaders.set("Content-Security-Policy", csp);
+
+  const next = () => NextResponse.next({ request: { headers: requestHeaders } });
+  let response = next();
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -16,7 +26,8 @@ export async function updateSession(request: NextRequest) {
         },
         setAll(cookiesToSet, headers) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-          response = NextResponse.next({ request });
+          requestHeaders.set("cookie", request.headers.get("cookie") ?? "");
+          response = next();
           cookiesToSet.forEach(({ name, value, options }) =>
             response.cookies.set(name, value, options),
           );
@@ -32,18 +43,21 @@ export async function updateSession(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const isPublic = PUBLIC_PATHS.some((p) => path.startsWith(p));
 
-  if (!isLoggedIn && !isPublic) {
+  let redirectTo: string | null = null;
+  if (!isLoggedIn && !isPublic) redirectTo = "/login";
+  if (isLoggedIn && path === "/login") redirectTo = "/inicio";
+
+  if (redirectTo) {
     const url = request.nextUrl.clone();
-    url.pathname = "/login";
+    url.pathname = redirectTo;
     url.search = "";
-    return NextResponse.redirect(url);
+    const redirect = NextResponse.redirect(url);
+    // Mantém cookies de sessão renovados no redirecionamento
+    response.cookies.getAll().forEach((c) => redirect.cookies.set(c));
+    redirect.headers.set("Content-Security-Policy", csp);
+    return redirect;
   }
 
-  if (isLoggedIn && path === "/login") {
-    const url = request.nextUrl.clone();
-    url.pathname = "/inicio";
-    return NextResponse.redirect(url);
-  }
-
+  response.headers.set("Content-Security-Policy", csp);
   return response;
 }

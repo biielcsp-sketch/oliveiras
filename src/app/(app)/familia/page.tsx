@@ -1,5 +1,6 @@
 import { LogOut, Trash2 } from "lucide-react";
 import { getAppContext } from "@/lib/data";
+import { ageFrom } from "@/lib/format";
 import { Button, Card, PageHeader } from "@/components/ui";
 import { AddDependentForm } from "./add-dependent-form";
 import { removeDependent, signOut } from "./actions";
@@ -7,15 +8,6 @@ import { removeDependent, signOut } from "./actions";
 export const metadata = { title: "Família" };
 
 const RELATION_LABEL = { titular: "Titular", conjuge: "Cônjuge", filho: "Filho(a)", outro: "Dependente" };
-
-function age(birth: string | null) {
-  if (!birth) return null;
-  const b = new Date(birth + "T12:00:00");
-  const now = new Date();
-  let years = now.getFullYear() - b.getFullYear();
-  if (now < new Date(now.getFullYear(), b.getMonth(), b.getDate())) years--;
-  return years;
-}
 
 export default async function FamiliaPage() {
   const { household, members, user } = await getAppContext();
@@ -29,7 +21,7 @@ export default async function FamiliaPage() {
         <h2 className="font-medium">Membros</h2>
         <ul className="mt-3 divide-y divide-line">
           {members.map((m) => {
-            const a = age(m.birth_date);
+            const a = ageFrom(m.birth_date);
             return (
               <li key={m.id} className="flex items-center gap-3 py-3">
                 <span

@@ -1,0 +1,28 @@
+rules:
+  - id: oliveiras-no-dangerously-set-inner-html
+    languages: [typescript]
+    severity: ERROR
+    message: "HTML cru vindo de dados permite XSS. Renderize como texto (o React já escapa)."
+    pattern: <$EL dangerouslySetInnerHTML={...} />
+
+  - id: oliveiras-no-supabase-secret-in-app
+    languages: [typescript]
+    severity: ERROR
+    message: "Chave secreta/service role do Supabase não pode ser usada no app: ela ignora o RLS."
+    paths:
+      include: [src/]
+    pattern-regex: (SUPABASE_SERVICE_ROLE_KEY|SUPABASE_SECRET_KEY|sb_secret_[A-Za-z0-9_-]+)
+
+  - id: oliveiras-no-getsession
+    languages: [typescript]
+    severity: ERROR
+    message: "getSession() não valida o token no servidor. Use auth.getClaims() ou auth.getUser()."
+    pattern: $SB.auth.getSession(...)
+
+  - id: oliveiras-no-eval
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: "eval/new Function executam código arbitrário."
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)

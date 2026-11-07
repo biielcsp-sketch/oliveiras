@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qualidade:
+    name: Qualidade (lint, tipos, unitários, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+
+  seguranca:
+    name: Segurança do código (SAST, segredos, dependências)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Semgrep (SAST)
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src semgrep/semgrep semgrep scan \
+            --config p/default --config p/owasp-top-ten --config p/secrets --config .semgrep/ \
+            --metrics=off --error
+      - name: Gitleaks (segredos em todo o histórico)
+        run: docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest git /repo -v
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: npm audit (dependências de produção, severidade alta ou crítica)
+        run: npm audit --omit=dev --audit-level=high
+
+  app:
+    name: Banco (RLS), E2E, DAST e desempenho
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Supabase local (aplica todas as migrações do zero)
+        run: npm run db:start
+      - name: Testes de banco — RLS e funções (pgTAP)
+        run: npm run test:db
+
+      - name: Variáveis do Supabase local
+        run: |
+          npx supabase status -o json 2>/dev/null > /tmp/sb.json
+          echo "NEXT_PUBLIC_SUPABASE_URL=$(jq -r .API_URL /tmp/sb.json)" >> "$GITHUB_ENV"
+          echo "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$(jq -r .PUBLISHABLE_KEY /tmp/sb.json)" >> "$GITHUB_ENV"
+      - run: npm run build
+
+      - name: Playwright (E2E)
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+      - name: Sobe o app para DAST e Lighthouse
+        run: |
+          npm run start -- -p 3000 &
+          npx --yes wait-on@8 http://localhost:3000/login --timeout 60000
+
+      - name: OWASP ZAP baseline (DAST)
+        run: |
+          chmod 777 .zap
+          docker run --rm --network host -v "$PWD/.zap:/zap/wrk:rw" ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py -t http://localhost:3000/login -c rules.tsv -I -r zap-report.html
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zap-report
+          path: .zap/zap-report.html
+          retention-days: 14
+
+      - name: Lighthouse CI (orçamento de desempenho)
+        run: npx --yes @lhci/cli@0.16.0 autorun
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lighthouse
+          path: .lighthouseci/
+          retention-days: 14

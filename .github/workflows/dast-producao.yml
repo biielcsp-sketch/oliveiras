@@ -1,0 +1,28 @@
+name: DAST produção
+
+# Varredura passiva (não ataca) no site publicado, toda segunda às 6h (BRT).
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  zap:
+    name: OWASP ZAP baseline em produção
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: ZAP baseline
+        run: |
+          chmod 777 .zap
+          docker run --rm -v "$PWD/.zap:/zap/wrk:rw" ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py -t https://oliveiras-swart.vercel.app/login -c rules.tsv -I -r zap-producao.html
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zap-producao
+          path: .zap/zap-producao.html
+          retention-days: 30
