@@ -1,0 +1,43 @@
+export type CategoryKind = "despesa" | "receita" | "transferencia";
+export type Category = { id: string; name: string; kind: CategoryKind; color: string };
+export type Transaction = {
+  id: string;
+  account_id: string;
+  date: string;
+  description: string;
+  amount: number;
+  category_id: string | null;
+  member_id: string | null;
+  notes: string | null;
+  source: string;
+};
+
+export type AccountKind = "corrente" | "poupanca" | "cartao" | "dinheiro" | "investimento";
+
+export type Account = {
+  id: string;
+  name: string;
+  kind: AccountKind;
+  institution: string | null;
+  owner_member_id: string | null;
+  opening_balance: number;
+  credit_limit: number | null;
+  closing_day: number | null;
+  due_day: number | null;
+  archived: boolean;
+  balance: number;
+};
+
+export const ACCOUNT_KIND_LABEL: Record<AccountKind, string> = {
+  corrente: "Conta corrente",
+  poupanca: "Poupança",
+  cartao: "Cartão de crédito",
+  dinheiro: "Dinheiro",
+  investimento: "Investimento",
+};
+
+export const CATEGORY_KIND_LABEL: Record<CategoryKind, string> = {
+  despesa: "Despesas",
+  receita: "Receitas",
+  transferencia: "Transferências (fora dos totais)",
+};
