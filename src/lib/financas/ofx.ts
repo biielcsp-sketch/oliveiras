@@ -12,8 +12,17 @@ export function decodeStatement(bytes: Uint8Array): string {
   }
 }
 
-function tag(block: string, name: string) {
-  const m = block.match(new RegExp(`<${name}>([^<\\r\\n]*)`, "i"));
+// Expressões fixas (sem RegExp montado em tempo de execução).
+const TAGS = {
+  DTPOSTED: /<DTPOSTED>([^<\r\n]*)/i,
+  TRNAMT: /<TRNAMT>([^<\r\n]*)/i,
+  MEMO: /<MEMO>([^<\r\n]*)/i,
+  NAME: /<NAME>([^<\r\n]*)/i,
+  FITID: /<FITID>([^<\r\n]*)/i,
+} as const;
+
+function tag(block: string, name: keyof typeof TAGS) {
+  const m = block.match(TAGS[name]);
   return m ? m[1].trim() : null;
 }
 
