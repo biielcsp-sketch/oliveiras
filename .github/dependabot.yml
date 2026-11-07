@@ -1,3 +1,4 @@
+# Atualizações só depois de 7 dias publicadas (cooldown): evita pacotes comprometidos recém-lançados.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -6,6 +7,8 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
     groups:
       dependencias-menores:
         update-types: [minor, patch]
@@ -13,3 +16,5 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
