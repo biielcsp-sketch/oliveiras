@@ -3,12 +3,9 @@ import { Card, PageHeader } from "@/components/ui";
 import { getAppContext } from "@/lib/data";
 import { getFinanceBase } from "@/lib/financas/data";
 import { TxForm } from "../../_components/tx-form";
+import { todaySP } from "@/lib/financas/today";
 
 export const metadata = { title: "Novo lançamento" };
-
-function todaySP() {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
-}
 
 export default async function NovoLancamentoPage() {
   const [{ members, me }, { accounts, categories }] = await Promise.all([getAppContext(), getFinanceBase()]);

@@ -5,7 +5,12 @@ import { getFinanceBase, getTransactions } from "@/lib/financas/data";
 import { summarize } from "@/lib/financas/summary";
 import { formatBRL } from "@/lib/financas/money";
 import { parseMonth } from "@/lib/financas/period";
+import { getBillPayments, getBills, getBudgetRows, getTransactionsAround } from "@/lib/financas/planning-data";
+import { billStatus, dateInMonth, invoiceFor, invoiceTotals, resolveBudgets } from "@/lib/financas/planning";
+import { shortDate } from "@/lib/financas/period";
+import { todaySP } from "@/lib/financas/today";
 import { MonthSwitcher } from "./_components/month-switcher";
+import { StatusBadge } from "./_components/status-badge";
 import { TxList } from "./_components/tx-list";
 
 export const metadata = { title: "Finanças" };
@@ -32,7 +37,40 @@ export default async function FinancasPage({ searchParams }: { searchParams: Pro
   const available = active.filter((a) => a.kind !== "cartao").reduce((s, a) => s + Math.round(a.balance * 100), 0) / 100;
   const cards = active.filter((a) => a.kind === "cartao");
   const cardDebt = cards.reduce((s, a) => s + Math.round(a.balance * 100), 0) / 100;
-  const { income, expense, result, expenseByCategory } = summarize(transactions, categories, new Set(accounts.filter((a) => a.kind === "cartao").map((a) => a.id)));
+  const cardIds = new Set(accounts.filter((a) => a.kind === "cartao").map((a) => a.id));
+  const { income, expense, result, expenseByCategory } = summarize(transactions, categories, cardIds);
+
+  // Vencimentos do mês (contas a pagar + faturas) e orçamento
+  const today = todaySP();
+  const billingCards = cards.filter((c) => c.closing_day && c.due_day);
+  const [bills, payments, cardTxs, budgetRows] = await Promise.all([
+    getBills(),
+    getBillPayments(month),
+    getTransactionsAround(month, billingCards.map((c) => c.id)),
+    getBudgetRows(),
+  ]);
+  const paid = new Set(payments.map((p) => p.bill_id));
+  const transferIds = new Set(categories.filter((c) => c.kind === "transferencia").map((c) => c.id));
+  const dues = [
+    ...bills
+      .filter((b) => b.active && !paid.has(b.id))
+      .map((b) => ({ key: b.id, name: b.name, due: dateInMonth(month, b.due_day), amount: b.amount })),
+    ...billingCards.flatMap((c) => {
+      const inv = invoiceFor(month, c.closing_day!, c.due_day!);
+      const t = invoiceTotals(cardTxs.filter((x) => x.account_id === c.id), transferIds, inv);
+      return t.total > 0 && t.paid < t.total
+        ? [{ key: c.id, name: `Fatura ${c.name}`, due: inv.due, amount: Math.round((t.total - t.paid) * 100) / 100 }]
+        : [];
+    }),
+  ].sort((a, b) => a.due.localeCompare(b.due));
+  const budgets = resolveBudgets(budgetRows, month);
+  const spentBy = new Map(expenseByCategory.map((e) => [e.category_id, e.total]));
+  let budgetTotal = 0;
+  let budgetSpent = 0;
+  budgets.forEach((b, catId) => {
+    budgetTotal += Math.round(b.amount * 100);
+    budgetSpent += Math.round((spentBy.get(catId) ?? 0) * 100);
+  });
   const catById = new Map(categories.map((c) => [c.id, c]));
   const maxCat = expenseByCategory[0]?.total ?? 0;
 
@@ -75,6 +113,44 @@ export default async function FinancasPage({ searchParams }: { searchParams: Pro
           </p>
         </Card>
       </section>
+
+      {dues.length > 0 && (
+        <Card>
+          <div className="flex items-center justify-between">
+            <h2 className="font-medium">A pagar neste mês</h2>
+            <Link href={`/financas/contas-a-pagar?mes=${month}`} className="text-sm text-olive">Ver contas</Link>
+          </div>
+          <ul className="mt-2 divide-y divide-line">
+            {dues.slice(0, 6).map((d) => (
+              <li key={d.key} className="flex items-center gap-3 py-2.5 text-sm">
+                <span className="w-11 shrink-0 tabular-nums text-muted">{shortDate(d.due)}</span>
+                <span className="min-w-0 flex-1 truncate">{d.name}</span>
+                <StatusBadge status={billStatus(d.due, false, today)} />
+                <span className="tabular-nums">{formatBRL(d.amount)}</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
+      {budgetTotal > 0 && (
+        <Link href={`/financas/orcamento?mes=${month}`}>
+          <Card className="p-4 transition hover:bg-surface-2">
+            <div className="flex items-baseline justify-between text-sm">
+              <span className="text-muted">Orçamento</span>
+              <span className="tabular-nums">
+                {formatBRL(budgetSpent / 100)} <span className="text-muted">de {formatBRL(budgetTotal / 100)}</span>
+              </span>
+            </div>
+            <div className="mt-2 h-1.5 rounded-full bg-surface-2">
+              <div
+                className={`h-full rounded-full ${budgetSpent > budgetTotal ? "bg-danger" : "bg-olive"}`}
+                style={{ width: `${Math.min(budgetSpent / budgetTotal, 1) * 100}%` }}
+              />
+            </div>
+          </Card>
+        </Link>
+      )}
 
       {expenseByCategory.length > 0 && (
         <Card>
