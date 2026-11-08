@@ -1,18 +1,6 @@
-import { ModulePlaceholder } from "@/components/module-placeholder";
-import { ASSISTANT } from "@/lib/modules";
+import { redirect } from "next/navigation";
 
-export const metadata = { title: "Oli" };
-
+/** O Oli agora mora na tela Início. */
 export default function Page() {
-  return (
-    <ModulePlaceholder
-      module={ASSISTANT}
-      items={[
-        "Chat com acesso a todas as áreas",
-        "Resumo da semana no Início",
-        "Lança gastos e eventos (com sua confirmação)",
-        "Gemini, com troca fácil de provedor",
-      ]}
-    />
-  );
+  redirect("/inicio");
 }

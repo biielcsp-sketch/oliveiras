@@ -32,6 +32,9 @@ export default defineConfig({
         PLUGGY_CLIENT_ID: "test-client",
         PLUGGY_CLIENT_SECRET: "test-secret",
         PLUGGY_HOUSEHOLD_ID: E2E_HOUSEHOLD_ID,
+        // Oli: família autorizada fixa e sem chave do Gemini (o token responde 503; nunca chama o Gemini real).
+        OLI_HOUSEHOLD_ID: E2E_HOUSEHOLD_ID,
+        GEMINI_API_KEY: "",
       },
     },
   ],

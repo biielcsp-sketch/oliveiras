@@ -26,8 +26,9 @@ export const MODULES: ModuleDef[] = [
   { href: "/ministerio", label: "Igreja", icon: Church, description: "Carisma, Consolidação e GC", phase: 6 },
 ];
 
+/** O Oli mora na tela Início (/assistente redireciona para lá). */
 export const ASSISTANT: ModuleDef = {
-  href: "/assistente",
+  href: "/inicio",
   label: "Oli",
   icon: Sparkles,
   description: "Pergunte sobre qualquer área da vida da família",
@@ -44,5 +45,5 @@ export const MOBILE_NAV_LEFT = [byHref("/financas"), byHref("/saude")];
 export const MOBILE_NAV_RIGHT = [byHref("/casa"), byHref("/ministerio")];
 export const AGENDA = byHref("/agenda");
 
-/** Barra lateral no desktop (Agenda abre o calendário, separado). */
-export const SIDEBAR_NAV = [HOME, ...MODULES.filter((m) => m.href !== "/agenda"), ASSISTANT];
+/** Barra lateral no desktop (Agenda abre o calendário, separado). O Oli está no Início. */
+export const SIDEBAR_NAV = [HOME, ...MODULES.filter((m) => m.href !== "/agenda")];

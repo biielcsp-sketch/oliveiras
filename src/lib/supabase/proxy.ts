@@ -42,9 +42,11 @@ export async function updateSession(request: NextRequest) {
   const isLoggedIn = Boolean(data?.claims?.sub);
   const path = request.nextUrl.pathname;
   const isPublic = PUBLIC_PATHS.some((p) => path.startsWith(p));
+  // Rotas /api/ respondem 401 em JSON por conta própria (redirecionar para o login quebraria o fetch).
+  const isApi = path.startsWith("/api/");
 
   let redirectTo: string | null = null;
-  if (!isLoggedIn && !isPublic) redirectTo = "/login";
+  if (!isLoggedIn && !isPublic && !isApi) redirectTo = "/login";
   if (isLoggedIn && path === "/login") redirectTo = "/inicio";
 
   if (redirectTo) {

@@ -9,11 +9,11 @@ import { matchCategory } from "@/lib/financas/rules";
 import { decodeStatement, parseOfx } from "@/lib/financas/ofx";
 import { parseCsv } from "@/lib/financas/csv";
 import { buildImportRows, suggestInvert } from "@/lib/financas/import";
+import { validateManualTransaction } from "@/lib/financas/transaction-input";
 
 export type FormState = { error?: string; ok?: boolean } | null;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ACCOUNT_KINDS = ["corrente", "poupanca", "cartao", "dinheiro", "investimento"];
 const CATEGORY_KINDS = ["despesa", "receita", "transferencia"];
 const MAX_AMOUNT = 10_000_000;
@@ -21,12 +21,6 @@ const MAX_FILE_BYTES = 900 * 1024;
 
 const str = (form: FormData, key: string) => String(form.get(key) ?? "").trim();
 const optUuid = (v: string) => (UUID.test(v) ? v : null);
-
-function validDate(v: string) {
-  if (!ISO_DATE.test(v)) return false;
-  const d = new Date(`${v}T12:00:00Z`);
-  return !Number.isNaN(d.getTime()) && d.toISOString().startsWith(v);
-}
 
 function refresh() {
   revalidatePath("/financas", "layout");
@@ -36,29 +30,16 @@ function refresh() {
 /* ---------- Lançamentos ---------- */
 
 function readTransaction(form: FormData) {
-  const direction = str(form, "direction"); // saida | entrada
-  const value = parseBRL(str(form, "amount"));
-  const date = str(form, "date");
-  const description = str(form, "description");
-  const accountId = optUuid(str(form, "account_id"));
-
-  if (!accountId) return { error: "Escolha a conta." } as const;
-  if (!description || description.length > 200) return { error: "Descreva o lançamento (até 200 letras)." } as const;
-  if (value === null || value === 0 || Math.abs(value) > MAX_AMOUNT) return { error: "Valor inválido." } as const;
-  if (!validDate(date)) return { error: "Data inválida." } as const;
-
-  const amount = direction === "entrada" ? Math.abs(value) : -Math.abs(value);
-  return {
-    data: {
-      account_id: accountId,
-      date,
-      description,
-      amount,
-      category_id: optUuid(str(form, "category_id")),
-      member_id: optUuid(str(form, "member_id")),
-      notes: str(form, "notes").slice(0, 500) || null,
-    },
-  } as const;
+  return validateManualTransaction({
+    accountId: str(form, "account_id"),
+    description: str(form, "description"),
+    value: parseBRL(str(form, "amount")),
+    date: str(form, "date"),
+    direction: str(form, "direction"), // saida | entrada
+    categoryId: str(form, "category_id"),
+    memberId: str(form, "member_id"),
+    notes: str(form, "notes"),
+  });
 }
 
 export async function saveTransaction(_: FormState, form: FormData): Promise<FormState> {
