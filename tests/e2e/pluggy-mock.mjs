@@ -13,6 +13,7 @@ let scenario = 1;
 const tx = (id, description, amount, type, extra = {}) => ({ id, date: at, description, amount, type, status: "POSTED", ...extra });
 
 function transactions(accountId) {
+  if (scenario === 3) return []; // autorização vencida: a Pluggy devolve vazio
   if (accountId === CHECKING) {
     return scenario === 1
       ? [
@@ -58,7 +59,8 @@ createServer(async (req, res) => {
   if (req.headers["x-api-key"] !== "mock-key") return send(res, 403, { message: "no key" });
 
   if (url.pathname === `/items/${ITEM}`) {
-    return send(res, 200, { id: ITEM, status: "UPDATED", consentExpiresAt: "2027-11-01T00:00:00.000Z", connector: { name: "Banco Teste" } });
+    const consentExpiresAt = scenario === 3 ? "2026-01-01T00:00:00.000Z" : "2099-11-01T00:00:00.000Z";
+    return send(res, 200, { id: ITEM, status: "UPDATED", consentExpiresAt, connector: { name: "Banco Teste" } });
   }
   if (url.pathname.startsWith("/items/")) return send(res, 404, { message: "not found" });
   if (url.pathname === "/accounts" && url.searchParams.get("itemId") === ITEM) {

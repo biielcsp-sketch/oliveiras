@@ -77,6 +77,18 @@ test("Open Finance: conectar item, vincular contas e sincronizar sem duplicar", 
     expect(t).toContain("FARMACIA");
   });
 
+  await test.step("autorização vencida: leitura vazia não apaga nada e avisa", async () => {
+    await request.post(`${MOCK}/__scenario/3`);
+    await page.goto("/financas/open-finance");
+    await page.getByRole("button", { name: "Sincronizar agora" }).click();
+    await expect(page.getByText(/Autorização vencida/).first()).toBeVisible();
+    await page.goto(`/financas/lancamentos?mes=${month}`);
+    const t = await text(page);
+    expect(t).toContain("5 lançamentos");
+    expect(t).toContain("FARMACIA");
+    await request.post(`${MOCK}/__scenario/2`);
+  });
+
   await test.step("ajusta o saldo inicial para bater com o banco", async () => {
     await page.goto("/financas/contas");
     await expect(page.locator("li").filter({ hasText: "Conta Teste" })).toContainText("Banco informa R$ 4.864,50");

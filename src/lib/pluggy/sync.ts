@@ -3,13 +3,15 @@ import { createClient } from "@/lib/supabase/server";
 import { getAppContext } from "@/lib/data";
 import { todaySP } from "@/lib/financas/today";
 import { getItem, listAccounts, listTransactions, pluggyAllowedFor, pluggyConfigured, PluggyError } from "./client";
-import { bankBalanceToApp, buildSyncRows, planSync, syncWindowStart } from "./normalize";
+import { bankBalanceToApp, buildSyncRows, itemHealthy, planSync, syncWindowStart } from "./normalize";
 
 export type SyncResult =
   | { status: "skipped"; reason: "nao-configurado" | "nao-autorizado" | "sem-conexoes" | "recente" }
   | { status: "done"; inserted: number; updated: number; removed: number; errors: string[] };
 
 const STALE_MS = 6 * 60 * 60 * 1000;
+
+class SkipItem extends Error {}
 
 /** Sincroniza as contas vinculadas da família com a sessão do usuário (RLS vale aqui). */
 export async function syncHousehold({ force }: { force: boolean }): Promise<SyncResult> {
@@ -43,6 +45,14 @@ export async function syncHousehold({ force }: { force: boolean }): Promise<Sync
         .update({ status: info.status?.slice(0, 40) ?? null, consent_expires_at: info.consentExpiresAt ?? null })
         .eq("id", item.id)
         .eq("household_id", household.id);
+      const nowIso = new Date().toISOString();
+      if (info.consentExpiresAt && info.consentExpiresAt <= nowIso) {
+        // Autorização vencida: as leituras vêm vazias. Não toca em nada até renovar.
+        lastError = "Autorização vencida. Renove no dashboard da Pluggy (Demo → Connect Account → MeuPluggy).";
+        throw new SkipItem();
+      }
+      const allowDeletes = itemHealthy(info.status, info.consentExpiresAt, nowIso);
+      if (!allowDeletes) lastError = `Conexão com status ${info.status ?? "desconhecido"}: lançamentos não serão removidos até normalizar.`;
 
       const { data: linked } = await supabase
         .from("fin_accounts")
@@ -79,6 +89,7 @@ export async function syncHousehold({ force }: { force: boolean }): Promise<Sync
         const plan = planSync(
           (existing ?? []).map((e) => ({ ...e, amount: Number(e.amount) })),
           rows,
+          { allowDeletes },
         );
 
         for (let i = 0; i < plan.inserts.length; i += 500) {
@@ -118,7 +129,7 @@ export async function syncHousehold({ force }: { force: boolean }): Promise<Sync
         }
       }
     } catch (e) {
-      lastError = e instanceof PluggyError ? e.message : "Falha ao sincronizar esta conexão.";
+      if (!(e instanceof SkipItem)) lastError = e instanceof PluggyError ? e.message : "Falha ao sincronizar esta conexão.";
     }
     if (lastError) errors.push(lastError);
     await supabase

@@ -66,7 +66,7 @@ export type ExistingRow = { id: string; external_id: string | null; date: string
  * e os que sumiram na Pluggy dentro da janela sincronizada (reapresentação da fatura).
  * A categoria nunca é sobrescrita em atualização.
  */
-export function planSync(existing: ExistingRow[], incoming: SyncRow[]) {
+export function planSync(existing: ExistingRow[], incoming: SyncRow[], opts: { allowDeletes: boolean } = { allowDeletes: true }) {
   const byKey = new Map(existing.filter((e) => e.external_id).map((e) => [e.external_id as string, e]));
   const incomingKeys = new Set(incoming.map((r) => r.external_id));
   const inserts: SyncRow[] = [];
@@ -78,7 +78,12 @@ export function planSync(existing: ExistingRow[], incoming: SyncRow[]) {
       updates.push({ id: e.id, date: r.date, amount: r.amount, description: r.description });
     }
   }
-  const deletes = existing.filter((e) => e.external_id && !incomingKeys.has(e.external_id)).map((e) => e.id);
+  // Leitura vazia nunca apaga: é o que a Pluggy devolve com autorização vencida ou falha
+  // na conexão. Também não apaga quando o item não está saudável (allowDeletes = false).
+  const deletes =
+    opts.allowDeletes && incoming.length > 0
+      ? existing.filter((e) => e.external_id && !incomingKeys.has(e.external_id)).map((e) => e.id)
+      : [];
   return { inserts, updates, deletes };
 }
 
@@ -115,4 +120,11 @@ export function maskNumber(n: string | null | undefined) {
   if (!n) return "";
   const digits = n.replace(/\s/g, "");
   return digits.length > 4 ? `•••• ${digits.slice(-4)}` : digits;
+}
+
+/** Remoções só com item atualizado e autorização em dia. */
+export function itemHealthy(status: string | null | undefined, consentExpiresAt: string | null | undefined, nowIso: string) {
+  if (status !== "UPDATED") return false;
+  if (consentExpiresAt && consentExpiresAt <= nowIso) return false;
+  return true;
 }

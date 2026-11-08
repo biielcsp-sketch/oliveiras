@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  itemHealthy,
   accountKindFrom, bankBalanceToApp, buildSyncRows, defaultSyncFrom, maskNumber, planSync, syncWindowStart, toAppAmount,
 } from "@/lib/pluggy/normalize";
 
@@ -61,6 +62,19 @@ describe("plano de sincronização", () => {
     });
   });
 
+  // Regressão: com autorização vencida a Pluggy devolve lista vazia, e a sincronização
+  // apagava todos os lançamentos importados da janela.
+  it("leitura vazia da Pluggy não apaga nada", () => {
+    expect(planSync(existing, []).deletes).toEqual([]);
+  });
+
+  it("item não saudável: insere e atualiza, mas não apaga", () => {
+    const plan = planSync(existing, incoming, { allowDeletes: false });
+    expect(plan.deletes).toEqual([]);
+    expect(plan.inserts).toHaveLength(1);
+    expect(plan.updates).toHaveLength(1);
+  });
+
   it("nada muda quando já está igual", () => {
     expect(planSync(existing.slice(0, 1), incoming.slice(0, 1))).toEqual({ inserts: [], updates: [], deletes: [] });
   });
@@ -88,5 +102,19 @@ describe("período", () => {
     expect(syncWindowStart("2026-11-07", "2026-11-08")).toBe("2026-11-07");
     expect(syncWindowStart("2026-01-01", "2026-11-08")).toBe("2026-09-09");
     expect(syncWindowStart(null, "2026-11-08")).toBe("2026-09-09");
+  });
+});
+
+describe("saúde do item", () => {
+  const now = "2026-11-08T12:00:00.000Z";
+  it.each([
+    ["UPDATED", "2027-11-01T00:00:00.000Z", true],
+    ["UPDATED", null, true],
+    ["UPDATED", "2026-11-01T00:00:00.000Z", false],
+    ["LOGIN_ERROR", "2027-11-01T00:00:00.000Z", false],
+    ["UPDATING", null, false],
+    ["OUTDATED", null, false],
+  ] as const)("%s, consentimento até %s → %s", (status, exp, expected) => {
+    expect(itemHealthy(status, exp, now)).toBe(expected);
   });
 });
