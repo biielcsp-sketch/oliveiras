@@ -13,7 +13,7 @@ export function Plexus() {
     <svg
       aria-hidden="true"
       focusable="false"
-      className="pointer-events-none absolute inset-x-0 top-0 -z-0 h-[240px] w-full text-[var(--plexus)] opacity-[0.18] dark:opacity-[0.1]"
+      className="pointer-events-none absolute inset-x-0 top-0 -z-0 h-[240px] w-full text-[var(--plexus)] opacity-[var(--plexus-opacity)]"
       viewBox="0 0 400 240"
       preserveAspectRatio="xMidYMin slice"
     >

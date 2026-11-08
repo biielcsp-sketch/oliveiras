@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { connection } from "next/server";
+import { cookies } from "next/headers";
+import { THEME_COLOR, THEME_COOKIE, parseTheme } from "@/lib/theme";
 import "@fontsource-variable/inter";
 import { RegisterSW } from "@/components/register-sw";
 import "./globals.css";
@@ -15,24 +17,29 @@ export const metadata: Metadata = {
   },
 };
 
-export const viewport: Viewport = {
-  width: "device-width",
-  initialScale: 1,
-  viewportFit: "cover",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#eef1f4" },
-    { media: "(prefers-color-scheme: dark)", color: "#0a141c" },
-  ],
-};
+export async function generateViewport(): Promise<Viewport> {
+  const theme = parseTheme((await cookies()).get(THEME_COOKIE)?.value);
+  return {
+    width: "device-width",
+    initialScale: 1,
+    viewportFit: "cover",
+    // Com escolha no botão, a barra do navegador acompanha; sem escolha, segue o aparelho.
+    themeColor: theme
+      ? THEME_COLOR[theme]
+      : [
+          { media: "(prefers-color-scheme: light)", color: THEME_COLOR.light },
+          { media: "(prefers-color-scheme: dark)", color: THEME_COLOR.dark },
+        ],
+  };
+}
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   // Renderização dinâmica em todas as páginas: necessária para o nonce da CSP.
   await connection();
+  // Tema escolhido no botão (cookie). Sem escolha, o CSS segue o modo do aparelho.
+  const theme = parseTheme((await cookies()).get(THEME_COOKIE)?.value);
   return (
-    <html
-      lang="pt-BR"
-      className="h-full antialiased"
-    >
+    <html lang="pt-BR" className="h-full antialiased" data-theme={theme ?? undefined}>
       <body className="min-h-full font-sans">
         {children}
         <RegisterSW />
