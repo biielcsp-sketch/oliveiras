@@ -3,6 +3,8 @@
 // Arrastar gira o robô (ele volta a olhar de frente); tocar nas partes faz o Oli reagir.
 // Este módulo só é carregado por import() dinâmico depois da primeira pintura (three fica em chunk próprio).
 import * as THREE from "three";
+import { isSoftwareRenderer } from "./gpu";
+export { isSoftwareRendererName } from "./gpu";
 
 const TAU = Math.PI * 2;
 
@@ -22,7 +24,14 @@ type NeonSet = {
   glow: THREE.MeshBasicMaterial;
 };
 
-export async function createOli3D(container: HTMLElement, opts: { scenery?: boolean } = {}): Promise<Oli3D> {
+/**
+ * opts.scenery=false: só o robô, fundo transparente (imagem da barra inferior).
+ * opts.offline=true: qualidade máxima mesmo sem GPU (só para os scripts que geram imagens estáticas).
+ */
+export async function createOli3D(
+  container: HTMLElement,
+  opts: { scenery?: boolean; offline?: boolean } = {},
+): Promise<Oli3D> {
   const textures: THREE.Texture[] = [];
   const track = <T extends THREE.Texture>(t: T) => {
     textures.push(t);
@@ -46,7 +55,7 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
   // onde cada quadro ocupa a thread principal (e o Chrome ainda copia o canvas da GPU com ReadPixels
   // a cada quadro para compor a página), e para quem pede menos movimento no sistema.
   // Desenha um quadro e depois só em mudança de estado, toque/arrasto ou mudança de tamanho.
-  const software = isSoftwareRenderer(renderer.getContext());
+  const software = !opts.offline && isSoftwareRenderer(renderer.getContext());
   const reducedMq = window.matchMedia?.("(prefers-reduced-motion: reduce)");
   let slowDevice = software; // também liga se os quadros medidos forem lentos demais (ver adaptQuality)
   const isStatic = () => slowDevice || Boolean(reducedMq?.matches);
@@ -590,30 +599,36 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
     disposed = false,
     raf = 0,
     activeUntil = 0,
-    lastRender = 0;
+    lastRender = 0,
+    idleReady = false, // nada é desenhado antes do primeiro momento ocioso do navegador
+    pendingFrame = true, // um quadro devido (primeiro quadro, tamanho, volta à tela)
+    drawnLevel = 0; // nível de voz do último quadro desenhado
   const INTERACTION_MS = 1500;
   const SETTLE_MS = 1300;
   const STATE_MS = 700;
+  const LEVEL_MS = 250; // cada variação de voz mantém a animação por um instante (no teto do modo estático)
   /** Teto de quadros no modo estático enquanto há interação ou transição de estado. */
   const staticFrameMs = () => (slowDevice ? 1000 / 8 : 1000 / 30);
   const shouldRun = () => !disposed && onScreen && document.visibilityState === "visible";
   const kick = () => {
-    if (shouldRun() && !raf) {
+    if (idleReady && shouldRun() && !raf) {
       clock.getDelta();
       raf = requestAnimationFrame(frame);
     }
   };
   /** Modo estático: anima por `ms` (ou só um quadro, com 0). No modo normal o laço já roda. */
   function wake(ms: number) {
+    if (ms <= 0) pendingFrame = true;
     activeUntil = Math.max(activeUntil, performance.now() + ms);
     kick();
   }
   const io = new IntersectionObserver((en) => {
     onScreen = en[0].isIntersecting;
-    kick();
+    if (onScreen) wake(0);
   });
   io.observe(container);
-  document.addEventListener("visibilitychange", kick);
+  const onVisibility = () => wake(0);
+  document.addEventListener("visibilitychange", onVisibility);
   const onMotionPref = () => wake(0);
   reducedMq?.addEventListener?.("change", onMotionPref);
 
@@ -623,7 +638,7 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
   let perfFrames = 0,
     perfTime = 0;
   function adaptQuality(rawDt: number) {
-    if (isStatic()) return;
+    if (opts.offline || isStatic()) return;
     if (rawDt > 1.5) return; // pausa longa (aba oculta): não conta
     if (clock.elapsedTime < 1.5) return; // aquecimento (compilação de shaders) não conta
     perfFrames++;
@@ -647,11 +662,23 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
     if (!shouldRun()) return;
     const nowMs = performance.now();
     const still = isStatic();
-    if (still && nowMs - lastRender < staticFrameMs() - 4) {
+    const decision = framePolicy({
+      idleReady,
+      staticMode: still,
+      active: pendingFrame || dragging || nowMs < activeUntil,
+      state,
+      levelDelta: Math.abs(level - drawnLevel),
+      sinceLastMs: nowMs - lastRender,
+      capMs: staticFrameMs(),
+    });
+    if (decision === "stop") return;
+    if (decision === "wait") {
       raf = requestAnimationFrame(frame);
       return;
     }
+    pendingFrame = false;
     lastRender = nowMs;
+    drawnLevel = level;
     const rawDt = clock.getDelta();
     const dt = Math.min(rawDt, 0.05),
       t = clock.elapsedTime,
@@ -781,6 +808,7 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
     renderer.render(scene, camera);
     // Modo estático: só continua enquanto há interação/transição; senão para até o próximo wake().
     if (!still || dragging || performance.now() < activeUntil) raf = requestAnimationFrame(frame);
+    else if (reactsToVoice(state) && Math.abs(level - drawnLevel) > LEVEL_EPSILON) raf = requestAnimationFrame(frame);
   }
   // Sem cenário (só o robô, fundo transparente): usado para gerar a imagem da barra inferior.
   if (opts.scenery === false) {
@@ -791,7 +819,11 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
 
   // Primeiro quadro só quando o navegador estiver ocioso: não disputa a primeira pintura nem toques.
   const idle = typeof window.requestIdleCallback === "function";
-  const firstHandle = idle ? window.requestIdleCallback(() => kick(), { timeout: 1000 }) : window.setTimeout(kick, 50);
+  const onIdle = () => {
+    idleReady = true;
+    wake(0);
+  };
+  const firstHandle = idle ? window.requestIdleCallback(onIdle, { timeout: 1000 }) : window.setTimeout(onIdle, 50);
 
   return {
     setState(s: OliState) {
@@ -801,6 +833,8 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
     },
     setLevel(v: number) {
       level = Math.max(0, Math.min(1, v));
+      // Modo estático: a voz (ouvindo/falando) ainda pulsa, só que no teto de quadros do modo.
+      if (isStatic() && reactsToVoice(state) && Math.abs(level - drawnLevel) > LEVEL_EPSILON) wake(LEVEL_MS);
     },
     dispose() {
       if (disposed) return;
@@ -812,7 +846,7 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
       reducedMq?.removeEventListener?.("change", onMotionPref);
       ro.disconnect();
       io.disconnect();
-      document.removeEventListener("visibilitychange", kick);
+      document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("pointermove", onWindowMove);
       // Libera tudo da GPU: geometrias, materiais e texturas (a tela pode montar/desmontar).
       const mats = new Set<THREE.Material>();
@@ -836,17 +870,30 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
   };
 }
 
-/** Renderizador por software (sem GPU): SwiftShader, llvmpipe, "Microsoft Basic Render" etc. */
-export function isSoftwareRenderer(gl: WebGLRenderingContext | WebGL2RenderingContext) {
-  try {
-    const ext = gl.getExtension("WEBGL_debug_renderer_info");
-    const name = String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER) ?? "");
-    return isSoftwareRendererName(name);
-  } catch {
-    return false;
-  }
-}
 
-export function isSoftwareRendererName(name: string) {
-  return /swiftshader|llvmpipe|softpipe|software|basic render|mesa offscreen/i.test(name);
+/** Variação mínima do nível de voz que justifica desenhar de novo no modo estático. */
+export const LEVEL_EPSILON = 0.02;
+export const reactsToVoice = (s: OliState) => s === "listen" || s === "speak";
+
+/**
+ * Política de quadros (pura, testada):
+ * - antes do primeiro momento ocioso: nunca desenha ("stop");
+ * - modo normal: desenha todo quadro;
+ * - modo estático: só com algo a mostrar (quadro devido, interação/transição ativa ou voz mudando
+ *   em ouvindo/falando) e respeitando o teto de quadros ("wait" até lá).
+ */
+export function framePolicy(p: {
+  idleReady: boolean;
+  staticMode: boolean;
+  active: boolean;
+  state: OliState;
+  levelDelta: number;
+  sinceLastMs: number;
+  capMs: number;
+}): "render" | "wait" | "stop" {
+  if (!p.idleReady) return "stop";
+  if (!p.staticMode) return "render";
+  const voice = reactsToVoice(p.state) && p.levelDelta > LEVEL_EPSILON;
+  if (!p.active && !voice) return "stop";
+  return p.sinceLastMs < p.capMs - 4 ? "wait" : "render";
 }
