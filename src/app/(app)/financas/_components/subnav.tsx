@@ -13,6 +13,7 @@ const TABS = [
   { href: "/financas/metas", label: "Metas" },
   { href: "/financas/contas", label: "Contas" },
   { href: "/financas/categorias", label: "Categorias" },
+  { href: "/financas/open-finance", label: "Open Finance" },
 ];
 
 export function FinanceSubnav() {

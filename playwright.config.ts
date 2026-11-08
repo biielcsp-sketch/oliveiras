@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const PORT = Number(process.env.E2E_PORT ?? 3000);
+export const E2E_HOUSEHOLD_ID = "eeeeeeee-0000-4000-8000-000000000001";
 
 export default defineConfig({
   testDir: "tests/e2e",
@@ -13,11 +14,25 @@ export default defineConfig({
     ...devices["Pixel 7"],
     channel: process.env.PW_CHANNEL || undefined,
   },
-  webServer: {
-    // O app precisa ter sido gerado antes com `npm run build` apontando para o Supabase local.
-    command: `npm run start -- -p ${PORT}`,
-    port: PORT,
-    reuseExistingServer: !process.env.CI,
-    timeout: 60_000,
-  },
+  webServer: [
+    {
+      // API da Pluggy simulada (só nos testes)
+      command: "node tests/e2e/pluggy-mock.mjs",
+      port: 4010,
+      reuseExistingServer: !process.env.CI,
+    },
+    {
+      // O app precisa ter sido gerado antes com `npm run build` apontando para o Supabase local.
+      command: `npm run start -- -p ${PORT}`,
+      port: PORT,
+      reuseExistingServer: !process.env.CI,
+      timeout: 60_000,
+      env: {
+        PLUGGY_API_URL: "http://127.0.0.1:4010",
+        PLUGGY_CLIENT_ID: "test-client",
+        PLUGGY_CLIENT_SECRET: "test-secret",
+        PLUGGY_HOUSEHOLD_ID: E2E_HOUSEHOLD_ID,
+      },
+    },
+  ],
 });
