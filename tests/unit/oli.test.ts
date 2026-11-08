@@ -444,3 +444,18 @@ describe("lançamento manual (validação compartilhada com o formulário)", () 
     expect(validateManualTransaction({ ...ok, date: "2026-02-31" })).toEqual({ error: "Data inválida." });
   });
 });
+
+describe("Oli 3D: renderizador por software liga o modo estático", () => {
+  it("reconhece SwiftShader, llvmpipe e afins; GPU de verdade não", async () => {
+    const { isSoftwareRendererName } = await import("@/components/oli/oli3d");
+    for (const n of [
+      "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "llvmpipe (LLVM 15.0.7, 256 bits)",
+      "Microsoft Basic Render Driver",
+      "Google SwiftShader",
+    ])
+      expect(isSoftwareRendererName(n)).toBe(true);
+    for (const n of ["ANGLE (Qualcomm, Adreno (TM) 730, OpenGL ES 3.2)", "Apple GPU", "Mali-G78"])
+      expect(isSoftwareRendererName(n)).toBe(false);
+  });
+});

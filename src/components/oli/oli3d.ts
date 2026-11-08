@@ -42,11 +42,20 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
     canvas.remove();
     throw e;
   }
+  // Modo estático: sem laço contínuo. Vale para renderizador por software (SwiftShader, llvmpipe…),
+  // onde cada quadro ocupa a thread principal (e o Chrome ainda copia o canvas da GPU com ReadPixels
+  // a cada quadro para compor a página), e para quem pede menos movimento no sistema.
+  // Desenha um quadro e depois só em mudança de estado, toque/arrasto ou mudança de tamanho.
+  const software = isSoftwareRenderer(renderer.getContext());
+  const reducedMq = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+  let slowDevice = software; // também liga se os quadros medidos forem lentos demais (ver adaptQuality)
+  const isStatic = () => slowDevice || Boolean(reducedMq?.matches);
+
   // Resolução adaptativa: começa em até 2x e baixa se o aparelho não der conta (ver frame()).
   const PIXEL_STEPS = [2, 1.5, 1, 0.75, 0.5].filter((r) => r <= Math.min(window.devicePixelRatio || 1, 2));
   if (PIXEL_STEPS.length === 0) PIXEL_STEPS.push(Math.max(0.5, window.devicePixelRatio || 1));
-  let pixelStep = 0;
-  renderer.setPixelRatio(PIXEL_STEPS[0]);
+  let pixelStep = software ? PIXEL_STEPS.length - 1 : 0;
+  renderer.setPixelRatio(PIXEL_STEPS[pixelStep]);
   renderer.setClearColor(0x000000, 0);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.1;
@@ -502,7 +511,10 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
     camera.updateProjectionMatrix();
   }
   resize();
-  const ro = new ResizeObserver(resize);
+  const ro = new ResizeObserver(() => {
+    resize();
+    wake(0);
+  });
   ro.observe(container);
 
   // ---------- ponteiro ----------
@@ -545,6 +557,7 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
     try { canvas.setPointerCapture(e.pointerId); } catch {}
     canvas.style.cursor = "grabbing";
     aimEye(e);
+    wake(INTERACTION_MS);
   });
   canvas.addEventListener("pointermove", (e) => {
     aimEye(e);
@@ -554,12 +567,14 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
     moved += Math.abs(dx) + Math.abs(e.clientY - downY) * 0.2;
     yaw += dx * 0.012;
     yawV = dx * 0.012 * 60;
+    wake(INTERACTION_MS);
   });
   const up = (e: PointerEvent) => {
     if (!dragging) return;
     dragging = false; releaseT = performance.now();
     canvas.style.cursor = "grab";
     if (moved < 7 && performance.now() - downT < 400 && e.type === "pointerup") poke(e);
+    wake(SETTLE_MS); // molas e volta de frente terminam de animar
   };
   canvas.addEventListener("pointerup", up);
   canvas.addEventListener("pointercancel", up);
@@ -573,7 +588,14 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
   // Anima só quando o palco está visível na tela E a aba está ativa.
   let onScreen = true,
     disposed = false,
-    raf = 0;
+    raf = 0,
+    activeUntil = 0,
+    lastRender = 0;
+  const INTERACTION_MS = 1500;
+  const SETTLE_MS = 1300;
+  const STATE_MS = 700;
+  /** Teto de quadros no modo estático enquanto há interação ou transição de estado. */
+  const staticFrameMs = () => (slowDevice ? 1000 / 8 : 1000 / 30);
   const shouldRun = () => !disposed && onScreen && document.visibilityState === "visible";
   const kick = () => {
     if (shouldRun() && !raf) {
@@ -581,22 +603,27 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
       raf = requestAnimationFrame(frame);
     }
   };
+  /** Modo estático: anima por `ms` (ou só um quadro, com 0). No modo normal o laço já roda. */
+  function wake(ms: number) {
+    activeUntil = Math.max(activeUntil, performance.now() + ms);
+    kick();
+  }
   const io = new IntersectionObserver((en) => {
     onScreen = en[0].isIntersecting;
     kick();
   });
   io.observe(container);
   document.addEventListener("visibilitychange", kick);
+  const onMotionPref = () => wake(0);
+  reducedMq?.addEventListener?.("change", onMotionPref);
 
   // Aparelho fraco: se a média ficar abaixo de ~24 quadros/s, reduz a resolução do canvas
-  // (o modelo e os efeitos continuam iguais; só a nitidez cai). No mínimo de resolução e ainda lento,
-  // limita a 30, 15 e por fim 6 quadros/s (ex.: aparelho sem GPU) para não travar a página (rolagem, toques).
-  const FRAME_CAPS = [0, 1 / 30, 1 / 15, 1 / 6];
-  let capStep = 0,
-    lastRender = 0,
-    perfFrames = 0,
+  // (o modelo e os efeitos continuam iguais; só a nitidez cai). No mínimo de resolução e ainda
+  // abaixo de 20 quadros/s, passa ao modo estático (sem laço contínuo) para não travar a página.
+  let perfFrames = 0,
     perfTime = 0;
   function adaptQuality(rawDt: number) {
+    if (isStatic()) return;
     if (rawDt > 1.5) return; // pausa longa (aba oculta): não conta
     if (clock.elapsedTime < 1.5) return; // aquecimento (compilação de shaders) não conta
     perfFrames++;
@@ -605,15 +632,13 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
     const fps = perfFrames / perfTime;
     perfFrames = 0;
     perfTime = 0;
-    const target = capStep === 0 ? 24 : 0.8 / FRAME_CAPS[capStep];
-    if (fps >= target) return;
-    const veryslow = fps < 12; // muito lento: pula direto para o último degrau
+    if (fps >= 24) return;
     if (pixelStep < PIXEL_STEPS.length - 1) {
-      pixelStep = veryslow ? PIXEL_STEPS.length - 1 : pixelStep + 1;
+      pixelStep = fps < 12 ? PIXEL_STEPS.length - 1 : pixelStep + 1; // muito lento: último degrau
       renderer.setPixelRatio(PIXEL_STEPS[pixelStep]);
       resize();
-    } else if (capStep < FRAME_CAPS.length - 1) {
-      capStep = veryslow ? FRAME_CAPS.length - 1 : capStep + 1;
+    } else if (fps < 20) {
+      slowDevice = true;
     }
   }
 
@@ -621,7 +646,8 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
     raf = 0;
     if (!shouldRun()) return;
     const nowMs = performance.now();
-    if (capStep > 0 && nowMs - lastRender < FRAME_CAPS[capStep] * 1000 - 4) {
+    const still = isStatic();
+    if (still && nowMs - lastRender < staticFrameMs() - 4) {
       raf = requestAnimationFrame(frame);
       return;
     }
@@ -753,7 +779,8 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
     });
 
     renderer.render(scene, camera);
-    raf = requestAnimationFrame(frame);
+    // Modo estático: só continua enquanto há interação/transição; senão para até o próximo wake().
+    if (!still || dragging || performance.now() < activeUntil) raf = requestAnimationFrame(frame);
   }
   // Sem cenário (só o robô, fundo transparente): usado para gerar a imagem da barra inferior.
   if (opts.scenery === false) {
@@ -762,11 +789,15 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
     floor.visible = false;
   }
 
-  kick();
+  // Primeiro quadro só quando o navegador estiver ocioso: não disputa a primeira pintura nem toques.
+  const idle = typeof window.requestIdleCallback === "function";
+  const firstHandle = idle ? window.requestIdleCallback(() => kick(), { timeout: 1000 }) : window.setTimeout(kick, 50);
 
   return {
     setState(s: OliState) {
+      if (s === state) return;
       state = s;
+      wake(STATE_MS);
     },
     setLevel(v: number) {
       level = Math.max(0, Math.min(1, v));
@@ -776,6 +807,9 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
       disposed = true;
       cancelAnimationFrame(raf);
       raf = 0;
+      if (idle) window.cancelIdleCallback(firstHandle);
+      else window.clearTimeout(firstHandle);
+      reducedMq?.removeEventListener?.("change", onMotionPref);
       ro.disconnect();
       io.disconnect();
       document.removeEventListener("visibilitychange", kick);
@@ -800,4 +834,19 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
       canvas.remove();
     },
   };
+}
+
+/** Renderizador por software (sem GPU): SwiftShader, llvmpipe, "Microsoft Basic Render" etc. */
+export function isSoftwareRenderer(gl: WebGLRenderingContext | WebGL2RenderingContext) {
+  try {
+    const ext = gl.getExtension("WEBGL_debug_renderer_info");
+    const name = String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER) ?? "");
+    return isSoftwareRendererName(name);
+  } catch {
+    return false;
+  }
+}
+
+export function isSoftwareRendererName(name: string) {
+  return /swiftshader|llvmpipe|softpipe|software|basic render|mesa offscreen/i.test(name);
 }
