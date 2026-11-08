@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
-import { CalendarDays, Mic } from "lucide-react";
+import { CalendarDays, Mic, Moon, Sun } from "lucide-react";
 import {
   AGENDA,
   ASSISTANT,
@@ -16,6 +16,7 @@ import {
 } from "@/lib/modules";
 import { Logo } from "@/components/logo";
 import { AgendaCalendarButton } from "@/components/agenda-calendar";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 function isActive(path: string, href: string) {
   return path === href || path.startsWith(href + "/");
@@ -57,6 +58,14 @@ export function Sidebar({ familyName }: { familyName: string }) {
             <AGENDA.icon size={20} strokeWidth={1.8} aria-hidden />
             {AGENDA.label}
           </AgendaCalendarButton>
+          <ThemeToggle className={clsx(sideItem, "text-muted hover:bg-surface-2 hover:text-ink")}>
+            {(theme) => (
+              <>
+                {theme === "dark" ? <Sun size={20} strokeWidth={1.8} aria-hidden /> : <Moon size={20} strokeWidth={1.8} aria-hidden />}
+                {theme === "dark" ? "Modo claro" : "Modo escuro"}
+              </>
+            )}
+          </ThemeToggle>
         </nav>
         <Link
           href={FAMILY.href}
@@ -152,6 +161,7 @@ export function MobileTopBar() {
         <Logo />
       </Link>
       <div className="flex items-center gap-3">
+        <ThemeToggle className={roundBtn} />
         <AgendaCalendarButton className={roundBtn}>
           <CalendarDays size={22} strokeWidth={1.8} aria-hidden />
         </AgendaCalendarButton>

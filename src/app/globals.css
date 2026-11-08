@@ -1,5 +1,17 @@
 @import "tailwindcss";
 
+/* `dark:` segue a escolha do botão (data-theme); sem escolha, o modo do aparelho. */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+}
+
 /*
  * Oliveira's — tokens de design (claro / escuro).
  * Linguagem visual: vidro claro, azul petróleo, pílulas e cards de 24px.
@@ -36,6 +48,7 @@
   --nav-ring: #f4fafe;
   --round-edge: #9cc6de;
   --plexus: #5b9cc4;
+  --plexus-opacity: 0.18;
   --shadow-card: 0 10px 30px rgb(20 40 60 / 0.08);
   --shadow-soft: 0 6px 16px rgb(20 40 60 / 0.1);
   --backdrop: rgb(20 33 43 / 0.28);
@@ -46,8 +59,9 @@
   color-scheme: light;
 }
 
+/* Escuro: segue o aparelho, a menos que a pessoa tenha escolhido no botão (data-theme no <html>). */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #0a141c;
     --bg-glow: #123349;
     --surface: rgb(19 33 45 / 0.78);
@@ -76,11 +90,48 @@
     --nav-ring: #0a141c;
     --round-edge: #1f4a66;
     --plexus: #3fa6da;
+    --plexus-opacity: 0.1;
     --shadow-card: 0 10px 30px rgb(0 0 0 / 0.35);
     --shadow-soft: 0 6px 16px rgb(0 0 0 / 0.4);
     --backdrop: rgb(0 0 0 / 0.5);
     color-scheme: dark;
   }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0a141c;
+  --bg-glow: #123349;
+  --surface: rgb(19 33 45 / 0.78);
+  --surface-solid: #13212d;
+  --surface-2: #172836;
+  --line: #213547;
+  --ink: #e6eef4;
+  --muted: #96a7b5;
+
+  --primary: #3fa6da;
+  --on-primary: #ffffff;
+  /* #1A79A8 escurecido para #156690: texto info passa de 3,8:1 para 5,0:1 */
+  --hero-from: #156690;
+  --hero-to: #0b4a6b;
+  --accent-soft: #123349;
+  --link: #6cb8e8;
+  --danger: #ff6b6e;
+  --badge: #d93338;
+  --on-badge: #ffffff;
+  --warning-soft: #3a3115;
+  --warning: #f0d27a;
+  --info: #c8eafb;
+
+  --nav-from: #0f2433;
+  --nav-to: #0f3550;
+  --nav-ring: #0a141c;
+  --round-edge: #1f4a66;
+  --plexus: #3fa6da;
+  --plexus-opacity: 0.1;
+  --shadow-card: 0 10px 30px rgb(0 0 0 / 0.35);
+  --shadow-soft: 0 6px 16px rgb(0 0 0 / 0.4);
+  --backdrop: rgb(0 0 0 / 0.5);
+  color-scheme: dark;
 }
 
 @theme inline {
