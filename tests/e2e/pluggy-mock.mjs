@@ -8,6 +8,8 @@ const CHECKING = "22222222-2222-4222-8222-222222222222";
 const CARD = "33333333-3333-4333-8333-333333333333";
 const today = new Date().toISOString().slice(0, 10);
 const at = `${today}T00:00:00.000Z`;
+// Lançamento de 75 dias atrás: só vem quando a leitura começa no início escolhido (90 dias).
+const old = new Date(Date.now() - 75 * 86400000).toISOString().slice(0, 10);
 let scenario = 1;
 
 const tx = (id, description, amount, type, extra = {}) => ({ id, date: at, description, amount, type, status: "POSTED", ...extra });
@@ -17,11 +19,13 @@ function transactions(accountId) {
   if (accountId === CHECKING) {
     return scenario === 1
       ? [
+          { ...tx("t0", "ALUGUEL ANTIGO", -1500, "DEBIT", { providerId: "P0" }), date: `${old}T00:00:00.000Z` },
           tx("t1", "SALARIO EMPRESA", 5000, "CREDIT", { providerId: "P1" }),
           tx("t2", "MERCADO PENDENTE", -120, "DEBIT", { providerId: "P2", status: "PENDING" }),
           tx("t3", "PADARIA", -15.5, "DEBIT"),
         ]
       : [
+          { ...tx("t0", "ALUGUEL ANTIGO", -1500, "DEBIT", { providerId: "P0" }), date: `${old}T00:00:00.000Z` },
           tx("t1", "SALARIO EMPRESA", 5000, "CREDIT", { providerId: "P1" }),
           tx("t2", "MERCADO", -125.4, "DEBIT", { providerId: "P2" }),
           tx("t4", "FARMACIA", -60, "DEBIT", { providerId: "P3" }),
@@ -55,7 +59,7 @@ createServer(async (req, res) => {
     scenario = Number(url.pathname.split("/").pop());
     return send(res, 200, { scenario });
   }
-  if (url.pathname === "/__today") return send(res, 200, { today });
+  if (url.pathname === "/__today") return send(res, 200, { today, old });
   if (req.headers["x-api-key"] !== "mock-key") return send(res, 403, { message: "no key" });
 
   if (url.pathname === `/items/${ITEM}`) {
@@ -73,10 +77,11 @@ createServer(async (req, res) => {
   }
   if (url.pathname === "/v2/transactions") {
     // Página de 2 itens para exercitar o cursor `next`.
-    const all = transactions(url.searchParams.get("accountId"));
+    const from = url.searchParams.get("dateFrom") ?? "0000-00-00";
+    const all = transactions(url.searchParams.get("accountId")).filter((t) => t.date.slice(0, 10) >= from);
     const start = Number(url.searchParams.get("after") ?? 0);
     const results = all.slice(start, start + 2);
-    const next = start + 2 < all.length ? `?accountId=${url.searchParams.get("accountId")}&after=${start + 2}` : null;
+    const next = start + 2 < all.length ? `?accountId=${url.searchParams.get("accountId")}&dateFrom=${from}&after=${start + 2}` : null;
     return send(res, 200, { results, next });
   }
   send(res, 404, { message: "not found" });

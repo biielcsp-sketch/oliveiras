@@ -66,7 +66,11 @@ export type ExistingRow = { id: string; external_id: string | null; date: string
  * e os que sumiram na Pluggy dentro da janela sincronizada (reapresentação da fatura).
  * A categoria nunca é sobrescrita em atualização.
  */
-export function planSync(existing: ExistingRow[], incoming: SyncRow[], opts: { allowDeletes: boolean } = { allowDeletes: true }) {
+export function planSync(
+  existing: ExistingRow[],
+  incoming: SyncRow[],
+  opts: { allowDeletes: boolean; deleteFrom?: string } = { allowDeletes: true },
+) {
   const byKey = new Map(existing.filter((e) => e.external_id).map((e) => [e.external_id as string, e]));
   const incomingKeys = new Set(incoming.map((r) => r.external_id));
   const inserts: SyncRow[] = [];
@@ -82,7 +86,11 @@ export function planSync(existing: ExistingRow[], incoming: SyncRow[], opts: { a
   // na conexão. Também não apaga quando o item não está saudável (allowDeletes = false).
   const deletes =
     opts.allowDeletes && incoming.length > 0
-      ? existing.filter((e) => e.external_id && !incomingKeys.has(e.external_id)).map((e) => e.id)
+      ? existing
+          .filter((e) => e.external_id && !incomingKeys.has(e.external_id))
+          // Só apaga dentro da janela recente: histórico antigo que a Pluggy deixa de mandar fica.
+          .filter((e) => !opts.deleteFrom || e.date >= opts.deleteFrom)
+          .map((e) => e.id)
       : [];
   return { inserts, updates, deletes };
 }
@@ -114,6 +122,26 @@ export function defaultSyncFrom(lastOtherDate: string | null, today: string) {
 export function syncWindowStart(syncFrom: string | null, today: string) {
   const sixty = addDaysISO(today, -60);
   return syncFrom && syncFrom > sixty ? syncFrom : sixty;
+}
+
+/**
+ * Onde a leitura começa. Enquanto o histórico desde o início escolhido não foi trazido
+ * (nenhum lançamento importado ou o mais antigo depois do início), lê desde o início;
+ * depois, só a janela recente de 60 dias.
+ */
+export function syncFetchStart(syncFrom: string | null, today: string, earliestImported: string | null) {
+  const recent = syncWindowStart(syncFrom, today);
+  if (!syncFrom || syncFrom >= recent) return recent;
+  return earliestImported === null || earliestImported > syncFrom ? syncFrom : recent;
+}
+
+/**
+ * Saldo inicial que faz o saldo do app (inicial + lançamentos) bater com o do banco.
+ * Usa o saldo já somado pelo banco de dados (fin_account_balances), sem limite de linhas.
+ */
+export function openingToMatchBank(bankBalance: number, opening: number, appBalance: number) {
+  const c = (v: number) => Math.round(v * 100);
+  return (c(opening) + c(bankBalance) - c(appBalance)) / 100;
 }
 
 export function maskNumber(n: string | null | undefined) {

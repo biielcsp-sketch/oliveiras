@@ -6,7 +6,7 @@ import { getAppContext } from "@/lib/data";
 import { todaySP } from "@/lib/financas/today";
 import { getItem, listAccounts, pluggyAllowedFor, pluggyConfigured, PluggyError } from "@/lib/pluggy/client";
 import { accountKindFrom, defaultSyncFrom } from "@/lib/pluggy/normalize";
-import { syncHousehold, type SyncResult } from "@/lib/pluggy/sync";
+import { matchOpeningToBank, syncHousehold, type SyncResult } from "@/lib/pluggy/sync";
 
 export type OfState = { error?: string; ok?: boolean; message?: string } | null;
 
@@ -173,7 +173,8 @@ export async function syncNow(): Promise<OfState> {
 export async function autoSync(): Promise<{ changed: boolean }> {
   try {
     const r = await syncHousehold({ force: false });
-    const changed = r.status === "done" && r.inserted + r.updated + r.removed > 0;
+    // Sincronização feita sempre pode mudar o saldo (saldo do banco e saldo inicial), mesmo sem lançamentos novos.
+    const changed = r.status === "done";
     if (changed) refresh();
     return { changed };
   } catch {
@@ -187,13 +188,8 @@ export async function matchBankBalance(form: FormData) {
   const id = str(form, "id");
   if (!UUID.test(id)) return;
   const supabase = await createClient();
-  const [{ data: acc }, { data: txs }] = await Promise.all([
-    supabase.from("fin_accounts").select("bank_balance").eq("id", id).eq("household_id", household.id).maybeSingle(),
-    supabase.from("fin_transactions").select("amount").eq("account_id", id).eq("household_id", household.id).limit(20000),
-  ]);
+  const { data: acc } = await supabase.from("fin_accounts").select("bank_balance").eq("id", id).eq("household_id", household.id).maybeSingle();
   if (acc?.bank_balance === null || acc?.bank_balance === undefined) return;
-  const sumCents = (txs ?? []).reduce((s, t) => s + Math.round(Number(t.amount) * 100), 0);
-  const opening = (Math.round(Number(acc.bank_balance) * 100) - sumCents) / 100;
-  await supabase.from("fin_accounts").update({ opening_balance: opening }).eq("id", id).eq("household_id", household.id);
+  await matchOpeningToBank(supabase, household.id, id, Number(acc.bank_balance));
   refresh();
 }
