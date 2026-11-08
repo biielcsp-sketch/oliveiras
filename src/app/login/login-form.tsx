@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import clsx from "clsx";
 import { signIn, signUp, type AuthState } from "./actions";
 import { Button, Field, FormError, Input } from "@/components/ui";
+import { PasskeySignIn } from "./passkey-sign-in";
 
 export function LoginForm() {
   const [mode, setMode] = useState<"in" | "up">("in");
@@ -49,6 +50,8 @@ export function LoginForm() {
           {pending ? "Aguarde…" : mode === "in" ? "Entrar" : "Criar conta"}
         </Button>
       </form>
+
+      {mode === "in" && <PasskeySignIn />}
     </div>
   );
 }

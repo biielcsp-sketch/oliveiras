@@ -3,6 +3,7 @@ import { getAppContext } from "@/lib/data";
 import { ageFrom } from "@/lib/format";
 import { Button, Card, PageHeader } from "@/components/ui";
 import { AddDependentForm } from "./add-dependent-form";
+import { PasskeysSection } from "./passkeys";
 import { removeDependent, signOut } from "./actions";
 
 export const metadata = { title: "Família" };
@@ -75,6 +76,8 @@ export default async function FamiliaPage() {
           </p>
         </Card>
       )}
+
+      <PasskeysSection />
 
       <form action={signOut}>
         <Button variant="ghost" className="w-full">
