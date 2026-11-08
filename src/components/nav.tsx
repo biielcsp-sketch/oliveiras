@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
-import { CalendarDays, Mic, Moon, Sun } from "lucide-react";
+import Image from "next/image";
+import { CalendarDays, Moon, Sun } from "lucide-react";
 import {
   AGENDA,
   ASSISTANT,
@@ -103,7 +104,7 @@ function TabLink({ item, path }: { item: ModuleDef; path: string }) {
   );
 }
 
-/** Barra inferior no celular: faixa em onda com o botão do Oli elevado no centro. */
+/** Barra inferior no celular: faixa em onda com o mini Oli elevado no centro (leva ao Início, a tela do Oli). */
 export function BottomNav() {
   const path = usePathname();
   const oliActive = isActive(path, ASSISTANT.href);
@@ -133,11 +134,11 @@ export function BottomNav() {
             <li className="flex w-[84px] shrink-0 justify-center">
               <Link
                 href={ASSISTANT.href}
-                aria-label="Oli, assistente"
+                aria-label="Oli, tela inicial"
                 aria-current={oliActive ? "page" : undefined}
-                className="bg-hero -mt-12 grid size-16 place-items-center rounded-full text-on-primary shadow-soft ring-[6px] ring-[var(--nav-ring)] transition active:scale-95"
+                className="-mt-12 grid size-16 place-items-center overflow-hidden rounded-full bg-[#0a141c] shadow-soft ring-[6px] ring-[var(--nav-ring)] transition active:scale-95"
               >
-                <Mic size={26} strokeWidth={2} aria-hidden />
+                <Image src="/oli/oli-mini.webp" alt="" width={52} height={52} unoptimized className="size-[52px]" />
               </Link>
             </li>
             {MOBILE_NAV_RIGHT.map((item) => (

@@ -12,7 +12,9 @@ export function buildCsp(nonce: string, isDev: boolean) {
     "style-src-attr 'unsafe-inline'",
     "img-src 'self' blob: data:",
     "font-src 'self'",
-    `connect-src 'self' ${supabase}`.trim(),
+    // Oli: o navegador abre o WebSocket do Gemini Live direto (token efêmero emitido pelo servidor).
+    // Só o wss: o SDK não faz chamadas https a partir do navegador (o token é criado no servidor).
+    `connect-src 'self' ${supabase} wss://generativelanguage.googleapis.com`.replace(/\s+/g, " "),
     "worker-src 'self'",
     "manifest-src 'self'",
     "object-src 'none'",
@@ -35,6 +37,7 @@ export const STATIC_SECURITY_HEADERS = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=(), payment=(), usb=()" },
+  // microphone=(self): o Oli escuta pelo microfone só neste domínio (iframes de terceiros continuam bloqueados).
+  { key: "Permissions-Policy", value: "camera=(self), microphone=(self), geolocation=(), payment=(), usb=()" },
   { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
 ];

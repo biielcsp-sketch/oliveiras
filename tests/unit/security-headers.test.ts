@@ -21,6 +21,12 @@ describe("CSP", () => {
   it("libera service worker do próprio domínio", () => {
     expect(prod).toContain("worker-src 'self'");
   });
+  it("libera só o WebSocket do Gemini Live para o Oli (sem https genérico)", () => {
+    const connect = prod.split("; ").find((d) => d.startsWith("connect-src"))!;
+    expect(connect).toContain("wss://generativelanguage.googleapis.com");
+    expect(connect).not.toContain("https://generativelanguage.googleapis.com");
+    expect(connect).not.toMatch(/\s{2}/);
+  });
   it("nonce é único por chamada", () => {
     expect(createNonce()).not.toBe(createNonce());
   });
@@ -35,4 +41,9 @@ describe("headers fixos", () => {
     "Referrer-Policy",
     "Permissions-Policy",
   ])("inclui %s", (k) => expect(keys).toContain(k));
+  it("microfone só no próprio domínio (Oli)", () => {
+    const pp = STATIC_SECURITY_HEADERS.find((h) => h.key === "Permissions-Policy")!.value;
+    expect(pp).toContain("microphone=(self)");
+    expect(pp).not.toContain("microphone=*");
+  });
 });

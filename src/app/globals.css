@@ -225,7 +225,40 @@ dialog.calendar-dialog::backdrop {
   backdrop-filter: blur(6px);
 }
 
+/* Palco do Oli: largura total, quadrado até 56% da altura, bordas de cima/baixo suavizadas.
+   Fundo escuro nos dois temas: o avatar e o "universo digital" aprovados foram feitos sobre fundo escuro
+   (brilhos aditivos somem num fundo claro). Verde do protótipo sobre o azul-petróleo escuro do layout. */
+.oli-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  max-height: 56vh;
+  background:
+    radial-gradient(130% 100% at 50% 52%, rgb(60 170 115 / 0.34), rgb(30 100 70 / 0.16) 55%, rgb(20 60 45 / 0.05) 85%, transparent),
+    #0a141c;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 86%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 86%, transparent 100%);
+}
+
+/* Painel do Oli subindo ao aparecer */
+@keyframes oli-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.oli-rise {
+  animation: oli-rise 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .oli-rise {
+    animation: none;
+  }
   *,
   *::before,
   *::after {

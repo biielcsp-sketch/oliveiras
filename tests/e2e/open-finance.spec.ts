@@ -30,6 +30,14 @@ test("Open Finance: conectar item, vincular contas e sincronizar sem duplicar", 
     await expect(page).toHaveURL(/\/inicio$/);
   });
 
+  // Fica aqui porque esta é a família com o id autorizado (OLI_HOUSEHOLD_ID cai no PLUGGY_HOUSEHOLD_ID).
+  await test.step("Oli: família autorizada sem GEMINI_API_KEY → 503", async () => {
+    const res = await page.request.post("/api/oli/token");
+    expect(res.status()).toBe(503);
+    expect(await res.json()).toEqual({ error: "Oli não configurado." });
+    expect(res.headers()["cache-control"]).toContain("no-store");
+  });
+
   await test.step("conecta o item (recusa id inexistente)", async () => {
     await page.goto("/financas/open-finance");
     await page.getByLabel(/Id do item/).fill("aaaaaaaa-0000-4000-8000-000000000000");
@@ -132,6 +140,8 @@ test("Open Finance: conectar item, vincular contas e sincronizar sem duplicar", 
     await signUp(other, uniqueEmail("x"));
     await other.getByLabel("Seu nome").fill("Intruso");
     await other.locator("form").getByRole("button", { name: "Criar família" }).click();
+    // Espera o redirecionamento do cadastro terminar; senão ele sobrescreve a navegação seguinte.
+    await expect(other).toHaveURL(/\/inicio$/);
     await other.goto("/financas/open-finance");
     await expect(other.getByText("esta família ainda não foi autorizada")).toBeVisible();
     await expect(other.getByLabel(/Id do item/)).toHaveCount(0);
