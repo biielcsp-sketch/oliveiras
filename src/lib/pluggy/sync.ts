@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getAppContext } from "@/lib/data";
 import { todaySP } from "@/lib/financas/today";
 import { getItem, listAccounts, listTransactions, pluggyAllowedFor, pluggyConfigured, PluggyError } from "./client";
-import { bankBalanceToApp, buildSyncRows, itemHealthy, planSync, syncWindowStart } from "./normalize";
+import { bankBalanceToApp, buildSyncRows, consentExpired, itemHealthy, planSync, syncWindowStart } from "./normalize";
 
 export type SyncResult =
   | { status: "skipped"; reason: "nao-configurado" | "nao-autorizado" | "sem-conexoes" | "recente" }
@@ -46,7 +46,7 @@ export async function syncHousehold({ force }: { force: boolean }): Promise<Sync
         .eq("id", item.id)
         .eq("household_id", household.id);
       const nowIso = new Date().toISOString();
-      if (info.consentExpiresAt && info.consentExpiresAt <= nowIso) {
+      if (consentExpired(info.consentExpiresAt, nowIso)) {
         // Autorização vencida: as leituras vêm vazias. Não toca em nada até renovar.
         lastError = "Autorização vencida. Renove no dashboard da Pluggy (Demo → Connect Account → MeuPluggy).";
         throw new SkipItem();

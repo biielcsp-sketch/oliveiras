@@ -125,6 +125,13 @@ export function maskNumber(n: string | null | undefined) {
 /** Remoções só com item atualizado e autorização em dia. */
 export function itemHealthy(status: string | null | undefined, consentExpiresAt: string | null | undefined, nowIso: string) {
   if (status !== "UPDATED") return false;
-  if (consentExpiresAt && consentExpiresAt <= nowIso) return false;
+  if (consentExpired(consentExpiresAt, nowIso)) return false;
   return true;
+}
+
+/** Compara como data (aceita qualquer formato ISO, com ou sem fuso explícito). */
+export function consentExpired(consentExpiresAt: string | null | undefined, nowIso: string) {
+  if (!consentExpiresAt) return false;
+  const t = Date.parse(consentExpiresAt);
+  return Number.isFinite(t) && t <= Date.parse(nowIso);
 }

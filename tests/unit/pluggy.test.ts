@@ -114,6 +114,8 @@ describe("saúde do item", () => {
     ["LOGIN_ERROR", "2027-11-01T00:00:00.000Z", false],
     ["UPDATING", null, false],
     ["OUTDATED", null, false],
+    ["UPDATED", "2026-11-08T09:00:00-03:00", false], // mesmo instante em outro fuso
+    ["UPDATED", "2026-11-08T09:00:01-03:00", true],
   ] as const)("%s, consentimento até %s → %s", (status, exp, expected) => {
     expect(itemHealthy(status, exp, now)).toBe(expected);
   });
