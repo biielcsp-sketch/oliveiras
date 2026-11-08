@@ -444,3 +444,64 @@ describe("lançamento manual (validação compartilhada com o formulário)", () 
     expect(validateManualTransaction({ ...ok, date: "2026-02-31" })).toEqual({ error: "Data inválida." });
   });
 });
+
+describe("Oli 3D: renderizador por software liga o modo estático", () => {
+  it("reconhece SwiftShader, llvmpipe e afins; GPU de verdade não", async () => {
+    const { isSoftwareRendererName } = await import("@/components/oli/oli3d");
+    for (const n of [
+      "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "llvmpipe (LLVM 15.0.7, 256 bits)",
+      "Microsoft Basic Render Driver",
+      "Google SwiftShader",
+    ])
+      expect(isSoftwareRendererName(n)).toBe(true);
+    for (const n of ["ANGLE (Qualcomm, Adreno (TM) 730, OpenGL ES 3.2)", "Apple GPU", "Mali-G78"])
+      expect(isSoftwareRendererName(n)).toBe(false);
+  });
+});
+
+describe("Oli 3D: política de quadros", () => {
+  const base = {
+    idleReady: true,
+    staticMode: true,
+    active: false,
+    state: "idle" as const,
+    levelDelta: 0,
+    sinceLastMs: 1000,
+    capMs: 125,
+  };
+  it("nada é desenhado antes do idle, em nenhum modo", async () => {
+    const { framePolicy } = await import("@/components/oli/oli3d");
+    expect(framePolicy({ ...base, idleReady: false, active: true })).toBe("stop");
+    expect(framePolicy({ ...base, idleReady: false, staticMode: false })).toBe("stop");
+  });
+  it("modo normal desenha todo quadro; estático sem mudança não desenha", async () => {
+    const { framePolicy } = await import("@/components/oli/oli3d");
+    expect(framePolicy({ ...base, staticMode: false })).toBe("render");
+    expect(framePolicy(base)).toBe("stop");
+    expect(framePolicy({ ...base, state: "listen", levelDelta: 0.01 })).toBe("stop");
+    // voz mudando em repouso/pensando não conta
+    expect(framePolicy({ ...base, state: "think", levelDelta: 0.5 })).toBe("stop");
+  });
+  it("voz em ouvindo/falando desenha, respeitando o teto do modo estático", async () => {
+    const { framePolicy } = await import("@/components/oli/oli3d");
+    for (const state of ["listen", "speak"] as const) {
+      expect(framePolicy({ ...base, state, levelDelta: 0.05, sinceLastMs: 200 })).toBe("render");
+      expect(framePolicy({ ...base, state, levelDelta: 0.05, sinceLastMs: 40 })).toBe("wait");
+    }
+  });
+  it("interação/quadro devido desenha no teto", async () => {
+    const { framePolicy } = await import("@/components/oli/oli3d");
+    expect(framePolicy({ ...base, active: true })).toBe("render");
+    expect(framePolicy({ ...base, active: true, sinceLastMs: 50 })).toBe("wait");
+  });
+});
+
+describe("Oli 3D: sonda de GPU sem three.js", () => {
+  it("nome do renderizador vem da mesma regra usada no 3D", async () => {
+    const gpu = await import("@/components/oli/gpu");
+    const o3d = await import("@/components/oli/oli3d");
+    expect(o3d.isSoftwareRendererName).toBe(gpu.isSoftwareRendererName);
+    expect(gpu.isSoftwareRendererName("Google SwiftShader")).toBe(true);
+  });
+});

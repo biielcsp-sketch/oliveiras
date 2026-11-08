@@ -1,15 +1,20 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { Oli3D } from "./oli3d";
+import { probeWebGL } from "./gpu";
 
 /**
  * Palco do avatar 3D. O three.js só é baixado depois da primeira pintura
  * (import dinâmico em tempo ocioso), para não pesar o carregamento da tela.
+ * Sem GPU (renderizador por software), mostra a imagem estática do mesmo avatar: ali cada quadro
+ * WebGL trava a página por mais de um segundo.
  */
 export function OliStage({ apiRef }: { apiRef: RefObject<Oli3D | null> }) {
   const el = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState(false);
+  const [poster, setPoster] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -17,6 +22,9 @@ export function OliStage({ apiRef }: { apiRef: RefObject<Oli3D | null> }) {
     const load = () => {
       const container = el.current;
       if (!container || cancelled) return;
+      const gpu = probeWebGL();
+      if (gpu === "none") return setFailed(true);
+      if (gpu === "software") return setPoster(true);
       import("./oli3d")
         .then(({ createOli3D }) => createOli3D(container))
         .then((oli) => {
@@ -49,6 +57,16 @@ export function OliStage({ apiRef }: { apiRef: RefObject<Oli3D | null> }) {
 
   return (
     <div ref={el} className="oli-stage" data-testid="oli-stage">
+      {poster && (
+        <Image
+          src="/oli/oli-poster.webp"
+          alt="Oli, o assistente da família"
+          width={780}
+          height={780}
+          unoptimized
+          className="absolute inset-0 size-full object-contain"
+        />
+      )}
       {failed && (
         <p className="absolute inset-0 grid place-items-center p-6 text-center text-sm text-white/75">
           Não foi possível carregar o Oli em 3D neste aparelho. Você ainda pode conversar normalmente.

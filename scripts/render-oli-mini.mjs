@@ -1,10 +1,11 @@
-// Gera a imagem estática do mini Oli (barra inferior) a partir do próprio avatar 3D.
-// Renderiza src/components/oli/oli3d.ts (estado Repouso, de frente, sem cenário, fundo transparente)
-// no Chromium do Playwright e salva public/oli/oli-mini.webp (192 px).
+// Gera as imagens estáticas do Oli a partir do próprio avatar 3D (src/components/oli/oli3d.ts),
+// estado Repouso, de frente, em qualidade máxima, no Chromium do Playwright:
+// - public/oli/oli-mini.webp (192 px): só o robô, fundo transparente (barra inferior);
+// - public/oli/oli-poster.webp (780 px): robô + cenário, fundo transparente (palco em aparelhos sem GPU).
 // Dependências (já no projeto, só para este script): rolldown (empacota o oli3d.ts; vem com o vitest),
 // sharp (recorte e conversão; vem com o next), @playwright/test + Chromium (`npx playwright install chromium`).
 // Uso (só quando o avatar mudar), na raiz do repositório: node scripts/render-oli-mini.mjs
-// Saída: public/oli/oli-mini.webp (o PNG não é gerado: não é usado pelo app).
+// Saída: public/oli/oli-mini.webp e public/oli/oli-poster.webp.
 import { build } from "rolldown";
 import { chromium } from "@playwright/test";
 import sharp from "sharp";
@@ -24,16 +25,17 @@ try {
   });
 
   const html = `<!doctype html><html><body style="margin:0;background:transparent">
-<div id="c" style="width:640px;height:640px"></div>
+<div id="c" style="width:100vw;height:100vh"></div>
 <script type="module">
   import { createOli3D } from "/oli3d.js";
-  const oli = await createOli3D(document.getElementById("c"), { scenery: false });
+  const scenery = new URLSearchParams(location.search).get("scenery") === "1";
+  const oli = await createOli3D(document.getElementById("c"), { scenery, offline: true });
   oli.setState("idle");
-  setTimeout(() => (window.ready = true), 900);
+  setTimeout(() => (window.ready = true), 2000); // primeiro quadro só depois do idle (até 1 s)
 </script></body></html>`;
   const server = http
     .createServer((req, res) => {
-      if (req.url === "/oli3d.js") {
+      if (req.url.startsWith("/oli3d.js")) {
         res.writeHead(200, { "content-type": "text/javascript" });
         return res.end(readFileSync(join(dir, "oli3d.js")));
       }
@@ -45,9 +47,16 @@ try {
 
   const browser = await chromium.launch({ args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] });
   const page = await browser.newPage({ viewport: { width: 640, height: 640 }, deviceScaleFactor: 1 });
-  await page.goto(`http://127.0.0.1:${port}/`);
+  await page.goto(`http://127.0.0.1:${port}/?scenery=0`);
   await page.waitForFunction(() => window.ready === true, null, { timeout: 30_000 });
   const shot = await page.locator("#c").screenshot({ omitBackground: true });
+
+  // Pôster do palco: mesmo enquadramento do app (quadrado), 390 px em escala 2.
+  const posterPage = await browser.newPage({ viewport: { width: 390, height: 390 }, deviceScaleFactor: 2 });
+  await posterPage.goto(`http://127.0.0.1:${port}/?scenery=1`);
+  await posterPage.waitForFunction(() => window.ready === true, null, { timeout: 30_000 });
+  const poster = await posterPage.locator("#c").screenshot({ omitBackground: true });
+  await sharp(poster).webp({ quality: 80, alphaQuality: 90 }).toFile("public/oli/oli-poster.webp");
   await browser.close();
   server.close();
 
@@ -68,7 +77,7 @@ try {
   // Em etapa separada: no sharp o resize roda antes do extend dentro da mesma cadeia.
   const resized = await sharp(square).resize(SIZE, SIZE).toBuffer();
   await sharp(resized).webp({ quality: 90, alphaQuality: 100 }).toFile("public/oli/oli-mini.webp");
-  console.log("ok: public/oli/oli-mini.webp");
+  console.log("ok: public/oli/oli-mini.webp e public/oli/oli-poster.webp");
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }

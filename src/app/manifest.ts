@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Oliveira's",
-    short_name: "Oliveira's",
+    name: "Oli · Oliveira's",
+    short_name: "Oli",
     description: "A vida da família Oliveira Rodrigues em um só lugar.",
     lang: "pt-BR",
     start_url: "/inicio",

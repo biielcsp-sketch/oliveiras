@@ -10,7 +10,7 @@ export const metadata: Metadata = {
   title: { default: "Oliveira's", template: "%s · Oliveira's" },
   description: "A vida da família Oliveira Rodrigues em um só lugar.",
   applicationName: "Oliveira's",
-  appleWebApp: { capable: true, title: "Oliveira's", statusBarStyle: "default" },
+  appleWebApp: { capable: true, title: "Oli", statusBarStyle: "default" },
   icons: {
     icon: [{ url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }],
     apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180" }],

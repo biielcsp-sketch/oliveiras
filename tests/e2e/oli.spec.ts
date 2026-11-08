@@ -29,12 +29,21 @@ test("Início é a tela do Oli: palco 3D, controles e família não autorizada r
     await expect(page.getByText("Áreas da família")).toHaveCount(0);
   });
 
-  await test.step("avatar aparece em Repouso sem conectar (canvas WebGL ou aviso)", async () => {
+  await test.step("avatar aparece em Repouso sem conectar (3D, imagem estática sem GPU ou aviso)", async () => {
     const stage = page.getByTestId("oli-stage");
     await expect(stage).toBeVisible();
-    await expect(stage.locator("canvas").or(stage.getByText("Não foi possível carregar o Oli em 3D"))).toBeVisible({
-      timeout: 15_000,
-    });
+    await expect(
+      stage
+        .locator("canvas")
+        .or(stage.locator('img[src="/oli/oli-poster.webp"]'))
+        .or(stage.getByText("Não foi possível carregar o Oli em 3D")),
+    ).toBeVisible({ timeout: 15_000 });
+    // Sem GPU (Chromium headless usa SwiftShader), a imagem estática substitui o WebGL e carrega de verdade.
+    const poster = stage.locator('img[src="/oli/oli-poster.webp"]');
+    if (await poster.count()) {
+      await expect.poll(() => poster.evaluate((i: HTMLImageElement) => (i.complete ? i.naturalWidth : 0))).toBe(780);
+      await expect(stage.locator("canvas")).toHaveCount(0);
+    }
     await expect(page.getByTestId("oli-estado")).toHaveText("Repouso");
     await expect(page.getByRole("status").first()).toHaveText("Toque em Conversar para falar com o Oli");
     await expect(page.getByRole("button", { name: "Conversar" })).toBeVisible();
