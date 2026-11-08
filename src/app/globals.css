@@ -227,14 +227,14 @@ dialog.calendar-dialog::backdrop {
 
 /* Palco do Oli: largura total, quadrado até 56% da altura, bordas de cima/baixo suavizadas.
    Fundo escuro nos dois temas: o avatar e o "universo digital" aprovados foram feitos sobre fundo escuro
-   (brilhos aditivos somem num fundo claro). Verde do protótipo sobre o azul-petróleo escuro do layout. */
+   (brilhos aditivos somem num fundo claro). Azul do app (#1A79A8 → #0F5C82 → #06354F) sobre o fundo escuro do layout. */
 .oli-stage {
   position: relative;
   width: 100%;
   aspect-ratio: 1 / 1;
   max-height: 56vh;
   background:
-    radial-gradient(130% 100% at 50% 52%, rgb(60 170 115 / 0.34), rgb(30 100 70 / 0.16) 55%, rgb(20 60 45 / 0.05) 85%, transparent),
+    radial-gradient(130% 100% at 50% 52%, rgb(26 121 168 / 0.38), rgb(15 92 130 / 0.18) 55%, rgb(6 53 79 / 0.06) 85%, transparent),
     #0a141c;
   -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 86%, transparent 100%);
   mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 86%, transparent 100%);

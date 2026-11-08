@@ -1,4 +1,4 @@
-// Oli em 3D (versão aprovada no protótipo): robô preto espelhado com neon verde, olhos em anel,
+// Oli em 3D (versão aprovada no protótipo, recolorida no azul do app): robô preto espelhado com neon azul, olhos em anel,
 // folha de oliveira no topo e universo digital ao fundo.
 // Arrastar gira o robô (ele volta a olhar de frente); tocar nas partes faz o Oli reagir.
 // Este módulo só é carregado por import() dinâmico depois da primeira pintura (three fica em chunk próprio).
@@ -66,13 +66,13 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
     ec.width = 512; ec.height = 256;
     const g = ec.getContext("2d")!;
     const grd = g.createLinearGradient(0, 0, 0, 256);
-    grd.addColorStop(0, "#eaf4ec"); grd.addColorStop(0.45, "#16201a"); grd.addColorStop(1, "#040605");
+    grd.addColorStop(0, "#eaf4fb"); grd.addColorStop(0.45, "#13202b"); grd.addColorStop(1, "#030609");
     g.fillStyle = grd; g.fillRect(0, 0, 512, 256);
     g.fillStyle = "#ffffff";
     [[30, 36, 210, 74], [290, 26, 180, 60], [446, 70, 38, 130], [190, 120, 50, 26]].forEach((r) => g.fillRect(r[0], r[1], r[2], r[3]));
-    g.fillStyle = "#6bff9a"; g.fillRect(120, 150, 110, 30);
-    g.fillStyle = "#c8f06a"; g.fillRect(330, 130, 90, 40);
-    g.fillStyle = "#2fd68a"; g.fillRect(6, 104, 44, 70);
+    g.fillStyle = "#3fa6da"; g.fillRect(120, 150, 110, 30);
+    g.fillStyle = "#9fdcff"; g.fillRect(330, 130, 90, 40);
+    g.fillStyle = "#1a79a8"; g.fillRect(6, 104, 44, 70);
     const envTex = new THREE.CanvasTexture(ec);
     envTex.mapping = THREE.EquirectangularReflectionMapping;
     envTex.colorSpace = THREE.SRGBColorSpace;
@@ -87,10 +87,10 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
   const key = new THREE.DirectionalLight(0xffffff, 2.1);
   key.position.set(2.5, 3.5, 5);
   scene.add(key);
-  const rimL = new THREE.PointLight(0x7dffb0, 22, 14, 1.5);
+  const rimL = new THREE.PointLight(0x7fcdf5, 22, 14, 1.5);
   rimL.position.set(-4, 1.5, -2.5);
   scene.add(rimL);
-  const rimR = new THREE.PointLight(0xd8ffe0, 22, 14, 1.5);
+  const rimR = new THREE.PointLight(0xd7eefa, 22, 14, 1.5);
   rimR.position.set(4, 0.5, -2.5);
   scene.add(rimR);
 
@@ -160,17 +160,17 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
   waveTex.wrapS = THREE.RepeatWrapping;
 
   const bodyMat = new THREE.MeshPhysicalMaterial({ color: 0x040506, roughness: 0.1, metalness: 0.85, clearcoat: 1, clearcoatRoughness: 0.05, envMapIntensity: 2.4, bumpMap: waveTex, bumpScale: 1.2 });
-  const accentMat = new THREE.MeshPhysicalMaterial({ color: 0xdce6df, roughness: 0.12, metalness: 1, envMapIntensity: 2, side: THREE.DoubleSide });
-  const btnMat = new THREE.MeshPhysicalMaterial({ color: 0x0a1410, roughness: 0.1, metalness: 0.7, clearcoat: 1, clearcoatRoughness: 0.08, envMapIntensity: 2 });
-  // três grupos de neon em tons de verde
+  const accentMat = new THREE.MeshPhysicalMaterial({ color: 0xdce5ec, roughness: 0.12, metalness: 1, envMapIntensity: 2, side: THREE.DoubleSide });
+  const btnMat = new THREE.MeshPhysicalMaterial({ color: 0x08121a, roughness: 0.1, metalness: 0.7, clearcoat: 1, clearcoatRoughness: 0.08, envMapIntensity: 2 });
+  // três grupos de neon em tons do azul do app
   const mkSet = (c: number): NeonSet => ({
     base: new THREE.Color(c), cur: new THREE.Color(c),
     core: new THREE.MeshBasicMaterial({ color: c, toneMapped: false }),
     glow: new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.22, blending: add, depthWrite: false, toneMapped: false }),
   });
-  const setEye = mkSet(0xd2ff8a), setMouth = mkSet(0x3dff8f), setEar = mkSet(0xa6ffd0);
+  const setEye = mkSet(0x9fdcff), setMouth = mkSet(0x3fa6da), setEar = mkSet(0xc8ecff);
   const neonSets = [setEye, setMouth, setEar];
-  const screenMat = new THREE.MeshStandardMaterial({ color: 0x072a14, emissive: 0x2fd36a, emissiveIntensity: 0.8, roughness: 0.2, metalness: 0.1 });
+  const screenMat = new THREE.MeshStandardMaterial({ color: 0x06243a, emissive: 0x3fa6da, emissiveIntensity: 0.8, roughness: 0.2, metalness: 0.1 });
   const hitMat = new THREE.MeshBasicMaterial({ visible: false });
 
   function glyphDot() {
@@ -245,9 +245,9 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
   const mouth = neon(mouth2d.map(([x, y]) => new THREE.Vector3(x, y, zS(x, y) + 0.03)), false, 0.026, setMouth);
   bot.add(mouth);
 
-  // borda de vidro: brilho verde nas bordas do corpo
+  // borda de vidro: brilho azul nas bordas do corpo
   const rimMat = new THREE.ShaderMaterial({
-    uniforms: { uColor: { value: new THREE.Color(0x7dffa8) }, uInt: { value: 0.8 } },
+    uniforms: { uColor: { value: new THREE.Color(0x7fcdf5) }, uInt: { value: 0.8 } },
     vertexShader: "varying vec3 vN; varying vec3 vV; void main(){ vN = normalize(normalMatrix * normal); vec4 mv = modelViewMatrix * vec4(position,1.0); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }",
     fragmentShader: "uniform vec3 uColor; uniform float uInt; varying vec3 vN; varying vec3 vV; void main(){ float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 3.0); gl_FragColor = vec4(uColor * f * uInt, f * uInt); }",
     transparent: true, depthWrite: false, blending: add,
@@ -296,7 +296,7 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
   })();
   bot.add(chev);
 
-  // folha de oliveira: alongada, verde-prata, com nervura de neon (nasce no topo da cabeça)
+  // folha de oliveira: alongada, verde-prata (identidade do nome), com nervura de neon azul (nasce no topo da cabeça)
   const leafMat = new THREE.MeshPhysicalMaterial({ color: 0x5f9a58, roughness: 0.28, metalness: 0.55, clearcoat: 0.8, clearcoatRoughness: 0.15, envMapIntensity: 1.8, side: THREE.DoubleSide });
   const bendX = (y: number) => 0.3 * y * y;
   const leaf = new THREE.Group();
@@ -338,11 +338,11 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
   });
 
   // ---------- brilho de fundo e chão ----------
-  const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTex, color: 0x6fd08e, transparent: true, opacity: 0.32, depthWrite: false, blending: add }));
+  const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTex, color: 0x4ba3d4, transparent: true, opacity: 0.32, depthWrite: false, blending: add }));
   halo.scale.set(26, 26, 1);
   halo.position.set(0, 0, -1.6);
   scene.add(halo);
-  const floor = new THREE.Mesh(new THREE.CircleGeometry(1.5, 48), new THREE.MeshBasicMaterial({ map: dotTex, color: 0x6fd08e, transparent: true, opacity: 0.3, depthWrite: false, blending: add }));
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(1.5, 48), new THREE.MeshBasicMaterial({ map: dotTex, color: 0x4ba3d4, transparent: true, opacity: 0.3, depthWrite: false, blending: add }));
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(0, -1.32, 0.1);
   floor.scale.set(1.5, 1.5, 1);
@@ -351,12 +351,12 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
   // ---------- universo digital ao fundo (hologramas, dados, atmosfera) ----------
   const bg = new THREE.Group();
   scene.add(bg);
-  const PAL = [0x6bff9a, 0xd2ff8a, 0xa6ffd0, 0x3dff8f, 0x8fe8ff, 0xffffff];
+  const PAL = [0x3fa6da, 0x9fdcff, 0xc8ecff, 0x6cb8e8, 0xd7eefa, 0xffffff];
   const bgTint = new THREE.Color(0xffffff), bgTintAmber = new THREE.Color(0xffa860), bgTintNow = new THREE.Color(0xffffff);
 
   // névoas coloridas
   const nebulae: { sp: THREE.Sprite; ox: number; oy: number; o: number; ph: number }[] = [];
-  [[-3.2, 1.6, -6, 14, 0x2fd68a, 0.3], [3.4, -1.2, -7, 15, 0x1fa86a, 0.28], [0.4, 2.4, -8, 16, 0x9bd84a, 0.2], [-2.2, -2.4, -6, 12, 0x1f8f9a, 0.24], [2.8, 2.2, -7, 11, 0x37c98a, 0.2], [-5, 0, -8, 14, 0x2fd68a, 0.22], [5, 0.4, -8, 14, 0x3fe0a0, 0.22], [0, -3.4, -6, 14, 0x1fa86a, 0.24], [0, 0.2, -9, 22, 0x2a9a6a, 0.22]].forEach(([x, y, z, s, c, o]) => {
+  [[-3.2, 1.6, -6, 14, 0x1a79a8, 0.3], [3.4, -1.2, -7, 15, 0x0f5c82, 0.28], [0.4, 2.4, -8, 16, 0x3fa6da, 0.2], [-2.2, -2.4, -6, 12, 0x0f5c82, 0.24], [2.8, 2.2, -7, 11, 0x1a79a8, 0.2], [-5, 0, -8, 14, 0x1a79a8, 0.22], [5, 0.4, -8, 14, 0x2a8cc0, 0.22], [0, -3.4, -6, 14, 0x0f5c82, 0.24], [0, 0.2, -9, 22, 0x15699a, 0.22]].forEach(([x, y, z, s, c, o]) => {
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTex, color: c, transparent: true, opacity: o, depthWrite: false, blending: add }));
     sp.position.set(x, y, z); sp.scale.set(s, s, 1);
     bg.add(sp);
@@ -400,7 +400,7 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
     for (let i = 0; i < n; i++) items.push({ x: Math.round(rnd(-4.4, 4.4) / 0.35) * 0.35, y: rnd(-3.2, 3.2), z: rnd(-5.5, -2.6), v: rnd(0.3, 0.95) });
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    const pts = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0x6bff9a, size: 0.27, map: tex, transparent: true, opacity: 0.5, depthWrite: false, blending: add }));
+    const pts = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0x6cb8e8, size: 0.27, map: tex, transparent: true, opacity: 0.5, depthWrite: false, blending: add }));
     bg.add(pts);
     return { pts, items, n };
   });
@@ -413,7 +413,7 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
   const gridGeo = new THREE.BufferGeometry();
   gridGeo.setAttribute("position", new THREE.Float32BufferAttribute(gridPts, 3));
   const gridMat = new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color(0x3dff8f) }, uInt: { value: 1 } },
+    uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color(0x3fa6da) }, uInt: { value: 1 } },
     vertexShader: "varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
     fragmentShader: "uniform float uTime; uniform vec3 uColor; uniform float uInt; varying vec3 vP; void main(){ float d = length(vP.xz); float fade = 1.0 - smoothstep(2.0, 8.5, d); float wave = exp(-pow((fract(d * 0.14 - uTime * 0.22) - 0.5) * 9.0, 2.0)); float a = fade * (0.3 + 0.9 * wave) * uInt; gl_FragColor = vec4(uColor * a, a); }",
     transparent: true, depthWrite: false, blending: add,
@@ -431,7 +431,7 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
   const rings = [[1.35, 0.7, 0.16, 0.1, 0.55], [1.85, 0.5, 0.35, 0.18, -0.38], [2.4, 0.38, 0.1, 0.07, 0.25], [3.05, 0.26, 0.5, 0.25, -0.15]].map(([r, op, dash, gap, sp]) => {
     const pts: number[][] = [];
     for (let i = 0; i <= 160; i++) { const a = (i / 160) * TAU; pts.push([Math.cos(a) * r, Math.sin(a) * r]); }
-    const mat = new THREE.LineDashedMaterial({ color: 0x8dffc0, transparent: true, opacity: op, dashSize: dash, gapSize: gap, blending: add, depthWrite: false });
+    const mat = new THREE.LineDashedMaterial({ color: 0x9fdcff, transparent: true, opacity: op, dashSize: dash, gapSize: gap, blending: add, depthWrite: false });
     const ln = new THREE.Line(new THREE.BufferGeometry().setFromPoints(flat(pts)), mat);
     ln.computeLineDistances();
     floorG.add(ln);
@@ -440,7 +440,7 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
   });
   const tickPts: THREE.Vector3[] = [];
   for (let i = 0; i < 120; i++) { const a = (i / 120) * TAU, r1 = 3.35, r2 = i % 6 === 0 ? 3.6 : 3.47; tickPts.push(new THREE.Vector3(Math.cos(a) * r1, 0, Math.sin(a) * r1), new THREE.Vector3(Math.cos(a) * r2, 0, Math.sin(a) * r2)); }
-  const ticks = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(tickPts), new THREE.LineBasicMaterial({ color: 0x8dffc0, transparent: true, opacity: 0.35, blending: add, depthWrite: false }));
+  const ticks = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(tickPts), new THREE.LineBasicMaterial({ color: 0x9fdcff, transparent: true, opacity: 0.35, blending: add, depthWrite: false }));
   floorG.add(ticks);
   ringMats.push(ticks.material);
 
@@ -451,11 +451,11 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
   for (let i = 0; i < PXN; i++) pxItems.push({ x: rnd(-6.5, 6.5), y: rnd(-4.2, 4.2), z: rnd(-8, -1.5), v: rnd(0.05, 0.3), ph: rnd(0, 6.28) });
   const pxGeo = new THREE.BufferGeometry();
   pxGeo.setAttribute("position", new THREE.BufferAttribute(pxPos, 3));
-  const pixels = new THREE.Points(pxGeo, new THREE.PointsMaterial({ color: 0x9dffc8, size: 0.075, transparent: true, opacity: 0.7, depthWrite: false, blending: add, sizeAttenuation: true }));
+  const pixels = new THREE.Points(pxGeo, new THREE.PointsMaterial({ color: 0xc8ecff, size: 0.075, transparent: true, opacity: 0.7, depthWrite: false, blending: add, sizeAttenuation: true }));
   bg.add(pixels);
 
   // faixa de varredura holográfica
-  const scan = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTex, color: 0x6bff9a, transparent: true, opacity: 0.1, depthWrite: false, blending: add }));
+  const scan = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTex, color: 0x6cb8e8, transparent: true, opacity: 0.1, depthWrite: false, blending: add }));
   scan.scale.set(11, 0.35, 1);
   scan.position.z = -2.4;
   bg.add(scan);
@@ -490,7 +490,7 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
   let lookX = 0, lookY = 0, tLookX = 0, tLookY = 0, lastPtr = 0, wanderAt = 0;
   let blinkT = -1, nextBlink = 2, flash = 0;
   const whiteC = new THREE.Color(0xffffff), amberC = new THREE.Color(0xff9a2a), tmpC = new THREE.Color();
-  const haloIdle = new THREE.Color(0x6fd08e), haloAmber = new THREE.Color(0xff9a2a);
+  const haloIdle = new THREE.Color(0x4ba3d4), haloAmber = new THREE.Color(0xff9a2a);
 
   function resize() {
     const r = container.getBoundingClientRect();
@@ -669,7 +669,7 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
     rimL.intensity = 20 + lvlSm * 14 + flash * 10;
     rimR.intensity = 20 + lvlSm * 14 + flash * 10;
     screenMat.emissiveIntensity = 0.5 + (speaking ? lvlSm * 2 : 0) + (thinking ? 0.6 + 0.6 * Math.sin(t * 6) : 0) + flash;
-    screenMat.emissive.setHex(thinking ? 0xc8701a : 0x2fd36a);
+    screenMat.emissive.setHex(thinking ? 0xc8701a : 0x3fa6da);
 
     // olhos: seguem o dedo, piscam, pupila reage
     if (now - lastPtr > 2500 && now > wanderAt) { tLookX = (Math.random() - 0.5) * 0.28; tLookY = (Math.random() - 0.5) * 0.2; wanderAt = now + 2200; }
@@ -716,7 +716,7 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
         a.setXYZ(i, q.x, q.y, q.z);
       }
       a.needsUpdate = true;
-      R.pts.material.color.set(thinking ? 0xffa860 : 0x6bff9a);
+      R.pts.material.color.set(thinking ? 0xffa860 : 0x6cb8e8);
       R.pts.material.opacity = 0.45 + bgLvl * 0.3;
     });
     gridMat.uniforms.uTime.value = t * (speaking ? 1.8 : thinking ? 1.4 : 1);
@@ -733,7 +733,7 @@ export async function createOli3D(container: HTMLElement, opts: { scenery?: bool
         pa.setXYZ(i, q.x + Math.sin(t * 0.4 + q.ph) * 0.12, q.y, q.z);
       }
       pa.needsUpdate = true;
-      pixels.material.color.set(thinking ? 0xffb070 : 0x9dffc8);
+      pixels.material.color.set(thinking ? 0xffb070 : 0xc8ecff);
       pixels.material.opacity = 0.55 + bgLvl * 0.35 + flash * 0.2;
     }
     ringMats.forEach((m) => m.color.copy(thinking ? amberC : setEar.base));
