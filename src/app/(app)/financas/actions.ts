@@ -121,9 +121,13 @@ export async function saveAccount(_: FormState, form: FormData): Promise<FormSta
 
   const supabase = await createClient();
   const id = optUuid(str(form, "id"));
+  // Cartão não tem campo de saldo inicial no formulário: ao editar, preserva o valor
+  // (pode ter sido ajustado para bater com o saldo do banco).
+  const { opening_balance, ...rest } = data;
+  const updateData = isCard ? rest : data;
   const { error } = id
-    ? await supabase.from("fin_accounts").update(data).eq("id", id).eq("household_id", household.id)
-    : await supabase.from("fin_accounts").insert({ ...data, household_id: household.id });
+    ? await supabase.from("fin_accounts").update(updateData).eq("id", id).eq("household_id", household.id)
+    : await supabase.from("fin_accounts").insert({ ...rest, opening_balance, household_id: household.id });
   if (error) return { error: "Não foi possível salvar a conta." };
 
   refresh();

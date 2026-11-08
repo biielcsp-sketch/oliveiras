@@ -20,7 +20,9 @@ export const getFinanceBase = cache(async () => {
   const [accounts, balances, categories, rules] = await Promise.all([
     supabase
       .from("fin_accounts")
-      .select("id, name, kind, institution, owner_member_id, opening_balance, credit_limit, closing_day, due_day, archived")
+      .select(
+        "id, name, kind, institution, owner_member_id, opening_balance, credit_limit, closing_day, due_day, archived, external_id, pluggy_item_ref, sync_from, bank_balance, bank_balance_at",
+      )
       .eq("household_id", household.id)
       .order("archived")
       .order("name"),
@@ -35,6 +37,7 @@ export const getFinanceBase = cache(async () => {
       ...a,
       opening_balance: Number(a.opening_balance),
       credit_limit: a.credit_limit === null ? null : Number(a.credit_limit),
+      bank_balance: a.bank_balance === null ? null : Number(a.bank_balance),
       balance: balanceById.get(a.id) ?? Number(a.opening_balance),
     })) as Account[],
     categories: (categories.data ?? []) as Category[],

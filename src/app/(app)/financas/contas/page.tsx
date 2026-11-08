@@ -33,7 +33,11 @@ export default async function ContasPage() {
                       {a.institution && ` · ${a.institution}`}
                       {` · ${a.owner_member_id ? memberName.get(a.owner_member_id) : "Conjunta"}`}
                       {a.archived && " · arquivada"}
+                      {a.external_id && " · Open Finance"}
                     </p>
+                    {a.bank_balance !== null && Math.round(a.bank_balance * 100) !== Math.round(a.balance * 100) && (
+                      <p className="text-[12px] text-danger">Banco informa {formatBRL(a.bank_balance)}</p>
+                    )}
                   </div>
                   <span className={`tabular-nums ${a.balance < 0 ? "text-danger" : ""}`}>{formatBRL(a.balance)}</span>
                   <ChevronRight size={16} className="text-muted" />

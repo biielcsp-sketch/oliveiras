@@ -26,6 +26,11 @@ export type Account = {
   due_day: number | null;
   archived: boolean;
   balance: number;
+  external_id: string | null;
+  pluggy_item_ref: string | null;
+  sync_from: string | null;
+  bank_balance: number | null;
+  bank_balance_at: string | null;
 };
 
 export const ACCOUNT_KIND_LABEL: Record<AccountKind, string> = {
