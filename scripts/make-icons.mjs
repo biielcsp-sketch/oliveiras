@@ -1,17 +1,16 @@
-// Gera os ícones PNG do PWA a partir da marca (ramo de oliveira).
+// Gera o ícone da aba (src/app/icon.png) a partir da marca (ramo de oliveira).
+// Os ícones do PWA (public/icons/) agora são do Oli: veja scripts/render-oli-icons.mjs.
 // Uso: node scripts/make-icons.mjs
 import sharp from "sharp";
-import { mkdirSync } from "node:fs";
 
 const OLIVE = "#556b2f";
 const BG = "#f7f7f3";
 const SOFT = "#c9d6a3";
 
-function svg({ maskable = false } = {}) {
-  // Na versão maskable a arte encolhe para caber na zona segura (80%).
-  const s = maskable ? 0.7 : 1;
-  const t = (64 - 64 * s) / 2;
-  const radius = maskable ? 0 : 14;
+function svg() {
+  const s = 1;
+  const t = 0;
+  const radius = 14;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <rect width="64" height="64" rx="${radius}" fill="${OLIVE}"/>
   <g transform="translate(${t} ${t}) scale(${s})">
@@ -24,16 +23,5 @@ function svg({ maskable = false } = {}) {
 </svg>`;
 }
 
-mkdirSync("public/icons", { recursive: true });
-const jobs = [
-  ["icon-192.png", 192, false],
-  ["icon-512.png", 512, false],
-  ["icon-maskable-512.png", 512, true],
-  ["apple-touch-icon.png", 180, true],
-];
-for (const [name, size, maskable] of jobs) {
-  await sharp(Buffer.from(svg({ maskable }))).resize(size, size).png().toFile(`public/icons/${name}`);
-  console.log("ok", name);
-}
 await sharp(Buffer.from(svg())).resize(48, 48).png().toFile("src/app/icon.png");
 console.log("ok src/app/icon.png");

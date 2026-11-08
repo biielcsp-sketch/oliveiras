@@ -1,6 +1,7 @@
 import { getAppContext } from "@/lib/data";
 import { BottomNav, MobileTopBar, Sidebar } from "@/components/nav";
 import { Plexus } from "@/components/plexus";
+import { InstallPrompt } from "@/components/install-prompt";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const { household } = await getAppContext();
@@ -16,6 +17,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </main>
       </div>
       <BottomNav />
+      <InstallPrompt />
     </div>
   );
 }
