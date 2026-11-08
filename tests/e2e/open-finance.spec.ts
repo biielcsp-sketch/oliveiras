@@ -17,7 +17,7 @@ test("Open Finance: conectar item, vincular contas e sincronizar sem duplicar", 
   test.setTimeout(120_000);
   const problems = watchConsole(page);
   await request.post(`${MOCK}/__scenario/1`);
-  const { today } = await (await request.get(`${MOCK}/__today`)).json();
+  const { today, old } = await (await request.get(`${MOCK}/__today`)).json();
   const month = today.slice(0, 7);
 
   await test.step("família autorizada entra", async () => {
@@ -62,6 +62,22 @@ test("Open Finance: conectar item, vincular contas e sincronizar sem duplicar", 
     expect(t).toContain("SALARIO EMPRESA");
     expect(t).toMatch(/IFOOD \*LOJA.*-R\$ 45,90/); // compra no cartão vira saída
     expect(t).toMatch(/MERCADO PENDENTE.*-R\$ 120,00/);
+
+    // Regressão: a primeira leitura trazia só 60 dias, apesar do início em 90 dias atrás.
+    await page.goto(`/financas/lancamentos?mes=${old.slice(0, 7)}`);
+    expect(await text(page)).toContain("ALUGUEL ANTIGO");
+  });
+
+  // Regressão: o saldo da conta vinculada era saldo inicial 0 + lançamentos importados,
+  // e não batia com o banco.
+  await test.step("saldo das contas vinculadas bate com o banco sem ajuste manual", async () => {
+    await page.goto("/financas/contas");
+    const conta = page.locator("li").filter({ hasText: "Conta Teste" });
+    await expect(conta).toContainText("R$ 4.864,50");
+    await expect(conta).not.toContainText("Banco informa");
+    const cartao = page.locator("li").filter({ hasText: "Cartão Teste" });
+    await expect(cartao).toContainText("-R$ 65,90");
+    await expect(cartao).not.toContainText("Banco informa");
   });
 
   await test.step("dia seguinte: pendente vira lançado, fatura reapresentada, item removido", async () => {
@@ -89,7 +105,21 @@ test("Open Finance: conectar item, vincular contas e sincronizar sem duplicar", 
     await request.post(`${MOCK}/__scenario/2`);
   });
 
-  await test.step("ajusta o saldo inicial para bater com o banco", async () => {
+  await test.step("depois das mudanças do dia seguinte, o saldo continua batendo", async () => {
+    await page.goto("/financas/contas");
+    const conta = page.locator("li").filter({ hasText: "Conta Teste" });
+    await expect(conta).toContainText("R$ 4.864,50");
+    await expect(conta).not.toContainText("Banco informa");
+  });
+
+  await test.step("lançamento manual entre sincronizações: botão ajusta o saldo inicial", async () => {
+    await page.goto("/financas/lancamentos/novo");
+    await page.getByLabel("Valor (R$)").fill("10,00");
+    await page.getByLabel("Data", { exact: true }).fill(today);
+    await page.getByLabel("Descrição", { exact: true }).fill("Ajuste manual");
+    await page.locator('select[name="account_id"]').selectOption({ label: "Conta Teste" });
+    await page.getByRole("button", { name: "Lançar" }).click();
+    await expect(page.getByText("Ajuste manual")).toBeVisible();
     await page.goto("/financas/contas");
     await expect(page.locator("li").filter({ hasText: "Conta Teste" })).toContainText("Banco informa R$ 4.864,50");
     await page.getByRole("link", { name: /Conta Teste/ }).click();

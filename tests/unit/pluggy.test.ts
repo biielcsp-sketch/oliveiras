@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   itemHealthy,
-  accountKindFrom, bankBalanceToApp, buildSyncRows, defaultSyncFrom, maskNumber, planSync, syncWindowStart, toAppAmount,
+  accountKindFrom, bankBalanceToApp, buildSyncRows, defaultSyncFrom, maskNumber, openingToMatchBank, planSync, syncFetchStart,
+  syncWindowStart, toAppAmount,
 } from "@/lib/pluggy/normalize";
 
 const tx = (o: Partial<Parameters<typeof toAppAmount>[0]> & Record<string, unknown>) => ({
@@ -75,6 +76,11 @@ describe("plano de sincronização", () => {
     expect(plan.updates).toHaveLength(1);
   });
 
+  it("histórico antigo fora da janela recente nunca é apagado", () => {
+    expect(planSync(existing, incoming, { allowDeletes: true, deleteFrom: "2026-11-04" }).deletes).toEqual([]);
+    expect(planSync(existing, incoming, { allowDeletes: true, deleteFrom: "2026-11-03" }).deletes).toEqual(["3"]);
+  });
+
   it("nada muda quando já está igual", () => {
     expect(planSync(existing.slice(0, 1), incoming.slice(0, 1))).toEqual({ inserts: [], updates: [], deletes: [] });
   });
@@ -102,6 +108,36 @@ describe("período", () => {
     expect(syncWindowStart("2026-11-07", "2026-11-08")).toBe("2026-11-07");
     expect(syncWindowStart("2026-01-01", "2026-11-08")).toBe("2026-09-09");
     expect(syncWindowStart(null, "2026-11-08")).toBe("2026-09-09");
+  });
+});
+
+// Regressão: a primeira sincronização trazia só 60 dias, apesar do início em 90 dias atrás.
+describe("início da leitura", () => {
+  it("sem histórico importado, lê desde o início escolhido", () => {
+    expect(syncFetchStart("2026-08-10", "2026-11-08", null)).toBe("2026-08-10");
+  });
+  it("histórico incompleto (mais antigo depois do início), lê desde o início", () => {
+    expect(syncFetchStart("2026-08-10", "2026-11-08", "2026-09-09")).toBe("2026-08-10");
+  });
+  it("histórico completo, só a janela recente", () => {
+    expect(syncFetchStart("2026-08-10", "2026-11-08", "2026-08-10")).toBe("2026-09-09");
+  });
+  it("início dentro da janela recente fica como está", () => {
+    expect(syncFetchStart("2026-11-01", "2026-11-08", null)).toBe("2026-11-01");
+  });
+});
+
+// Regressão: conta vinculada mostrava saldo inicial 0 + lançamentos importados
+// em vez do saldo informado pelo banco.
+describe("saldo inicial para bater com o banco", () => {
+  it("saldo inicial absorve a diferença", () => {
+    expect(openingToMatchBank(-100, 0, -1500)).toBe(1400);
+  });
+  it("já batendo, não muda", () => {
+    expect(openingToMatchBank(13.63, 14.2, 13.63)).toBe(14.2);
+  });
+  it("sem erro de arredondamento", () => {
+    expect(openingToMatchBank(0.3, 0.1, 0.2)).toBe(0.2);
   });
 });
 

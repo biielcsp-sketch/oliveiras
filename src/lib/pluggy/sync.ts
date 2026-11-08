@@ -3,7 +3,9 @@ import { createClient } from "@/lib/supabase/server";
 import { getAppContext } from "@/lib/data";
 import { todaySP } from "@/lib/financas/today";
 import { getItem, listAccounts, listTransactions, pluggyAllowedFor, pluggyConfigured, PluggyError } from "./client";
-import { bankBalanceToApp, buildSyncRows, consentExpired, itemHealthy, planSync, syncWindowStart } from "./normalize";
+import {
+  bankBalanceToApp, buildSyncRows, consentExpired, itemHealthy, openingToMatchBank, planSync, syncFetchStart, syncWindowStart,
+} from "./normalize";
 
 export type SyncResult =
   | { status: "skipped"; reason: "nao-configurado" | "nao-autorizado" | "sem-conexoes" | "recente" }
@@ -70,13 +72,24 @@ export async function syncHousehold({ force }: { force: boolean }): Promise<Sync
           lastError = "Uma conta vinculada não aparece mais na Pluggy.";
           continue;
         }
+        const bankBalance = bankBalanceToApp(r);
         await supabase
           .from("fin_accounts")
-          .update({ bank_balance: bankBalanceToApp(r), bank_balance_at: new Date().toISOString() })
+          .update({ bank_balance: bankBalance, bank_balance_at: new Date().toISOString() })
           .eq("id", acc.id)
           .eq("household_id", household.id);
 
-        const windowStart = syncWindowStart(acc.sync_from, today);
+        const { data: oldest } = await supabase
+          .from("fin_transactions")
+          .select("date")
+          .eq("household_id", household.id)
+          .eq("account_id", acc.id)
+          .eq("source", "openfinance")
+          .order("date", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        const recentStart = syncWindowStart(acc.sync_from, today);
+        const windowStart = syncFetchStart(acc.sync_from, today, oldest?.date ?? null);
         const rows = buildSyncRows(await listTransactions(r.id, windowStart), rules ?? []);
         const { data: existing } = await supabase
           .from("fin_transactions")
@@ -89,7 +102,7 @@ export async function syncHousehold({ force }: { force: boolean }): Promise<Sync
         const plan = planSync(
           (existing ?? []).map((e) => ({ ...e, amount: Number(e.amount) })),
           rows,
-          { allowDeletes },
+          { allowDeletes, deleteFrom: recentStart },
         );
 
         for (let i = 0; i < plan.inserts.length; i += 500) {
@@ -127,6 +140,10 @@ export async function syncHousehold({ force }: { force: boolean }): Promise<Sync
             .eq("source", "openfinance");
           if (!error) removed += ids.length;
         }
+
+        // Conta vinculada: o banco é a fonte do saldo. O saldo inicial absorve o que
+        // aconteceu antes do primeiro lançamento importado, para o saldo do app bater.
+        await matchOpeningToBank(supabase, household.id, acc.id, bankBalance);
       }
     } catch (e) {
       if (!(e instanceof SkipItem)) lastError = e instanceof PluggyError ? e.message : "Falha ao sincronizar esta conexão.";
@@ -139,4 +156,20 @@ export async function syncHousehold({ force }: { force: boolean }): Promise<Sync
       .eq("household_id", household.id);
   }
   return { status: "done", inserted, updated, removed, errors };
+}
+
+type Db = Awaited<ReturnType<typeof createClient>>;
+
+/** Ajusta o saldo inicial para o saldo do app bater com o do banco. */
+export async function matchOpeningToBank(supabase: Db, householdId: string, accountId: string, bankBalance: number) {
+  const [{ data: acc }, { data: bal }] = await Promise.all([
+    supabase.from("fin_accounts").select("opening_balance").eq("id", accountId).eq("household_id", householdId).maybeSingle(),
+    supabase.from("fin_account_balances").select("balance").eq("account_id", accountId).eq("household_id", householdId).maybeSingle(),
+  ]);
+  if (!acc || !bal) return;
+  await supabase
+    .from("fin_accounts")
+    .update({ opening_balance: openingToMatchBank(bankBalance, Number(acc.opening_balance), Number(bal.balance)) })
+    .eq("id", accountId)
+    .eq("household_id", householdId);
 }
