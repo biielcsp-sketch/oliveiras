@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { connection } from "next/server";
-import { GeistSans } from "geist/font/sans";
-import { GeistMono } from "geist/font/mono";
+import "@fontsource-variable/inter";
 import { RegisterSW } from "@/components/register-sw";
 import "./globals.css";
 
@@ -21,8 +20,8 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f7f7f3" },
-    { media: "(prefers-color-scheme: dark)", color: "#121310" },
+    { media: "(prefers-color-scheme: light)", color: "#eef1f4" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a141c" },
   ],
 };
 
@@ -32,7 +31,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html
       lang="pt-BR"
-      className={`${GeistSans.variable} ${GeistMono.variable} h-full antialiased`}
+      className="h-full antialiased"
     >
       <body className="min-h-full font-sans">
         {children}

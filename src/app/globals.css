@@ -1,44 +1,138 @@
 @import "tailwindcss";
 
-/* Oliveira's — tokens de design (claro / escuro) */
+/*
+ * Oliveira's — tokens de design (claro / escuro).
+ * Linguagem visual: vidro claro, azul petróleo, pílulas e cards de 24px.
+ * Nomes antigos (--olive, --olive-soft) continuam valendo e apontam para o azul.
+ * Contraste (WCAG AA ≥ 4.5:1) conferido por cálculo para texto sobre bg, surface e surface-2.
+ */
 :root {
-  --bg: #f7f7f3;
-  --surface: #ffffff;
-  --surface-2: #f0f0ea;
-  --line: #e4e4dc;
-  --ink: #1b1c18;
-  --muted: #5c5e55;
-  --olive: #556b2f;
-  --olive-soft: #e8edd9;
-  --danger: #b4432f;
+  --bg: #eef1f4;
+  --bg-glow: #ffffff;
+  --surface: rgb(255 255 255 / 0.78);
+  --surface-solid: #fbfcfd;
+  --surface-2: #e3e8ec;
+  --line: #dce3e9;
+  --ink: #14212b;
+  --muted: #56626d;
+
+  --primary: #0b4a6b;
+  --on-primary: #ffffff;
+  --hero-from: #0f5c82;
+  --hero-to: #06354f;
+  --accent-soft: #d7eefa;
+  --link: #1667b0;
+  /* texto de erro: #C42B30 (4,96:1 sobre bg); o badge usa #D93338 com texto branco (4,69:1) */
+  --danger: #c42b30;
+  --badge: #d93338;
+  --on-badge: #ffffff;
+  --warning-soft: #faf1d6;
+  --warning: #7a5e0c;
+  /* texto secundário dentro do card escuro (4,95:1 sobre #0F5C82) */
+  --info: #a8dcf5;
+
+  --nav-from: #e4f3fc;
+  --nav-to: #bfe2f5;
+  --nav-ring: #f4fafe;
+  --round-edge: #9cc6de;
+  --plexus: #5b9cc4;
+  --shadow-card: 0 10px 30px rgb(20 40 60 / 0.08);
+  --shadow-soft: 0 6px 16px rgb(20 40 60 / 0.1);
+  --backdrop: rgb(20 33 43 / 0.28);
+
+  /* aliases antigos */
+  --olive: var(--primary);
+  --olive-soft: var(--accent-soft);
+  color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #121310;
-    --surface: #1a1b17;
-    --surface-2: #22241f;
-    --line: #2e3029;
-    --ink: #ecede6;
-    --muted: #9a9c91;
-    --olive: #a3b86c;
-    --olive-soft: #2a3220;
-    --danger: #e0785f;
+    --bg: #0a141c;
+    --bg-glow: #123349;
+    --surface: rgb(19 33 45 / 0.78);
+    --surface-solid: #13212d;
+    --surface-2: #172836;
+    --line: #213547;
+    --ink: #e6eef4;
+    --muted: #96a7b5;
+
+    --primary: #3fa6da;
+    --on-primary: #ffffff;
+    /* #1A79A8 escurecido para #156690: texto info passa de 3,8:1 para 5,0:1 */
+    --hero-from: #156690;
+    --hero-to: #0b4a6b;
+    --accent-soft: #123349;
+    --link: #6cb8e8;
+    --danger: #ff6b6e;
+    --badge: #d93338;
+    --on-badge: #ffffff;
+    --warning-soft: #3a3115;
+    --warning: #f0d27a;
+    --info: #c8eafb;
+
+    --nav-from: #0f2433;
+    --nav-to: #0f3550;
+    --nav-ring: #0a141c;
+    --round-edge: #1f4a66;
+    --plexus: #3fa6da;
+    --shadow-card: 0 10px 30px rgb(0 0 0 / 0.35);
+    --shadow-soft: 0 6px 16px rgb(0 0 0 / 0.4);
+    --backdrop: rgb(0 0 0 / 0.5);
+    color-scheme: dark;
   }
 }
 
 @theme inline {
   --color-bg: var(--bg);
   --color-surface: var(--surface);
+  --color-surface-solid: var(--surface-solid);
   --color-surface-2: var(--surface-2);
   --color-line: var(--line);
   --color-ink: var(--ink);
   --color-muted: var(--muted);
   --color-olive: var(--olive);
   --color-olive-soft: var(--olive-soft);
+  --color-primary: var(--primary);
+  --color-on-primary: var(--on-primary);
+  --color-accent-soft: var(--accent-soft);
+  --color-link: var(--link);
   --color-danger: var(--danger);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-badge: var(--badge);
+  --color-on-badge: var(--on-badge);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-info: var(--info);
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* Gradiente de destaque (botão primário, card escuro, botão do Oli) */
+@utility bg-hero {
+  background-color: var(--hero-to);
+  background-image: linear-gradient(145deg, var(--hero-from), var(--hero-to));
+}
+
+/* Card de vidro */
+@utility glass {
+  background-color: var(--surface);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+
+@utility shadow-card {
+  box-shadow: var(--shadow-card);
+}
+
+@utility shadow-soft {
+  box-shadow: var(--shadow-soft);
+}
+
+/* Botão redondo com borda inferior azulada (sino/voltar da referência) */
+@utility shadow-round {
+  box-shadow:
+    inset 0 -2px 0 var(--round-edge),
+    var(--shadow-soft);
 }
 
 html {
@@ -46,14 +140,45 @@ html {
 }
 
 body {
-  background: var(--bg);
+  background-color: var(--bg);
+  background-image: radial-gradient(120% 420px at 50% -120px, var(--bg-glow) 0%, transparent 70%);
+  background-repeat: no-repeat;
   color: var(--ink);
 }
 
-/* Espaço para a barra inferior + área segura do iPhone */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Espaço para a barra inferior (onda + botão do Oli) + área segura do iPhone */
 .pb-nav {
-  padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
+  padding-bottom: calc(7rem + env(safe-area-inset-bottom));
 }
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Faixa da barra inferior em onda */
+.nav-stop-from {
+  stop-color: var(--nav-from);
+}
+.nav-stop-to {
+  stop-color: var(--nav-to);
+}
+
+/* Calendário modal */
+dialog.calendar-dialog::backdrop {
+  background: var(--backdrop);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }

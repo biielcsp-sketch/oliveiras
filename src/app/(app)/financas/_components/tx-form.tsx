@@ -32,7 +32,7 @@ export function TxForm({ accounts, categories, members, defaultMemberId, today, 
       {tx && <input type="hidden" name="id" value={tx.id} />}
       <input type="hidden" name="direction" value={direction} />
 
-      <div className="grid grid-cols-2 rounded-xl bg-surface-2 p-1 text-sm" role="radiogroup" aria-label="Tipo">
+      <div className="grid grid-cols-2 rounded-full bg-surface-2 p-1 text-[15px]" role="radiogroup" aria-label="Tipo">
         {(["saida", "entrada"] as const).map((d) => (
           <button
             key={d}
@@ -40,7 +40,7 @@ export function TxForm({ accounts, categories, members, defaultMemberId, today, 
             role="radio"
             aria-checked={direction === d}
             onClick={() => setDirection(d)}
-            className={clsx("h-9 rounded-lg transition", direction === d ? "bg-surface font-medium shadow-sm" : "text-muted")}
+            className={clsx("h-11 rounded-full transition", direction === d ? "bg-surface-solid font-medium text-ink shadow-soft" : "text-muted")}
           >
             {d === "saida" ? "Saída" : "Entrada"}
           </button>

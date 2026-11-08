@@ -46,7 +46,7 @@ export default async function FamiliaPage() {
                     <input type="hidden" name="id" value={m.id} />
                     <button
                       aria-label={`Remover ${m.name}`}
-                      className="grid size-9 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-danger"
+                      className="grid size-11 place-items-center rounded-full text-muted hover:bg-surface-2 hover:text-danger"
                     >
                       <Trash2 size={16} />
                     </button>
@@ -70,7 +70,7 @@ export default async function FamiliaPage() {
           <p className="mt-1 text-sm text-muted">
             Ela cria a conta no app e, na tela de boas-vindas, escolhe &quot;Entrar com código&quot;.
           </p>
-          <p className="mt-4 select-all rounded-xl bg-surface-2 py-3 text-center font-mono text-2xl tracking-[0.3em]">
+          <p className="mt-4 select-all rounded-2xl bg-surface-2 py-3 text-center font-mono text-2xl tracking-[0.3em]">
             {household.invite_code}
           </p>
         </Card>

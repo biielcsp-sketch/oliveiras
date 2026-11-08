@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { getAppContext } from "@/lib/data";
 import { ASSISTANT, MODULES } from "@/lib/modules";
-import { Card } from "@/components/ui";
+import { Card, SectionHeader, Tag } from "@/components/ui";
 import { greetingFor } from "@/lib/format";
 
 export const metadata = { title: "Início" };
@@ -28,7 +28,7 @@ export default async function InicioPage() {
   const todayLabel = today.charAt(0).toUpperCase() + today.slice(1);
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-9">
       <header>
         <p className="text-sm text-muted">{todayLabel}</p>
         <h1 className="mt-1 text-[28px] font-semibold tracking-tight">
@@ -36,31 +36,46 @@ export default async function InicioPage() {
         </h1>
       </header>
 
-      <Link href={ASSISTANT.href}>
-        <Card className="flex items-center gap-4 bg-olive-soft border-transparent transition hover:opacity-90">
-          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-olive text-bg">
-            <ASSISTANT.icon size={20} />
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="font-medium">Como está a vida da família?</p>
-            <p className="truncate text-sm text-muted">O assistente vai responder aqui com o resumo da semana.</p>
+      <Link href={ASSISTANT.href} className="block rounded-[24px]">
+        <Card tone="hero" className="relative flex flex-col gap-4 overflow-hidden transition hover:brightness-110">
+          <div className="flex items-start justify-between">
+            <span className="grid size-12 place-items-center rounded-full border border-white/25 text-on-primary">
+              <ASSISTANT.icon size={22} aria-hidden />
+            </span>
+            <Tag tone="info">{ASSISTANT.label}</Tag>
           </div>
-          <ChevronRight size={18} className="text-muted" />
+          <div>
+            <p className="text-xl font-semibold leading-snug">Como está a vida da família?</p>
+            <p className="mt-1 text-sm text-info">O assistente vai responder aqui com o resumo da semana.</p>
+          </div>
+          <span className="inline-flex items-center gap-1.5 text-[15px] font-medium">
+            Conversar com o Oli <ChevronRight size={18} aria-hidden />
+          </span>
         </Card>
       </Link>
 
-      <section className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        {MODULES.map(({ href, label, icon: Icon, description }) => (
-          <Link key={href} href={href}>
-            <Card className="flex h-full flex-col gap-3 p-4 transition hover:bg-surface-2">
-              <Icon size={22} strokeWidth={1.8} className="text-olive" />
-              <div>
-                <p className="font-medium">{label}</p>
-                <p className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-muted">{description}</p>
-              </div>
-            </Card>
-          </Link>
-        ))}
+      <section>
+        <SectionHeader title="Áreas da família" count={MODULES.length} />
+        <ul className="grid grid-cols-2 gap-5 sm:grid-cols-3">
+          {MODULES.map(({ href, label, icon: Icon, description, phase }) => (
+            <li key={href}>
+              <Link href={href} className="block h-full rounded-[24px]">
+                <Card className="flex h-full flex-col gap-3 p-4 transition hover:bg-surface-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="grid size-11 place-items-center rounded-full border border-line bg-surface-solid text-primary">
+                      <Icon size={20} strokeWidth={1.8} aria-hidden />
+                    </span>
+                    {phase && phase > 1 && <Tag>Fase {phase}</Tag>}
+                  </div>
+                  <div>
+                    <p className="text-[17px] font-semibold tracking-tight">{label}</p>
+                    <p className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-muted">{description}</p>
+                  </div>
+                </Card>
+              </Link>
+            </li>
+          ))}
+        </ul>
       </section>
     </div>
   );

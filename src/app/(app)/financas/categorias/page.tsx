@@ -29,7 +29,7 @@ export default async function CategoriasPage() {
               </span>
               <form action={deleteRule}>
                 <input type="hidden" name="id" value={r.id} />
-                <button aria-label={`Remover regra ${r.pattern}`} className="grid size-8 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-danger">
+                <button aria-label={`Remover regra ${r.pattern}`} className="grid size-11 place-items-center rounded-full text-muted hover:bg-surface-2 hover:text-danger">
                   <X size={15} />
                 </button>
               </form>

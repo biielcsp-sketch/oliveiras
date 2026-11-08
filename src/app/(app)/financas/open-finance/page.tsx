@@ -98,7 +98,7 @@ export default async function OpenFinancePage() {
               </div>
               <form action={removeItem}>
                 <input type="hidden" name="id" value={item.id} />
-                <button aria-label={`Remover conexão ${item.label}`} className="grid size-9 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-danger">
+                <button aria-label={`Remover conexão ${item.label}`} className="grid size-11 place-items-center rounded-full text-muted hover:bg-surface-2 hover:text-danger">
                   <Trash2 size={16} />
                 </button>
               </form>

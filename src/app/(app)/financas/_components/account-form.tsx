@@ -60,7 +60,7 @@ export function AccountForm({ account, members }: { account?: Account; members: 
         )}
         {account && (
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" name="archived" defaultChecked={account.archived} className="size-4 accent-[var(--olive)]" />
+            <input type="checkbox" name="archived" defaultChecked={account.archived} className="size-4 accent-[var(--primary)]" />
             Arquivada (some das listas, mantém o histórico)
           </label>
         )}

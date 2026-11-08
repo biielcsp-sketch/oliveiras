@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
-import clsx from "clsx";
+import { chipClass } from "@/components/ui";
 
 const TABS = [
   { href: "/financas", label: "Resumo" },
@@ -24,8 +24,8 @@ export function FinanceSubnav() {
     activeRef.current?.scrollIntoView({ inline: "center", block: "nearest" });
   }, [path]);
   return (
-    <nav className="-mx-4 mb-6 overflow-x-auto px-4 md:mx-0 md:px-0">
-      <ul className="flex w-max gap-1 rounded-xl bg-surface-2 p-1 text-sm">
+    <nav aria-label="Seções de Finanças" className="-mx-5 mb-6 overflow-x-auto px-5 py-2 [scrollbar-width:none] md:mx-0 md:px-0">
+      <ul className="flex w-max gap-3">
         {TABS.map(({ href, label }) => {
           const active = href === "/financas" ? path === href : path === href || path.startsWith(href + "/");
           return (
@@ -34,10 +34,7 @@ export function FinanceSubnav() {
                 href={href}
                 ref={active ? activeRef : undefined}
                 aria-current={active ? "page" : undefined}
-                className={clsx(
-                  "block rounded-lg px-3.5 py-2 transition",
-                  active ? "bg-surface font-medium shadow-sm" : "text-muted hover:text-ink",
-                )}
+                className={chipClass(active)}
               >
                 {label}
               </Link>

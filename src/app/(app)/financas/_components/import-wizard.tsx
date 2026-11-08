@@ -73,7 +73,7 @@ export function ImportWizard({ accounts }: { accounts: Account[] }) {
               type="checkbox"
               name="invert"
               defaultChecked={p.invert}
-              className="mt-0.5 size-4 accent-[var(--olive)]"
+              className="mt-0.5 size-4 accent-[var(--primary)]"
               onChange={() => formRef.current?.requestSubmit()}
             />
             <span>

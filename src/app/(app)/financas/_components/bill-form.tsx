@@ -39,7 +39,7 @@ export function BillForm({ bill, categories, accounts }: { bill?: Bill; categori
       </Field>
       {bill && (
         <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" name="inactive" defaultChecked={!bill.active} className="size-4 accent-[var(--olive)]" />
+          <input type="checkbox" name="inactive" defaultChecked={!bill.active} className="size-4 accent-[var(--primary)]" />
           Pausada (não aparece nos próximos meses)
         </label>
       )}

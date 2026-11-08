@@ -66,7 +66,7 @@ export function LinkAccountForm({ itemRef, remoteId, options }: LinkProps) {
         title="Vazio: 90 dias atrás (conta nova) ou o dia seguinte ao último lançamento já existente"
         className="sm:w-40"
       />
-      <button disabled={pending} className="h-11 rounded-xl bg-ink px-4 text-sm font-medium text-bg disabled:opacity-50">
+      <button disabled={pending} className="h-11 rounded-full bg-hero px-5 text-[15px] font-medium text-on-primary shadow-soft disabled:opacity-50">
         {pending ? "…" : "Vincular"}
       </button>
       <div className="sm:col-span-3">
