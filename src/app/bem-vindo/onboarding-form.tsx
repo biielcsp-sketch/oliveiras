@@ -12,7 +12,7 @@ export function OnboardingForm() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="grid grid-cols-2 rounded-xl bg-surface-2 p-1 text-sm">
+      <div className="grid grid-cols-2 rounded-full bg-surface-2 p-1 text-[15px]">
         {(
           [
             ["create", "Criar família"],
@@ -23,7 +23,7 @@ export function OnboardingForm() {
             key={m}
             type="button"
             onClick={() => setMode(m)}
-            className={clsx("h-9 rounded-lg transition", mode === m ? "bg-surface font-medium shadow-sm" : "text-muted")}
+            className={clsx("h-11 rounded-full transition", mode === m ? "bg-surface-solid font-medium text-ink shadow-soft" : "text-muted")}
           >
             {label}
           </button>

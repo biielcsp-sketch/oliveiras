@@ -1,7 +1,7 @@
 import { ModulePlaceholder } from "@/components/module-placeholder";
 import { MODULES } from "@/lib/modules";
 
-export const metadata = { title: "Ministério" };
+export const metadata = { title: "Igreja" };
 
 export default function Page() {
   return (

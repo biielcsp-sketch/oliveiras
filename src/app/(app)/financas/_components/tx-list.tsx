@@ -22,7 +22,7 @@ export function TxList({
         const transfer = cat?.kind === "transferencia";
         return (
           <li key={t.id}>
-            <Link href={`/financas/lancamentos/${t.id}`} className="flex items-center gap-3 py-3 hover:bg-surface-2/50">
+            <Link href={`/financas/lancamentos/${t.id}`} className="-mx-2 flex items-center gap-3 rounded-2xl px-2 py-3 transition hover:bg-surface-2/60">
               <span className="w-11 shrink-0 text-[13px] tabular-nums text-muted">{shortDate(t.date)}</span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[15px]">{t.description}</p>

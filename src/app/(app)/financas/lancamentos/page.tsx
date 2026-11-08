@@ -24,7 +24,7 @@ export default async function LancamentosPage({ searchParams }: { searchParams: 
   const { income, expense } = summarize(transactions, categories, new Set(accounts.filter((a) => a.kind === "cartao").map((a) => a.id)));
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <MonthSwitcher month={month} basePath="/financas/lancamentos" params={{ conta: sp.conta, categoria: sp.categoria, q: sp.q }} />
         <LinkButton href="/financas/lancamentos/novo">
@@ -32,12 +32,12 @@ export default async function LancamentosPage({ searchParams }: { searchParams: 
         </LinkButton>
       </div>
 
-      <form className="grid gap-2 sm:grid-cols-[1fr_auto_auto_auto]" role="search">
+      <form className="grid gap-3 sm:grid-cols-[1fr_auto_auto_auto]" role="search">
         <input type="hidden" name="mes" value={month} />
         <label className="relative">
           <span className="sr-only">Buscar</span>
-          <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-          <Input name="q" defaultValue={sp.q} placeholder="Buscar descrição" className="pl-9" />
+          <Search size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
+          <Input name="q" defaultValue={sp.q} placeholder="Buscar descrição" className="pl-11" />
         </label>
         <Select name="conta" defaultValue={sp.conta ?? ""} aria-label="Conta" className="sm:w-40">
           <option value="">Todas as contas</option>
@@ -52,7 +52,7 @@ export default async function LancamentosPage({ searchParams }: { searchParams: 
             <option key={c.id} value={c.id}>{c.name}</option>
           ))}
         </Select>
-        <button className="h-11 rounded-xl border border-line bg-surface px-4 text-sm hover:bg-surface-2">Filtrar</button>
+        <button className="h-12 rounded-full border border-line bg-surface-solid px-5 text-[15px] font-medium shadow-soft hover:bg-surface-2">Filtrar</button>
       </form>
 
       <p className="text-sm text-muted">

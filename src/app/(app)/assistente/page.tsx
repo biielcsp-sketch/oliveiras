@@ -1,7 +1,7 @@
 import { ModulePlaceholder } from "@/components/module-placeholder";
 import { ASSISTANT } from "@/lib/modules";
 
-export const metadata = { title: "Assistente" };
+export const metadata = { title: "Oli" };
 
 export default function Page() {
   return (

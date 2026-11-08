@@ -50,3 +50,6 @@ next-env.d.ts
 /supabase/.temp/
 /supabase/.branches/
 /.zap/*.yaml
+
+# capturas de tela para aprovação (locais)
+/.screens/

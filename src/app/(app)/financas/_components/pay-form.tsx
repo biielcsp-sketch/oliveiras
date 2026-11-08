@@ -30,8 +30,8 @@ export function PayForm({ billId, month, expected, due, suggestions }: Props) {
             : "Nenhum lançamento parecido no extrato. Importe o extrato ou marque como paga sem lançamento."}
         </legend>
         {suggestions.map((t) => (
-          <label key={t.id} className="flex cursor-pointer items-center gap-3 rounded-xl border border-line p-3 has-[:checked]:border-olive">
-            <input type="radio" name="transaction_id" value={t.id} checked={choice === t.id} onChange={() => setChoice(t.id)} className="accent-[var(--olive)]" />
+          <label key={t.id} className="flex cursor-pointer items-center gap-3 rounded-2xl border border-line bg-surface-solid p-3.5 has-[:checked]:border-primary has-[:checked]:bg-accent-soft">
+            <input type="radio" name="transaction_id" value={t.id} checked={choice === t.id} onChange={() => setChoice(t.id)} className="accent-[var(--primary)]" />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm">{t.description}</span>
               <span className="text-[12px] text-muted">{shortDate(t.date)} · {t.accountName}</span>
@@ -39,8 +39,8 @@ export function PayForm({ billId, month, expected, due, suggestions }: Props) {
             <span className="text-sm tabular-nums">{formatBRL(t.amount)}</span>
           </label>
         ))}
-        <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-line p-3 has-[:checked]:border-olive">
-          <input type="radio" name="transaction_id" value="sem" checked={choice === "sem"} onChange={() => setChoice("sem")} className="accent-[var(--olive)]" />
+        <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-line bg-surface-solid p-3.5 has-[:checked]:border-primary has-[:checked]:bg-accent-soft">
+          <input type="radio" name="transaction_id" value="sem" checked={choice === "sem"} onChange={() => setChoice("sem")} className="accent-[var(--primary)]" />
           <span className="text-sm">Paga sem lançamento no app</span>
         </label>
       </fieldset>

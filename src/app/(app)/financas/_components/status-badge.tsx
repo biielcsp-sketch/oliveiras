@@ -12,10 +12,10 @@ export function StatusBadge({ status }: { status: BillStatus }) {
   return (
     <span
       className={clsx(
-        "rounded-full px-2 py-0.5 text-[11px] font-medium",
-        status === "paga" && "bg-olive-soft text-olive",
-        status === "atrasada" && "bg-danger/15 text-danger",
-        status === "vence_hoje" && "bg-danger/10 text-danger",
+        "rounded-full px-2.5 py-1 text-[12px] font-medium leading-none",
+        status === "paga" && "bg-accent-soft text-primary",
+        status === "atrasada" && "bg-badge text-on-badge",
+        status === "vence_hoje" && "bg-warning-soft text-warning",
         status === "a_vencer" && "bg-surface-2 text-muted",
       )}
     >
