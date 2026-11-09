@@ -19,7 +19,7 @@ export type AgendaEvent = {
   memberId: string;
   /** "Você" ou o nome do membro dono da conta Google. */
   owner: string;
-  /** Só o dono da conta edita, e só em agendas owner/writer. */
+  /** Qualquer membro da família edita/apaga, desde que a agenda seja owner/writer no Google. */
   editable: boolean;
 };
 

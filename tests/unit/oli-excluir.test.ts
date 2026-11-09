@@ -76,6 +76,7 @@ describe("excluir_evento: argumentos e declaração", () => {
     expect(OLI_TOOLS[0].functionDeclarations!.map((f) => f.name)).toEqual([...OLI_TOOL_NAMES]);
     expect(OLI_PERSONA).toContain("excluir_evento");
     expect(OLI_PERSONA).toContain("Nunca diga que apagou antes do toque");
+    expect(OLI_PERSONA).not.toContain("Só a pessoa dona da agenda");
   });
   it("aceita id UUID, ou título + data; recusa o resto", () => {
     expect(parseExcluirEventoArgs({ id: EV1.toUpperCase() })).toEqual({ ok: true, value: { id: EV1 } });
@@ -112,12 +113,14 @@ describe("excluir_evento: resolução", () => {
     const evs = [ev({}), ev({ id: EV2, title: "Dentista Karen" })];
     expect(resolveExclusao({ titulo: "Dentista", data: "2026-11-09" }, evs)).toEqual({
       ok: true,
-      preview: { id: EV1, titulo: "Dentista", quando: "seg., 9 de nov. · 19:00 – 20:00", agenda: "Gabriel" },
+      preview: { id: EV1, titulo: "Dentista", quando: "seg., 9 de nov. · 19:00 – 20:00", agenda: "Gabriel", pessoa: "Você" },
     });
   });
-  it("evento de outra pessoa ou agenda só leitura: recusa com mensagem clara", () => {
-    const karen = resolveExclusao({ id: EV1 }, [ev({ owner: "Karen", editable: false })]);
-    expect(karen).toEqual({ ok: false, erro: "Só a pessoa dona da agenda (Karen) pode excluir este evento." });
+  it("evento da agenda gravável do cônjuge: prepara, mostrando de quem é; agenda só leitura: recusa com mensagem clara", () => {
+    const karen = resolveExclusao({ id: EV1 }, [ev({ owner: "Karen", calendarName: "Karen", editable: true })]);
+    expect(karen).toMatchObject({ ok: true, preview: { id: EV1, agenda: "Karen", pessoa: "Karen" } });
+    const roKaren = resolveExclusao({ id: EV1 }, [ev({ owner: "Karen", editable: false })]);
+    expect(!roKaren.ok && roKaren.erro).toContain("somente leitura");
     const ro = resolveExclusao({ id: EV1 }, [ev({ editable: false })]);
     expect(!ro.ok && ro.erro).toContain("somente leitura");
   });
@@ -136,7 +139,9 @@ describe("excluir_evento: a ferramenta só prepara; a ação apaga", () => {
     const amb = await runOliTool("excluir_evento", { titulo: "Dentista", data: "2026-11-09" });
     expect(amb).toMatchObject({ ok: false, candidatos: [{ id: EV1 }, { id: EV2 }] });
     state.events = [ev({ owner: "Karen", editable: false })];
-    expect(await runOliTool("excluir_evento", { id: EV1 })).toMatchObject({ ok: false, erro: expect.stringContaining("Karen") });
+    expect(await runOliTool("excluir_evento", { id: EV1 })).toMatchObject({ ok: false, erro: expect.stringContaining("somente leitura") });
+    state.events = [ev({ owner: "Karen", editable: true })];
+    expect(await runOliTool("excluir_evento", { id: EV1 })).toMatchObject({ ok: true, data: { pessoa: "Karen" } });
     expect(await runOliTool("excluir_evento", { id: "x" })).toMatchObject({ ok: false });
     expect(state.removed).toEqual([]);
   });
@@ -151,10 +156,14 @@ describe("excluir_evento: a ferramenta só prepara; a ação apaga", () => {
     expect(await confirmOliExcluirEvento(EV1)).toEqual({ ok: true });
     expect(state.removed).toEqual([EV1]);
   });
-  it("confirmar: não-dono recusado sem chamar o Google; id inválido e evento inexistente recusados", async () => {
+  it("confirmar: evento do cônjuge em agenda gravável apaga; só leitura é recusado sem chamar o Google; id inválido e inexistente recusados", async () => {
+    state.events = [ev({ owner: "Karen", editable: true })];
+    expect(await confirmOliExcluirEvento(EV1)).toEqual({ ok: true });
+    expect(state.removed).toEqual([EV1]);
+    state.removed.length = 0;
     state.events = [ev({ owner: "Karen", editable: false })];
     const r = await confirmOliExcluirEvento(EV1);
-    expect(r).toEqual({ ok: false, erro: "Só a pessoa dona da agenda (Karen) pode excluir este evento." });
+    expect(r).toMatchObject({ ok: false, erro: expect.stringContaining("somente leitura") });
     expect(await confirmOliExcluirEvento("../x")).toMatchObject({ ok: false });
     state.events = [];
     expect(await confirmOliExcluirEvento(EV1)).toMatchObject({ ok: false });
@@ -171,10 +180,15 @@ describe("excluir_evento: painel", () => {
     id: "p1",
     kind: "confirmar_excluir_evento",
     status: "pendente",
-    data: { id: EV1, titulo: "<img src=x onerror=alert(1)>", quando: "seg., 9 de nov. · 19:00 – 20:00", agenda: "Gabriel" },
+    data: { id: EV1, titulo: "<img src=x onerror=alert(1)>", quando: "seg., 9 de nov. · 19:00 – 20:00", agenda: "Gabriel", pessoa: "Você" },
     ...over,
   });
   const html = (p: OliPanel) => renderToStaticMarkup(createElement(PanelView, { panel: p, onConfirm: () => {}, onCancel: () => {} }));
+  it("evento do cônjuge: o painel mostra de quem é a agenda", () => {
+    const base = panel() as Extract<OliPanel, { kind: "confirmar_excluir_evento" }>;
+    expect(html({ ...base, data: { ...base.data, agenda: "Consultas", pessoa: "Karen" } })).toContain("Consultas (agenda de Karen)");
+    expect(html(panel())).not.toContain("agenda de");
+  });
   it("mostra título (escapado), quando e agenda com Confirmar/Cancelar", () => {
     const h = html(panel());
     expect(h).toContain("Excluir este evento?");

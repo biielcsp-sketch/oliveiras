@@ -338,7 +338,7 @@ export async function confirmOliEvento(preview: EventoPreview): Promise<ConfirmR
 
 /**
  * Apaga o evento no Google depois do toque em Confirmar. O cliente só manda o id: tudo é revalidado aqui
- * (família do Oli, Agenda liberada, evento da família, dono da conta Google). removeEvent usa If-Match/etag:
+ * (família do Oli, Agenda liberada, evento da família, agenda gravável; qualquer membro da família apaga, com o token da conta dona). removeEvent usa If-Match/etag:
  * 412 recarrega e avisa o conflito; 404/410 contam como já apagado. Só a ocorrência exibida.
  */
 export async function confirmOliExcluirEvento(id: string): Promise<ConfirmResult> {
@@ -351,7 +351,7 @@ export async function confirmOliExcluirEvento(id: string): Promise<ConfirmResult
   const negado = exclusaoNegada(event);
   if (negado) return { ok: false, erro: negado };
   const r = await removeEvent(ctx, id);
+  revalidatePath("/agenda"); // também no 412/conflito: a cópia local foi recarregada
   if (!r.ok) return { ok: false, erro: r.erro };
-  revalidatePath("/agenda");
   return { ok: true };
 }

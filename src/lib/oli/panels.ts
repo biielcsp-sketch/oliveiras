@@ -79,6 +79,8 @@ export type ExcluirEventoPreview = {
   /** Data e hora já formatadas (ex.: "seg., 9 de nov. · 19:00 – 21:00"). */
   quando: string;
   agenda: string;
+  /** "Você" ou o nome de quem é a conta Google da agenda (só exibição; o servidor relê pelo id). */
+  pessoa: string;
 };
 
 export type EventoCandidato = { id: string; titulo: string; quando: string; agenda: string; pessoa: string };
@@ -318,12 +320,9 @@ export function resolveEvento(
   };
 }
 
-/** Por que este usuário não pode apagar o evento (null = pode). */
-export function exclusaoNegada(e: Pick<AgendaEvent, "editable" | "owner">): string | null {
-  if (e.editable) return null;
-  if (e.owner !== "Você")
-    return `Só a pessoa dona da agenda (${e.owner}) pode excluir este evento.`;
-  return "Esta agenda é somente leitura (ou a conta Google precisa ser reconectada); não dá para excluir este evento.";
+/** Por que não dá para apagar o evento (null = pode). Qualquer membro da família apaga em agenda gravável. */
+export function exclusaoNegada(e: Pick<AgendaEvent, "editable">): string | null {
+  return e.editable ? null : "Esta agenda é somente leitura no Google; não dá para excluir este evento.";
 }
 
 const candidato = (e: AgendaEvent): EventoCandidato => ({
@@ -363,7 +362,7 @@ export function resolveExclusao(
   const e = found[0];
   const negado = exclusaoNegada(e);
   if (negado) return { ok: false, erro: negado };
-  return { ok: true, preview: { id: e.id, titulo: untitled(e.title), quando: whenLabel(e), agenda: e.calendarName } };
+  return { ok: true, preview: { id: e.id, titulo: untitled(e.title), quando: whenLabel(e), agenda: e.calendarName, pessoa: e.owner } };
 }
 
 /* ---------- Memórias ---------- */

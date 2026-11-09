@@ -120,7 +120,7 @@ export async function getEventsBetween(ctx: Ctx, from: string, to: string): Prom
         color: cal.color,
         memberId: acc.member_id,
         owner: mine ? "Você" : (memberName.get(acc.member_id) ?? "Família"),
-        editable: mine && acc.status !== "revogado" && WRITABLE_ROLES.has(cal.access_role ?? ""),
+        editable: WRITABLE_ROLES.has(cal.access_role ?? ""),
       },
     ];
   });
@@ -364,6 +364,33 @@ async function ownCalendar(db: Db, ctx: Ctx, calendarId: string) {
   return { cal: cal as CalendarDbRow, acc };
 }
 
+/**
+ * Agenda da família onde qualquer membro pode editar/apagar: mesma família (RLS + household_id),
+ * access_role owner/writer. O token usado depois é o da conta DONA do calendário.
+ */
+async function familyCalendar(
+  db: Db,
+  ctx: Ctx,
+  calendarId: string,
+): Promise<{ cal: CalendarDbRow; acc: AccountWithToken } | { erro: string } | null> {
+  const { data: cal } = await db
+    .from("cal_calendars")
+    .select(CAL_COLS)
+    .eq("household_id", ctx.household.id)
+    .eq("id", calendarId)
+    .maybeSingle();
+  if (!cal) return null;
+  const acc = await loadAccountWithToken(db, ctx.household.id, cal.account_ref);
+  if (!acc || !ctx.me) return null;
+  if (!WRITABLE_ROLES.has(cal.access_role ?? "")) return { erro: "Esta agenda é somente leitura no Google." };
+  if (acc.status === "revogado") {
+    const donoId = acc.member_id;
+    const nome = donoId === ctx.me.id ? null : (ctx.members.find((m) => m.id === donoId)?.name ?? "outra pessoa");
+    return { erro: nome ? `A conta de ${nome} precisa ser reconectada por ela.` : REVOKED_MESSAGE };
+  }
+  return { cal: cal as CalendarDbRow, acc };
+}
+
 async function saveRow(db: Db, householdId: string, calendarRef: string, ev: GoogleEvent) {
   const row = toEventRow(ev);
   if (!row) return null;
@@ -390,7 +417,7 @@ export async function createEvent(ctx: Ctx, calendarId: string, input: EventInpu
   }
 }
 
-async function ownEvent(db: Db, ctx: Ctx, eventId: string) {
+async function familyEvent(db: Db, ctx: Ctx, eventId: string) {
   const { data: ev } = await db
     .from("cal_events")
     .select("id, calendar_ref, google_event_id, etag")
@@ -398,8 +425,9 @@ async function ownEvent(db: Db, ctx: Ctx, eventId: string) {
     .eq("id", eventId)
     .maybeSingle();
   if (!ev) return null;
-  const own = await ownCalendar(db, ctx, ev.calendar_ref);
-  return own ? { ev, ...own } : null;
+  const own = await familyCalendar(db, ctx, ev.calendar_ref);
+  if (!own) return null;
+  return "erro" in own ? own : { ev, ...own };
 }
 
 /** Depois de 412/404/410: traz a versão atual do Google (ou apaga a cópia local se sumiu). */
@@ -417,8 +445,9 @@ async function reloadFromGoogle(db: Db, ctx: Ctx, token: string, cal: CalendarDb
 export async function updateEvent(ctx: Ctx, eventId: string, input: EventInput): Promise<WriteResult> {
   if (!agendaEnabled(ctx.household.id)) return { ok: false, erro: "Agenda não liberada para esta família." };
   const db = await createClient();
-  const own = await ownEvent(db, ctx, eventId);
-  if (!own) return { ok: false, erro: "Só quem é dono da agenda pode editar este evento." };
+  const own = await familyEvent(db, ctx, eventId);
+  if (!own) return { ok: false, erro: "Evento não encontrado." };
+  if ("erro" in own) return { ok: false, erro: own.erro };
   let token: string | null = null;
   try {
     const updated = await withToken(db, own.acc, (t) => {
@@ -439,8 +468,9 @@ export async function updateEvent(ctx: Ctx, eventId: string, input: EventInput):
 export async function removeEvent(ctx: Ctx, eventId: string): Promise<WriteResult> {
   if (!agendaEnabled(ctx.household.id)) return { ok: false, erro: "Agenda não liberada para esta família." };
   const db = await createClient();
-  const own = await ownEvent(db, ctx, eventId);
-  if (!own) return { ok: false, erro: "Só quem é dono da agenda pode apagar este evento." };
+  const own = await familyEvent(db, ctx, eventId);
+  if (!own) return { ok: false, erro: "Evento não encontrado." };
+  if ("erro" in own) return { ok: false, erro: own.erro };
   let token: string | null = null;
   try {
     await withToken(db, own.acc, (t) => {

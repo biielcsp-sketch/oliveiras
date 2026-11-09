@@ -211,15 +211,16 @@ test("Agenda: conectar Google, sincronizar nas duas vias e ver a agenda do cônj
 
   const karenCtx = await browser.newContext();
   const karen = await karenCtx.newPage();
-  await test.step("cônjuge vê os eventos do outro, sem poder editar nem desconectar", async () => {
+  await test.step("cônjuge vê os eventos do outro e pode editar/apagar, mas não desconectar", async () => {
     await login(karen, kEmail);
     await karen.goto("/agenda");
     await expect.poll(() => mainText(karen)).toContain("Culto de domingo");
     expect(await mainText(karen)).toMatch(/Culto de domingo Gabriel · Igreja Lagoinha/);
     await karen.getByTestId("evento").filter({ hasText: "Culto de domingo" }).click();
     const d = karen.getByRole("dialog", { name: "Culto de domingo" });
-    await expect(d.getByText("Só Gabriel pode editar este evento.")).toBeVisible();
-    await expect(d.getByRole("button", { name: "Editar" })).toHaveCount(0);
+    await expect(d.getByText(/Só .* pode editar/)).toHaveCount(0);
+    await expect(d.getByRole("button", { name: "Editar" })).toBeVisible();
+    await expect(d.getByRole("button", { name: "Apagar" })).toBeVisible();
     await d.getByRole("button", { name: "Fechar" }).click();
     const other = karen.getByTestId("conta-outra");
     await expect(other).toContainText(`Conectado · ${G_CAL}`);
@@ -240,7 +241,7 @@ test("Agenda: conectar Google, sincronizar nas duas vias e ver a agenda do cônj
   });
   await karenCtx.close();
 
-  await test.step("Oli excluir_evento: o painel só PREPARA (nada some do Google nem da Agenda sem o toque) e recusa evento do cônjuge", async () => {
+  await test.step("Oli excluir_evento: o painel só PREPARA (nada some do Google nem da Agenda sem o toque) e aceita evento do cônjuge (agenda de Karen)", async () => {
     // O Oli real precisa do Gemini; aqui o preparo roda sobre os eventos reais sincronizados do mock.
     const { data: rows } = await adminClient()
       .from("cal_events")
@@ -251,7 +252,7 @@ test("Agenda: conectar Google, sincronizar nas duas vias e ver a agenda do cônj
       const mine = cal.google_calendar_id === G_CAL;
       return {
         id: r.id, title: r.title, allDay: r.all_day, startsAt: r.starts_at, endsAt: r.ends_at, location: null, description: null, htmlLink: null,
-        calendarId: r.calendar_ref, calendarName: cal.summary, color: null, memberId: "", owner: mine ? "Você" : "Karen", editable: mine,
+        calendarId: r.calendar_ref, calendarName: cal.summary, color: null, memberId: "", owner: mine ? "Você" : "Karen", editable: true,
       };
     });
     const culto = events.find((e) => e.title === "Culto de domingo")!;
@@ -259,7 +260,8 @@ test("Agenda: conectar Google, sincronizar nas duas vias e ver a agenda do cônj
     expect(prep.ok).toBe(true);
     const consulta = events.find((e) => e.title === "Consulta Karen");
     expect(consulta, "evento da Karen sincronizado").toBeDefined();
-    expect(resolveExclusao({ id: consulta!.id }, events)).toEqual({ ok: false, erro: "Só a pessoa dona da agenda (Karen) pode excluir este evento." });
+    // O cônjuge pode excluir na agenda gravável do outro; o painel mostra de quem é a agenda.
+    expect(resolveExclusao({ id: consulta!.id }, events)).toMatchObject({ ok: true, preview: { id: consulta!.id, pessoa: "Karen" } });
 
     const html = renderToStaticMarkup(
       createElement(PanelView, { panel: { id: "x1", kind: "confirmar_excluir_evento", status: "pendente", data: (prep as Extract<typeof prep, { ok: true }>).preview }, onConfirm: () => {}, onCancel: () => {} }),
@@ -275,6 +277,38 @@ test("Agenda: conectar Google, sincronizar nas duas vias e ver a agenda do cônj
     // Preparar não apaga: continua no Google e na Agenda.
     expect((await mockEvents(G_CAL)).find((e) => e.summary === "Culto de domingo")!.status).not.toBe("cancelled");
     expect(await eventCount("Culto de domingo")).toBe(1);
+  });
+
+  await test.step("Gabriel edita e apaga um evento da agenda da Karen pela Agenda; o Google (mock) reflete com o token dela", async () => {
+    const K_CAL = "karen.e2e@gmail.com";
+    await fetch(`${MOCK}/__events/${encodeURIComponent(K_CAL)}`, {
+      method: "POST",
+      body: JSON.stringify({ summary: "Reunião da Karen", start: { dateTime: `${today}T14:00:00-03:00` }, end: { dateTime: `${today}T15:00:00-03:00` } }),
+    });
+    await syncNow(page);
+    await expect.poll(() => mainText(page)).toContain("Reunião da Karen");
+    await page.getByTestId("evento").filter({ hasText: "Reunião da Karen" }).click();
+    let details = page.getByRole("dialog", { name: "Reunião da Karen" });
+    await expect(details.getByText(/Só .* pode editar/)).toHaveCount(0);
+    await details.getByRole("button", { name: "Editar" }).click();
+    const form = page.getByRole("dialog", { name: "Editar evento" });
+    await form.getByLabel("Título").fill("Reunião remarcada");
+    await form.getByRole("button", { name: "Salvar alterações" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Evento atualizado." })).toBeVisible();
+    await expect.poll(async () => (await mockEvents(K_CAL)).some((e) => e.summary === "Reunião remarcada")).toBe(true);
+    await expect.poll(() => mainText(page)).toContain("Reunião remarcada");
+
+    await page.getByTestId("evento").filter({ hasText: "Reunião remarcada" }).click();
+    details = page.getByRole("dialog", { name: "Reunião remarcada" });
+    await details.getByRole("button", { name: "Apagar" }).click();
+    await details.getByRole("group", { name: "Confirmar exclusão" }).getByRole("button", { name: "Apagar" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Evento apagado." })).toBeVisible();
+    expect((await mockEvents(K_CAL)).find((e) => e.summary === "Reunião remarcada")!.status).toBe("cancelled");
+    expect(await eventCount("Reunião remarcada")).toBe(0);
+
+    const calls = (await (await fetch(`${MOCK}/__calls`)).json()) as { method: string; path: string; user: string }[];
+    const writes = calls.filter((c) => (c.method === "PATCH" || c.method === "DELETE") && decodeURIComponent(c.path).includes(K_CAL));
+    expect(writes.map((c) => [c.method, c.user])).toEqual([["PATCH", "karen"], ["DELETE", "karen"]]);
   });
 
   await shot(browser, page.context(), "agenda-claro.png", "/agenda");

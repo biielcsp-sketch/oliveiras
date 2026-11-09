@@ -358,7 +358,7 @@ export function PanelView({
             <dt className="text-muted">Quando</dt>
             <dd className="tabular-nums">{d.quando}</dd>
             <dt className="text-muted">Agenda</dt>
-            <dd className="truncate">{d.agenda}</dd>
+            <dd className="truncate">{d.pessoa && d.pessoa !== "Você" ? `${d.agenda} (agenda de ${d.pessoa})` : d.agenda}</dd>
           </dl>
         </Confirm>
       );

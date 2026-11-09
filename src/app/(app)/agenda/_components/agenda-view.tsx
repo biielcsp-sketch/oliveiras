@@ -226,7 +226,7 @@ export function AgendaView({
                 </div>
               )
             ) : (
-              <p className="text-[13px] text-muted">Só {open.owner === "Você" ? "você" : open.owner} pode editar este evento.</p>
+              <p className="text-[13px] text-muted">Esta agenda é somente leitura no Google.</p>
             )}
           </div>
         )}
