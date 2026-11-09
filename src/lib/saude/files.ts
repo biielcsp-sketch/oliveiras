@@ -31,15 +31,15 @@ export function checkUpload(bytes: Uint8Array): UploadCheck {
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export type StorageDir = "cards" | "exams";
+export type StorageDir = "cards" | "exams" | "procedures" | "vaccines";
 
-/** Caminho no bucket `saude`: {household_id}/{cards|exams}/{uuid}.{pdf|jpg}. O nome vem do servidor. */
+/** Caminho no bucket `saude`: {household_id}/{cards|exams|procedures|vaccines}/{uuid}.{pdf|jpg}. O nome vem do servidor. */
 export function storagePath(householdId: string, dir: StorageDir, id: string, ext: "pdf" | "jpg") {
   return `${householdId}/${dir}/${id}.${ext}`;
 }
 
 export const STORAGE_PATH_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/(cards|exams)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(pdf|jpg)$/i;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/(cards|exams|procedures|vaccines)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(pdf|jpg)$/i;
 
 export const isStoragePath = (v: unknown): v is string => typeof v === "string" && STORAGE_PATH_RE.test(v);
 export const isFileMime = (v: unknown): v is FileMime => v === "application/pdf" || v === "image/jpeg";

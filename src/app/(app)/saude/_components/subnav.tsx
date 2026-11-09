@@ -8,6 +8,9 @@ const TABS = [
   { href: "/saude", label: "Carteirinhas" },
   { href: "/saude/consultas", label: "Consultas" },
   { href: "/saude/exames", label: "Exames" },
+  { href: "/saude/procedimentos", label: "Procedimentos" },
+  { href: "/saude/medicamentos", label: "Medicamentos" },
+  { href: "/saude/vacinas", label: "Vacinas" },
 ];
 
 export function SaudeSubnav() {

@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { fixedFileName, isFileMime, isStoragePath, UUID_RE } from "@/lib/saude/files";
 
 /** Arquivos de Saúde NUNCA têm URL pública: só por aqui, com sessão, lendo pelo RLS do usuário. */
-const TABLES = { carteirinhas: "health_insurance_cards", exames: "health_exams" } as const;
+const TABLES = { carteirinhas: "health_insurance_cards", exames: "health_exams", procedimentos: "health_procedures", vacinas: "health_vaccines" } as const;
 
 const NO_STORE = { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" };
 const fail = (status: number) => new Response(status === 401 ? "Não autorizado" : "Não encontrado", { status, headers: { ...NO_STORE, "Content-Type": "text/plain; charset=utf-8" } });
