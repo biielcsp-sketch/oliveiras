@@ -1,5 +1,5 @@
 /**
- * Validação de entrada de Saúde (carteirinhas, consultas, exames). Roda no servidor; no navegador só ajuda.
+ * Validação de entrada de Saúde (carteirinhas, consultas, exames, procedimentos, medicamentos, vacinas). Roda no servidor; no navegador só ajuda.
  * household_id nunca vem do formulário: as actions usam getAppContext().
  */
 import { isDate, normalizeLocal, spLocalToMs } from "@/lib/agenda/dates";
@@ -18,6 +18,16 @@ export const LIMITS = {
   lab: 120,
   requestedBy: 120,
   summary: 2000,
+  procName: 160,
+  procNotes: 2000,
+  medName: 160,
+  dosage: 120,
+  frequency: 200,
+  medNotes: 1000,
+  vaccineName: 160,
+  doseLabel: 60,
+  lot: 60,
+  vaccineNotes: 1000,
 } as const;
 
 type Fail = { ok: false; erro: string };
@@ -189,4 +199,161 @@ export const examInputFromForm = (f: FormData) => ({
   lab: f.get("lab"),
   requested_by: f.get("requested_by"),
   result_summary: f.get("result_summary"),
+});
+
+/* ---------- Procedimento ---------- */
+
+export type ProcedureInput = {
+  member_id: string;
+  name: string;
+  performed_on: string | null;
+  place: string | null;
+  doctor: string | null;
+  notes: string | null;
+};
+
+export function validateProcedureInput(raw: Record<string, unknown>, memberIds: string[]): Ok<ProcedureInput> | Fail {
+  const m = member(raw.member_id, memberIds);
+  if (typeof m !== "string") return m;
+  const name = oneLine(raw.name);
+  if (!name) return { ok: false, erro: "Informe o nome do procedimento." };
+  const place = oneLine(raw.place);
+  const doctor = oneLine(raw.doctor);
+  const notes = clean(raw.notes);
+  const date = clean(raw.performed_on);
+  const err =
+    tooLong("Nome", name, LIMITS.procName) ??
+    tooLong("Local", place, LIMITS.place) ??
+    tooLong("Médico", doctor, LIMITS.doctor) ??
+    tooLong("Observações", notes, LIMITS.procNotes);
+  if (err) return err;
+  if (date && !isDate(date)) return { ok: false, erro: "Data inválida." };
+  return { ok: true, value: { member_id: m, name, performed_on: orNull(date), place: orNull(place), doctor: orNull(doctor), notes: orNull(notes) } };
+}
+
+export const procedureInputFromForm = (f: FormData) => ({
+  member_id: f.get("member_id"),
+  name: f.get("name"),
+  performed_on: f.get("performed_on"),
+  place: f.get("place"),
+  doctor: f.get("doctor"),
+  notes: f.get("notes"),
+});
+
+/* ---------- Medicamento ---------- */
+
+export type MedicationInput = {
+  member_id: string;
+  name: string;
+  dosage: string | null;
+  frequency: string | null;
+  started_on: string | null;
+  ended_on: string | null;
+  /** Derivado: com data de término o medicamento está encerrado. */
+  active: boolean;
+  prescribed_by: string | null;
+  notes: string | null;
+};
+
+export function validateMedicationInput(raw: Record<string, unknown>, memberIds: string[]): Ok<MedicationInput> | Fail {
+  const m = member(raw.member_id, memberIds);
+  if (typeof m !== "string") return m;
+  const name = oneLine(raw.name);
+  if (!name) return { ok: false, erro: "Informe o nome do medicamento." };
+  const dosage = oneLine(raw.dosage);
+  const frequency = oneLine(raw.frequency);
+  const prescribedBy = oneLine(raw.prescribed_by);
+  const notes = clean(raw.notes);
+  const started = clean(raw.started_on);
+  const ended = clean(raw.ended_on);
+  const err =
+    tooLong("Nome", name, LIMITS.medName) ??
+    tooLong("Dose", dosage, LIMITS.dosage) ??
+    tooLong("Frequência", frequency, LIMITS.frequency) ??
+    tooLong("Prescrito por", prescribedBy, LIMITS.doctor) ??
+    tooLong("Observações", notes, LIMITS.medNotes);
+  if (err) return err;
+  if (started && !isDate(started)) return { ok: false, erro: "Data de início inválida." };
+  if (ended && !isDate(ended)) return { ok: false, erro: "Data de término inválida." };
+  if (started && ended && ended < started) return { ok: false, erro: "O término não pode ser antes do início." };
+  return {
+    ok: true,
+    value: {
+      member_id: m,
+      name,
+      dosage: orNull(dosage),
+      frequency: orNull(frequency),
+      started_on: orNull(started),
+      ended_on: orNull(ended),
+      active: !ended,
+      prescribed_by: orNull(prescribedBy),
+      notes: orNull(notes),
+    },
+  };
+}
+
+export const medicationInputFromForm = (f: FormData) => ({
+  member_id: f.get("member_id"),
+  name: f.get("name"),
+  dosage: f.get("dosage"),
+  frequency: f.get("frequency"),
+  started_on: f.get("started_on"),
+  ended_on: f.get("ended_on"),
+  prescribed_by: f.get("prescribed_by"),
+  notes: f.get("notes"),
+});
+
+/** Data de término ao encerrar: hoje, mas nunca antes do início (regra ended_on >= started_on do banco). */
+export function endDateFor(startedOn: string | null, today: string): string {
+  return startedOn && startedOn > today ? startedOn : today;
+}
+
+/* ---------- Vacina ---------- */
+
+export type VaccineInput = {
+  member_id: string;
+  name: string;
+  dose_label: string | null;
+  applied_on: string | null;
+  next_dose_on: string | null;
+  place: string | null;
+  lot: string | null;
+  notes: string | null;
+};
+
+export function validateVaccineInput(raw: Record<string, unknown>, memberIds: string[]): Ok<VaccineInput> | Fail {
+  const m = member(raw.member_id, memberIds);
+  if (typeof m !== "string") return m;
+  const name = oneLine(raw.name);
+  if (!name) return { ok: false, erro: "Informe o nome da vacina." };
+  const dose = oneLine(raw.dose_label);
+  const place = oneLine(raw.place);
+  const lot = oneLine(raw.lot);
+  const notes = clean(raw.notes);
+  const applied = clean(raw.applied_on);
+  const next = clean(raw.next_dose_on);
+  const err =
+    tooLong("Nome", name, LIMITS.vaccineName) ??
+    tooLong("Dose", dose, LIMITS.doseLabel) ??
+    tooLong("Local", place, LIMITS.place) ??
+    tooLong("Lote", lot, LIMITS.lot) ??
+    tooLong("Observações", notes, LIMITS.vaccineNotes);
+  if (err) return err;
+  if (applied && !isDate(applied)) return { ok: false, erro: "Data de aplicação inválida." };
+  if (next && !isDate(next)) return { ok: false, erro: "Data da próxima dose inválida." };
+  return {
+    ok: true,
+    value: { member_id: m, name, dose_label: orNull(dose), applied_on: orNull(applied), next_dose_on: orNull(next), place: orNull(place), lot: orNull(lot), notes: orNull(notes) },
+  };
+}
+
+export const vaccineInputFromForm = (f: FormData) => ({
+  member_id: f.get("member_id"),
+  name: f.get("name"),
+  dose_label: f.get("dose_label"),
+  applied_on: f.get("applied_on"),
+  next_dose_on: f.get("next_dose_on"),
+  place: f.get("place"),
+  lot: f.get("lot"),
+  notes: f.get("notes"),
 });

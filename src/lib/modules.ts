@@ -21,7 +21,7 @@ export type ModuleDef = {
 export const MODULES: ModuleDef[] = [
   { href: "/financas", label: "Finanças", icon: Wallet, description: "Contas, cartões, orçamento e metas", phase: 1 },
   { href: "/agenda", label: "Agenda", icon: CalendarDays, description: "Agendas do casal integradas ao Google", phase: 3 },
-  { href: "/saude", label: "Saúde", icon: HeartPulse, description: "Carteirinhas, consultas e exames", phase: 4 },
+  { href: "/saude", label: "Saúde", icon: HeartPulse, description: "Carteirinhas, consultas, exames, medicamentos e vacinas", phase: 4 },
   { href: "/casa", label: "Casa", icon: Home, description: "Compras, tarefas, manutenção e documentos", phase: 5 },
   { href: "/ministerio", label: "Igreja", icon: Church, description: "Carisma, Consolidação e GC", phase: 6 },
 ];

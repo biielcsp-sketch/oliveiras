@@ -2,8 +2,17 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { checkUpload, detectFileKind, fixedFileName, isStoragePath, MAX_FILE_BYTES, storagePath } from "@/lib/saude/files";
-import { LIMITS, validateAppointmentInput, validateCardInput, validateExamInput } from "@/lib/saude/input";
-import { splitAppointments, toInputLocal } from "@/lib/saude/view";
+import {
+  endDateFor,
+  LIMITS,
+  validateAppointmentInput,
+  validateCardInput,
+  validateExamInput,
+  validateMedicationInput,
+  validateProcedureInput,
+  validateVaccineInput,
+} from "@/lib/saude/input";
+import { filterByMember, isOverdue, sortProcedures, sortVaccines, splitAppointments, splitMedications, toInputLocal } from "@/lib/saude/view";
 import { appointmentEventInput } from "@/lib/saude/agenda-link";
 import {
   CARDS_CACHE,
@@ -59,6 +68,12 @@ describe("arquivos: bytes mágicos", () => {
     expect(isStoragePath(`${h}/outro/${id}.pdf`)).toBe(false);
     expect(isStoragePath(`${h}/exams/${id}.png`)).toBe(false);
     expect(isStoragePath(null)).toBe(false);
+    for (const dir of ["procedures", "vaccines"] as const) {
+      const q = storagePath(h, dir, id, "jpg");
+      expect(q).toBe(`${h}/${dir}/${id}.jpg`);
+      expect(isStoragePath(q)).toBe(true);
+    }
+    expect(isStoragePath(`${h}/medications/${id}.pdf`)).toBe(false);
     expect(fixedFileName("application/pdf")).toBe("arquivo.pdf");
   });
 });
@@ -132,6 +147,104 @@ describe("exame", () => {
     expect(validateExamInput({ member_id: M2, name: "" }, IDS)).toMatchObject({ ok: false });
     expect(validateExamInput({ member_id: M2, name: "X", exam_date: "2027-13-01" }, IDS)).toMatchObject({ ok: false });
     expect(validateExamInput({ member_id: M2, name: "X", result_summary: "r".repeat(LIMITS.summary + 1) }, IDS)).toMatchObject({ ok: false });
+  });
+});
+
+describe("procedimento", () => {
+  it("valida e normaliza; data e demais campos são opcionais", () => {
+    expect(validateProcedureInput({ member_id: M1, name: "  Endoscopia  ", performed_on: "", notes: "ok" }, IDS)).toEqual({
+      ok: true,
+      value: { member_id: M1, name: "Endoscopia", performed_on: null, place: null, doctor: null, notes: "ok" },
+    });
+  });
+  it("recusa nome vazio, pessoa de fora, data inválida e textos acima do limite", () => {
+    expect(validateProcedureInput({ member_id: M1, name: " " }, IDS)).toMatchObject({ ok: false });
+    expect(validateProcedureInput({ member_id: "99999999-9999-4999-8999-999999999999", name: "X" }, IDS)).toMatchObject({ ok: false });
+    expect(validateProcedureInput({ member_id: M1, name: "X", performed_on: "2026-02-30" }, IDS)).toMatchObject({ ok: false });
+    expect(validateProcedureInput({ member_id: M1, name: "n".repeat(LIMITS.procName + 1) }, IDS)).toMatchObject({ ok: false });
+    expect(validateProcedureInput({ member_id: M1, name: "X", notes: "n".repeat(LIMITS.procNotes + 1) }, IDS)).toMatchObject({ ok: false });
+    expect(validateProcedureInput({ member_id: M1, name: "X", notes: "n".repeat(LIMITS.procNotes) }, IDS).ok).toBe(true);
+  });
+  it("household_id e file_path do formulário nunca entram no valor", () => {
+    const r = validateProcedureInput({ member_id: M1, name: "X", household_id: "evil", file_path: "evil" }, IDS);
+    expect(r.ok && Object.keys(r.value)).not.toContain("household_id");
+    expect(r.ok && Object.keys(r.value)).not.toContain("file_path");
+  });
+  it("ordena do mais recente ao mais antigo, sem data por último", () => {
+    const l = [{ performed_on: "2020-01-01" }, { performed_on: null }, { performed_on: "2025-05-05" }];
+    expect(sortProcedures(l).map((x) => x.performed_on)).toEqual(["2025-05-05", "2020-01-01", null]);
+  });
+});
+
+describe("medicamento", () => {
+  it("sem término = em uso; com término = encerrado", () => {
+    expect(validateMedicationInput({ member_id: M1, name: " Dipirona ", dosage: "500 mg", started_on: "2026-01-01" }, IDS)).toEqual({
+      ok: true,
+      value: { member_id: M1, name: "Dipirona", dosage: "500 mg", frequency: null, started_on: "2026-01-01", ended_on: null, active: true, prescribed_by: null, notes: null },
+    });
+    const ended = validateMedicationInput({ member_id: M1, name: "X", started_on: "2026-01-01", ended_on: "2026-01-10" }, IDS);
+    expect(ended.ok && ended.value).toMatchObject({ ended_on: "2026-01-10", active: false });
+  });
+  it("ended_on >= started_on (mesmo dia vale)", () => {
+    expect(validateMedicationInput({ member_id: M1, name: "X", started_on: "2026-01-10", ended_on: "2026-01-09" }, IDS)).toMatchObject({ ok: false });
+    expect(validateMedicationInput({ member_id: M1, name: "X", started_on: "2026-01-10", ended_on: "2026-01-10" }, IDS).ok).toBe(true);
+    expect(validateMedicationInput({ member_id: M1, name: "X", ended_on: "2026-01-09" }, IDS).ok).toBe(true);
+  });
+  it("recusa nome vazio, datas inválidas e limites", () => {
+    expect(validateMedicationInput({ member_id: M1, name: "" }, IDS)).toMatchObject({ ok: false });
+    expect(validateMedicationInput({ member_id: M1, name: "X", started_on: "x" }, IDS)).toMatchObject({ ok: false });
+    expect(validateMedicationInput({ member_id: M1, name: "X", ended_on: "2026-13-01" }, IDS)).toMatchObject({ ok: false });
+    expect(validateMedicationInput({ member_id: M1, name: "X", dosage: "d".repeat(LIMITS.dosage + 1) }, IDS)).toMatchObject({ ok: false });
+    expect(validateMedicationInput({ member_id: M1, name: "X", frequency: "d".repeat(LIMITS.frequency + 1) }, IDS)).toMatchObject({ ok: false });
+    expect(validateMedicationInput({ member_id: M1, name: "X", prescribed_by: "d".repeat(LIMITS.doctor + 1) }, IDS)).toMatchObject({ ok: false });
+    expect(validateMedicationInput({ member_id: M1, name: "X", notes: "d".repeat(LIMITS.medNotes + 1) }, IDS)).toMatchObject({ ok: false });
+    expect(validateMedicationInput({ member_id: "nope", name: "X" }, IDS)).toMatchObject({ ok: false });
+  });
+  it("encerrar usa hoje, mas nunca antes do início", () => {
+    expect(endDateFor("2026-01-01", "2026-11-09")).toBe("2026-11-09");
+    expect(endDateFor(null, "2026-11-09")).toBe("2026-11-09");
+    expect(endDateFor("2026-12-01", "2026-11-09")).toBe("2026-12-01");
+  });
+  it("separa em uso e encerrados", () => {
+    const r = splitMedications([{ id: 1, active: true }, { id: 2, active: false }, { id: 3, active: true }]);
+    expect(r.active.map((x) => x.id)).toEqual([1, 3]);
+    expect(r.ended.map((x) => x.id)).toEqual([2]);
+  });
+});
+
+describe("vacina", () => {
+  it("valida e normaliza; só nome e pessoa são obrigatórios", () => {
+    expect(validateVaccineInput({ member_id: M2, name: " Hepatite B ", dose_label: "2ª dose", next_dose_on: "2027-01-15" }, IDS)).toEqual({
+      ok: true,
+      value: { member_id: M2, name: "Hepatite B", dose_label: "2ª dose", applied_on: null, next_dose_on: "2027-01-15", place: null, lot: null, notes: null },
+    });
+  });
+  it("recusa nome vazio, datas inválidas e limites do banco", () => {
+    expect(validateVaccineInput({ member_id: M2, name: "" }, IDS)).toMatchObject({ ok: false });
+    expect(validateVaccineInput({ member_id: M2, name: "X", applied_on: "ontem" }, IDS)).toMatchObject({ ok: false });
+    expect(validateVaccineInput({ member_id: M2, name: "X", next_dose_on: "2027-02-31" }, IDS)).toMatchObject({ ok: false });
+    expect(validateVaccineInput({ member_id: M2, name: "X", dose_label: "d".repeat(LIMITS.doseLabel + 1) }, IDS)).toMatchObject({ ok: false });
+    expect(validateVaccineInput({ member_id: M2, name: "X", lot: "d".repeat(LIMITS.lot + 1) }, IDS)).toMatchObject({ ok: false });
+    expect(validateVaccineInput({ member_id: M2, name: "X", notes: "d".repeat(LIMITS.vaccineNotes + 1) }, IDS)).toMatchObject({ ok: false });
+    expect(validateVaccineInput({ member_id: M2, name: "X", lot: "d".repeat(LIMITS.lot) }, IDS).ok).toBe(true);
+    expect(validateVaccineInput({ member_id: "99999999-9999-4999-8999-999999999999", name: "X" }, IDS)).toMatchObject({ ok: false });
+  });
+  it("ordena pela próxima dose mais cedo; sem data depois, pela aplicação mais recente", () => {
+    const l = [
+      { n: "a", next_dose_on: null, applied_on: "2020-01-01" },
+      { n: "b", next_dose_on: "2027-05-01", applied_on: null },
+      { n: "c", next_dose_on: null, applied_on: "2024-01-01" },
+      { n: "d", next_dose_on: "2026-12-01", applied_on: null },
+    ];
+    expect(sortVaccines(l).map((x) => x.n)).toEqual(["d", "b", "c", "a"]);
+  });
+  it("próxima dose atrasada e filtro por pessoa", () => {
+    expect(isOverdue("2026-11-08", "2026-11-09")).toBe(true);
+    expect(isOverdue("2026-11-09", "2026-11-09")).toBe(false);
+    expect(isOverdue(null, "2026-11-09")).toBe(false);
+    const l = [{ member_id: M1 }, { member_id: M2 }];
+    expect(filterByMember(l, M2)).toEqual([{ member_id: M2 }]);
+    expect(filterByMember(l, "")).toHaveLength(2);
   });
 });
 
