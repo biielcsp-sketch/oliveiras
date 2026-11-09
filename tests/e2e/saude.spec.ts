@@ -279,7 +279,7 @@ test("Saúde: consulta agendada vira evento na Agenda e acompanha edição, canc
   await expect(page).toHaveURL(/\/inicio$/);
 
   const events = async () =>
-    (await (await fetch(`${MOCK}/__events/${encodeURIComponent("gabriel.e2e@gmail.com")}`)).json()) as { id: string; summary: string; status: string; location?: string }[];
+    (await (await fetch(`${MOCK}/__events/${encodeURIComponent("gabriel.e2e@gmail.com")}`)).json()) as { id: string; summary: string; status: string; location?: string; reminders?: unknown }[];
 
   await page.goto("/agenda");
   await page.getByRole("link", { name: "Conectar Google" }).click();
@@ -297,12 +297,14 @@ test("Saúde: consulta agendada vira evento na Agenda e acompanha edição, canc
   await expect(item).not.toContainText("Não sincronizada com a Agenda");
   const created = (await events()).find((e) => e.summary === "Consulta — Cardiologia (Gabriel)");
   expect(created?.location).toBe("Clínica Central");
+  expect(created?.reminders).toEqual({ useDefault: false, overrides: [{ method: "popup", minutes: 1440 }, { method: "popup", minutes: 60 }] });
 
   await item.getByRole("button", { name: "Editar" }).click();
   const e = page.getByRole("dialog", { name: "Editar consulta" });
   await e.getByLabel("Especialidade").fill("Ortopedia");
   await e.getByRole("button", { name: "Salvar alterações" }).click();
   await expect.poll(async () => (await events()).some((x) => x.summary === "Consulta — Ortopedia (Gabriel)")).toBe(true);
+  expect((await events()).find((x) => x.id === created!.id)?.reminders).toEqual({ useDefault: false, overrides: [{ method: "popup", minutes: 1440 }, { method: "popup", minutes: 60 }] });
 
   await item.getByRole("button", { name: "Cancelar consulta" }).click();
   await expect.poll(async () => (await events()).find((x) => x.id === created!.id)?.status).toBe("cancelled");

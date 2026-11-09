@@ -4,6 +4,9 @@ import { validateEventInput } from "@/lib/agenda/input";
 import type { EventInput } from "@/lib/agenda/google-events";
 import type { AppointmentKind } from "./types";
 
+/** Minutos antes da consulta: 1 dia e 1 hora. */
+export const APPOINTMENT_REMINDERS = [1440, 60];
+
 export function appointmentEventInput(a: {
   kind: AppointmentKind;
   specialty: string | null;
@@ -17,5 +20,6 @@ export function appointmentEventInput(a: {
   const title = `${label}${a.specialty ? ` — ${a.specialty}` : ""} (${a.memberName})`;
   const description = [a.doctor ? `Médico: ${a.doctor}` : "", a.notes ?? ""].filter(Boolean).join("\n");
   const r = validateEventInput({ title, allDay: false, start: toSpLocal(a.starts_at), location: a.place ?? "", description });
-  return r.ok ? r.value : null;
+  // Notificação no celular (Google Calendar): 1 dia e 1 hora antes.
+  return r.ok ? { ...r.value, reminders: APPOINTMENT_REMINDERS } : null;
 }

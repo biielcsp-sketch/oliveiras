@@ -135,6 +135,8 @@ describe("consulta e retorno", () => {
     const ev = appointmentEventInput({ kind: "consulta", specialty: "Cardiologia", doctor: "Dra. Ana", place: "Clínica", notes: null, starts_at: "2027-01-10T17:30:00.000Z", memberName: "Karen" });
     expect(ev).toMatchObject({ title: "Consulta — Cardiologia (Karen)", allDay: false, start: "2027-01-10T14:30", end: "2027-01-10T15:30", location: "Clínica", description: "Médico: Dra. Ana" });
     expect(appointmentEventInput({ kind: "retorno", specialty: null, doctor: null, place: null, notes: null, starts_at: "2027-01-10T17:30:00.000Z", memberName: "Leo" })?.title).toBe("Retorno (Leo)");
+    expect(ev?.reminders).toEqual([1440, 60]);
+    expect(appointmentEventInput({ kind: "retorno", specialty: null, doctor: null, place: null, notes: null, starts_at: "2027-01-10T17:30:00.000Z", memberName: "Leo" })?.reminders).toEqual([1440, 60]);
   });
 });
 
