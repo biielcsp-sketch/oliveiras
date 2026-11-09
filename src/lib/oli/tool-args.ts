@@ -3,6 +3,8 @@
  * Roda no servidor (server actions). Erro vira { erro } curto, que volta ao modelo.
  */
 import { MAX_AMOUNT, UUID_RE, validDate } from "@/lib/financas/transaction-input";
+import { addDays, diffDays, isDate, normalizeLocal } from "@/lib/agenda/dates";
+import { EVENT_LIMITS } from "@/lib/agenda/input";
 
 export const OLI_TOOL_NAMES = [
   "resumo_do_mes",
@@ -13,6 +15,8 @@ export const OLI_TOOL_NAMES = [
   "salvar_memoria",
   "consultar_memoria",
   "esquecer_memoria",
+  "agenda_periodo",
+  "criar_evento",
 ] as const;
 export type OliToolName = (typeof OLI_TOOL_NAMES)[number];
 
@@ -155,4 +159,73 @@ export function matchByName<T extends { name: string }>(items: T[], query: strin
   if (exact.length === 1) return exact[0];
   const partial = items.filter((i) => normalizeName(i.name).includes(q) || q.includes(normalizeName(i.name)));
   return partial.length === 1 ? partial[0] : null;
+}
+
+/* ---------- Agenda ---------- */
+
+export const AGENDA_DEFAULT_DAYS = 7;
+export const AGENDA_MAX_DAYS = 31;
+
+/** agenda_periodo: padrão hoje até +7 dias; no máximo 31 dias; pessoa opcional (nome). */
+export function parseAgendaPeriodoArgs(args: unknown, today: string): Result<{ de: string; ate: string; pessoa?: string }> {
+  const a = obj(args);
+  const de = optText(a.de, 10, "Data inicial");
+  if (!de.ok) return de;
+  const ate = optText(a.ate, 10, "Data final");
+  if (!ate.ok) return ate;
+  if (de.value && !isDate(de.value)) return fail("Data inicial inválida. Use AAAA-MM-DD.");
+  if (ate.value && !isDate(ate.value)) return fail("Data final inválida. Use AAAA-MM-DD.");
+  const from = de.value ?? today;
+  const to = ate.value ?? addDays(from, AGENDA_DEFAULT_DAYS);
+  if (to < from) return fail("A data final é antes da inicial.");
+  if (diffDays(from, to) > AGENDA_MAX_DAYS) return fail(`Período longo demais (máximo ${AGENDA_MAX_DAYS} dias).`);
+  const pessoa = optText(a.pessoa, LIMITS.name, "Pessoa");
+  if (!pessoa.ok) return pessoa;
+  return ok({ de: from, ate: to, pessoa: pessoa.value });
+}
+
+export type CriarEventoArgs = {
+  titulo: string;
+  dia_inteiro: boolean;
+  /** Dia inteiro: AAAA-MM-DD; senão AAAA-MM-DDTHH:mm (São Paulo). */
+  inicio: string;
+  fim?: string;
+  local?: string;
+  agenda?: string;
+};
+
+/** criar_evento: data sem hora (ou dia_inteiro) vira evento de dia inteiro. */
+export function parseCriarEventoArgs(args: unknown): Result<CriarEventoArgs> {
+  const a = obj(args);
+  const titulo = reqText(a.titulo, EVENT_LIMITS.title, "Título");
+  if (!titulo.ok) return titulo;
+  const rawInicio = reqText(a.inicio, 25, "Início");
+  if (!rawInicio.ok) return rawInicio;
+  const rawFim = optText(a.fim, 25, "Fim");
+  if (!rawFim.ok) return rawFim;
+  if (a.dia_inteiro !== undefined && a.dia_inteiro !== null && typeof a.dia_inteiro !== "boolean") return fail("dia_inteiro inválido.");
+  const dateOnly = isDate(rawInicio.value);
+  const diaInteiro = a.dia_inteiro === true || (a.dia_inteiro !== false && dateOnly);
+  let inicio: string;
+  let fim: string | undefined;
+  if (diaInteiro) {
+    inicio = rawInicio.value.slice(0, 10);
+    if (!isDate(inicio)) return fail("Início inválido. Use AAAA-MM-DD.");
+    fim = rawFim.value?.slice(0, 10);
+    if (fim && !isDate(fim)) return fail("Fim inválido. Use AAAA-MM-DD.");
+  } else {
+    const n = normalizeLocal(rawInicio.value);
+    if (!n) return fail("Início inválido. Use AAAA-MM-DDTHH:mm.");
+    inicio = n;
+    if (rawFim.value) {
+      const f = normalizeLocal(rawFim.value);
+      if (!f) return fail("Fim inválido. Use AAAA-MM-DDTHH:mm.");
+      fim = f;
+    }
+  }
+  const local = optText(a.local, EVENT_LIMITS.location, "Local");
+  if (!local.ok) return local;
+  const agenda = optText(a.agenda, EVENT_LIMITS.title, "Agenda");
+  if (!agenda.ok) return agenda;
+  return ok({ titulo: titulo.value, dia_inteiro: diaInteiro, inicio, fim, local: local.value, agenda: agenda.value });
 }

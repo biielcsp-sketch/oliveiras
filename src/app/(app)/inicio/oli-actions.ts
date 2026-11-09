@@ -8,23 +8,32 @@ import { getBillPayments, getBills, getTransactionsAround } from "@/lib/financas
 import { currentMonth } from "@/lib/financas/period";
 import { todaySP } from "@/lib/financas/today";
 import { validateManualTransaction, UUID_RE } from "@/lib/financas/transaction-input";
+import { validateEventInput } from "@/lib/agenda/input";
+import { getEventsBetween, loadAccounts, writableCalendarsOf, agendaEnabled, createEvent } from "@/lib/google/agenda";
 import {
   isToolName,
+  parseAgendaPeriodoArgs,
+  parseCriarEventoArgs,
   parseConsultarMemoriaArgs,
   parseCriarLancamentoArgs,
   parseEsquecerMemoriaArgs,
   parseResumoArgs,
   parseSalvarMemoriaArgs,
   parseUltimosArgs,
+  matchByName,
   type OliToolName,
 } from "@/lib/oli/tool-args";
 import {
+  buildEventos,
   buildContasAPagar,
   buildLancamentos,
   buildResumo,
   buildSaldos,
   resolveLancamento,
   type ContasData,
+  type EventoPreview,
+  type EventosData,
+  resolveEvento,
   type LancamentoPreview,
   type LancamentosData,
   memoryLimitError,
@@ -48,6 +57,8 @@ export type OliToolResult =
   | { ok: true; tool: "salvar_memoria"; data: MemoriaPreview }
   | { ok: true; tool: "consultar_memoria"; data: MemoriasData }
   | { ok: true; tool: "esquecer_memoria"; data: MemoriaData }
+  | { ok: true; tool: "agenda_periodo"; data: EventosData }
+  | { ok: true; tool: "criar_evento"; data: EventoPreview }
   | { ok: false; erro: string };
 
 const err = (erro: string): OliToolResult => ({ ok: false, erro });
@@ -148,7 +159,42 @@ async function dispatch(name: OliToolName, args: unknown): Promise<OliToolResult
       if (!memory) return err("Memória não encontrada.");
       return { ok: true, tool: name, data: memory };
     }
+    case "agenda_periodo": {
+      const a = parseAgendaPeriodoArgs(args, todaySP());
+      if (!a.ok) return err(a.erro);
+      const ctx = await getAppContext();
+      if (!agendaEnabled(ctx.household.id)) return err("A Agenda não está liberada para esta família.");
+      let memberId: string | null = null;
+      let pessoa: string | null = null;
+      if (a.value.pessoa) {
+        const people = ctx.members.filter((m) => m.user_id);
+        const q = a.value.pessoa;
+        const found = /^(eu|mim|minha|meu)$/i.test(q.trim()) ? ctx.me : matchByName(people, q);
+        if (!found) return err(`Pessoa não encontrada. Opções: ${people.map((m) => m.name).join(", ")}.`);
+        memberId = found.id;
+        pessoa = found.name;
+      }
+      const events = (await getEventsBetween(ctx, a.value.de, a.value.ate)).filter((e) => !memberId || e.memberId === memberId);
+      return { ok: true, tool: name, data: buildEventos(events, a.value.de, a.value.ate, pessoa) };
+    }
+    case "criar_evento": {
+      // Só prepara: grava em confirmOliEvento, depois do toque do usuário.
+      const a = parseCriarEventoArgs(args);
+      if (!a.ok) return err(a.erro);
+      const { household } = await getAppContext();
+      if (!agendaEnabled(household.id)) return err("A Agenda não está liberada para esta família.");
+      const r = resolveEvento(a.value, await writableCalendars());
+      if (!r.ok) return err(r.erro);
+      return { ok: true, tool: name, data: r.preview };
+    }
   }
+}
+
+async function writableCalendars() {
+  const ctx = await getAppContext();
+  const db = await createClient();
+  const { accounts, calendars } = await loadAccounts(db, ctx.household.id);
+  return writableCalendarsOf(ctx, accounts, calendars).map((c) => ({ id: c.id, summary: c.summary, primary: c.primary }));
 }
 
 async function countMemories() {
@@ -238,5 +284,25 @@ export async function confirmOliEsquecer(id: string): Promise<ConfirmResult> {
     .eq("id", id)
     .select("id");
   if (error || !data?.length) return { ok: false, erro: "Memória não encontrada." };
+  return { ok: true };
+}
+
+/** Cria o evento no Google depois do toque em Confirmar. Revalida agenda e dados: o cliente não é confiável. */
+export async function confirmOliEvento(preview: EventoPreview): Promise<ConfirmResult> {
+  const ctx = await getAppContext();
+  if (!preview || typeof preview !== "object") return { ok: false, erro: "Dados inválidos." };
+  const cal = (await writableCalendars()).find((c) => c.id === preview.agenda?.id);
+  if (!cal) return { ok: false, erro: "Agenda não encontrada." };
+  const v = validateEventInput({
+    title: preview.titulo,
+    allDay: preview.dia_inteiro === true,
+    start: preview.inicio,
+    end: preview.fim,
+    location: preview.local,
+  });
+  if (!v.ok) return { ok: false, erro: v.erro };
+  const r = await createEvent(ctx, cal.id, v.value);
+  if (!r.ok) return { ok: false, erro: r.erro };
+  revalidatePath("/agenda");
   return { ok: true };
 }

@@ -27,3 +27,18 @@ export async function createFamilyWithId(householdId: string, email: string, pas
     if (e) throw e;
   }
 }
+
+/** Segundo adulto (cônjuge) na família: usuário confirmado + vínculo + membro. */
+export async function addSpouse(householdId: string, email: string, password: string, name: string) {
+  const admin = adminClient();
+  const { data: user, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true });
+  if (error || !user.user) throw error ?? new Error("usuário não criado");
+  const uid = user.user.id;
+  for (const [table, row] of [
+    ["household_users", { household_id: householdId, user_id: uid, role: "member" }],
+    ["members", { household_id: householdId, user_id: uid, name, relation: "conjuge" }],
+  ] as const) {
+    const { error: e } = await admin.from(table).insert(row);
+    if (e) throw e;
+  }
+}

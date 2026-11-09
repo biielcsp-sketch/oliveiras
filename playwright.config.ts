@@ -2,6 +2,8 @@ import { defineConfig, devices } from "@playwright/test";
 
 const PORT = Number(process.env.E2E_PORT ?? 3000);
 export const E2E_HOUSEHOLD_ID = "eeeeeeee-0000-4000-8000-000000000001";
+// Família da Agenda separada da do Open Finance: as duas specs rodam em paralelo e recriam a família.
+export const E2E_AGENDA_HOUSEHOLD_ID = "eeeeeeee-0000-4000-8000-000000000002";
 
 export default defineConfig({
   testDir: "tests/e2e",
@@ -22,6 +24,12 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
     },
     {
+      // Google (OAuth + Calendar) simulado (só nos testes)
+      command: "node tests/e2e/google-mock.mjs",
+      port: 4020,
+      reuseExistingServer: !process.env.CI,
+    },
+    {
       // O app precisa ter sido gerado antes com `npm run build` apontando para o Supabase local.
       command: `npm run start -- -p ${PORT}`,
       port: PORT,
@@ -35,6 +43,12 @@ export default defineConfig({
         // Oli: família autorizada fixa e sem chave do Gemini (o token responde 503; nunca chama o Gemini real).
         OLI_HOUSEHOLD_ID: E2E_HOUSEHOLD_ID,
         GEMINI_API_KEY: "",
+        // Agenda: Google simulado em localhost e família própria.
+        GOOGLE_CLIENT_ID: "test-google-client",
+        GOOGLE_CLIENT_SECRET: "test-google-secret",
+        GOOGLE_OAUTH_BASE: "http://127.0.0.1:4020",
+        GOOGLE_API_BASE: "http://127.0.0.1:4020/calendar/v3",
+        AGENDA_HOUSEHOLD_ID: E2E_AGENDA_HOUSEHOLD_ID,
       },
     },
   ],
