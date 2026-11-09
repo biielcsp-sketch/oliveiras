@@ -2,9 +2,10 @@ import { getAppContext } from "@/lib/data";
 import { BottomNav, MobileTopBar, Sidebar } from "@/components/nav";
 import { Plexus } from "@/components/plexus";
 import { InstallPrompt } from "@/components/install-prompt";
+import { OfflineCardsSync } from "@/components/offline-cards";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const { household } = await getAppContext();
+  const { household, user } = await getAppContext();
 
   return (
     <div className="relative flex min-h-dvh">
@@ -18,6 +19,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </div>
       <BottomNav />
       <InstallPrompt />
+      {/* Outro usuário neste aparelho: apaga as carteirinhas offline do anterior. */}
+      <OfflineCardsSync userId={user.id} />
     </div>
   );
 }

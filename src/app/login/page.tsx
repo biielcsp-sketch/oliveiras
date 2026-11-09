@@ -1,5 +1,6 @@
 import { LogoMark } from "@/components/logo";
 import { LoginForm } from "./login-form";
+import { OfflineCardsWipe } from "@/components/offline-cards";
 
 export const metadata = { title: "Entrar" };
 
@@ -11,6 +12,8 @@ export default function LoginPage() {
         <h1 className="mt-5 text-2xl font-semibold tracking-tight">Oliveira&apos;s</h1>
         <p className="mt-1 text-sm text-muted">A vida da família em um só lugar.</p>
       </div>
+      {/* Sair da conta cai aqui: apaga as carteirinhas offline deste aparelho. */}
+      <OfflineCardsWipe />
       <LoginForm />
     </main>
   );
