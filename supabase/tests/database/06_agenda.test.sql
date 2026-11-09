@@ -1,7 +1,7 @@
 -- Agenda (Google Calendar): isolamento por família, FKs compostas, regras do
 -- dono da conta Google x cônjuge, checks, trigger de updated_at e grants.
 begin;
-select plan(36);
+select plan(44);
 
 insert into auth.users (id, email, aud, role) values
   ('00000000-0000-0000-0000-0000000000f1', 'ga@teste.invalid', 'authenticated', 'authenticated'),
@@ -53,7 +53,7 @@ select throws_ok(format($$ insert into public.google_accounts (household_id, mem
   values (%L, %L, 'sub-ana', 'ana2@gmail.test', 'c', 'calendar') $$, current_setting('t.ha'), current_setting('t.ma')),
   '23505', null, 'mesma conta Google não entra duas vezes na família');
 
--- checks
+-- checks (usuário A = dono: passa pelo trigger de guarda e cai no check constraint)
 select throws_ok(format($$ insert into public.cal_events (household_id, calendar_ref, google_event_id, starts_at, ends_at)
   values (%L, %L, 'ev-inv', '2026-11-08 10:00-03', '2026-11-08 09:00-03') $$, current_setting('t.ha'), current_setting('t.cal_a')),
   '23514', null, 'evento com ends_at < starts_at é rejeitado');
@@ -65,6 +65,7 @@ select throws_ok(format($$ insert into public.cal_calendars (household_id, accou
   '23514', null, 'cor fora do formato #rrggbb é rejeitada');
 select throws_ok(format($$ update public.google_accounts set status = 'quebrado' where id = %L $$, current_setting('t.acc_a')),
   '23514', null, 'status de conta fora da lista é rejeitado');
+-- A é o dono: o trigger de guarda deixa passar e o check de 4096 é que reprova (23514, não 42501)
 select throws_ok(format($$ update public.google_accounts set token_ciphertext = repeat('x', 4097) where id = %L $$, current_setting('t.acc_a')),
   '23514', null, 'token_ciphertext acima de 4096 é rejeitado');
 
@@ -97,6 +98,17 @@ select throws_ok(format($$ insert into public.google_accounts (household_id, mem
   '42501', null, 'cônjuge não conecta conta com member_id do outro');
 select throws_ok(format($$ update public.google_accounts set member_id = %L where id = %L $$,
   current_setting('t.mc'), current_setting('t.acc_a')), '42501', null, 'cônjuge não troca o dono da conta para si');
+-- cônjuge: não sobrescreve credenciais do dono (trigger google_accounts_guard)
+select throws_ok(format($$ update public.google_accounts set token_ciphertext = 'v1.hack.hack.hack' where id = %L $$,
+  current_setting('t.acc_a')), '42501', null, 'cônjuge não altera token_ciphertext da conta do outro');
+select throws_ok(format($$ update public.google_accounts set email = 'invasor@gmail.test' where id = %L $$,
+  current_setting('t.acc_a')), '42501', null, 'cônjuge não altera email da conta do outro');
+select throws_ok(format($$ update public.google_accounts set scopes = 'calendar drive' where id = %L $$,
+  current_setting('t.acc_a')), '42501', null, 'cônjuge não altera scopes da conta do outro');
+select lives_ok(format($$ update public.google_accounts set status = 'ok', last_error = 'falha transitória', last_sync_at = '2026-11-08 13:00-03' where id = %L $$,
+  current_setting('t.acc_a')), 'cônjuge continua atualizando status, last_error e last_sync_at');
+select is((select token_ciphertext || '|' || email || '|' || scopes from public.google_accounts where id = current_setting('t.acc_a')::uuid),
+  'v1.iv.cipher.tag|ana@gmail.test|calendar', 'credenciais do dono seguem intactas após as tentativas do cônjuge');
 delete from public.google_accounts where id = current_setting('t.acc_a')::uuid;
 reset role;
 select is((select count(*)::int from public.google_accounts where id = current_setting('t.acc_a')::uuid), 1,
@@ -136,9 +148,14 @@ select is((select status || '|' || (select summary from public.cal_calendars whe
   from public.google_accounts where id = current_setting('t.acc_a')::uuid),
   'ok|Ana|Culto de domingo', 'B não altera nem apaga conta, agenda ou evento de A');
 
--- A desconecta a própria conta: agendas e eventos vão junto (cascade)
+-- A (dono) troca o próprio token (reconexão OAuth), depois desconecta a conta:
+-- agendas e eventos vão junto (cascade)
 set local role authenticated;
 select pg_temp.as_user('00000000-0000-0000-0000-0000000000f1');
+select lives_ok(format($$ update public.google_accounts set token_ciphertext = 'v2.iv.cipher.tag' where id = %L $$,
+  current_setting('t.acc_a')), 'dono altera o próprio token_ciphertext');
+select is((select token_ciphertext from public.google_accounts where id = current_setting('t.acc_a')::uuid),
+  'v2.iv.cipher.tag', 'novo token do dono foi gravado');
 delete from public.google_accounts where id = current_setting('t.acc_a')::uuid;
 reset role;
 select is((select count(*)::int from public.google_accounts where id = current_setting('t.acc_a')::uuid), 0,
@@ -155,6 +172,9 @@ select throws_ok($$ select count(*) from public.cal_events $$, '42501', null, 'a
 reset role;
 select ok(not has_function_privilege('authenticated', 'public.agenda_touch()', 'execute'),
   'authenticated não executa a função de trigger diretamente');
+select ok(not has_function_privilege('authenticated', 'public.google_accounts_guard()', 'execute')
+  and not has_function_privilege('anon', 'public.google_accounts_guard()', 'execute'),
+  'authenticated e anon não executam google_accounts_guard diretamente');
 
 select * from finish();
 rollback;

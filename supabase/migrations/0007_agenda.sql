@@ -129,6 +129,32 @@ create trigger cal_events_touch before update on public.cal_events
   for each row execute function public.agenda_touch();
 revoke execute on function public.agenda_touch() from public, anon, authenticated;
 
+-- 4b) Só o dono da conta Google troca token, e-mail e escopos -----------------
+-- A política de UPDATE deixa qualquer membro da família atualizar a linha (o
+-- cônjuge precisa gravar status, last_error e last_sync_at na sincronização).
+-- Este trigger impede que o cônjuge sobrescreva as credenciais do outro pela API.
+-- Security invoker: a consulta a members roda com a RLS do chamador (que já enxerga
+-- os membros da própria família), e auth.uid() é o do chamador.
+create or replace function public.google_accounts_guard() returns trigger
+language plpgsql security invoker set search_path = '' as $$
+begin
+  if new.token_ciphertext is distinct from old.token_ciphertext
+     or new.email is distinct from old.email
+     or new.scopes is distinct from old.scopes then
+    if not exists (select 1 from public.members m
+                   where m.id = old.member_id
+                     and m.household_id = old.household_id
+                     and m.user_id = (select auth.uid())) then
+      raise exception 'apenas o dono da conta Google altera token, e-mail ou escopos'
+        using errcode = '42501';
+    end if;
+  end if;
+  return new;
+end; $$;
+create trigger google_accounts_guard before update on public.google_accounts
+  for each row execute function public.google_accounts_guard();
+revoke execute on function public.google_accounts_guard() from public, anon, authenticated;
+
 -- 5) Grants ------------------------------------------------------------------
 revoke all on public.google_accounts, public.cal_calendars, public.cal_events from anon;
 revoke truncate, references, trigger on public.google_accounts, public.cal_calendars, public.cal_events from authenticated;
