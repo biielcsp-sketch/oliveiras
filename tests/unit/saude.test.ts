@@ -258,6 +258,10 @@ describe("service worker (regras do cache de carteirinhas)", () => {
     expect(sw).toContain("saude\\/arquivo\\/carteirinhas\\/");
     expect(sw).not.toMatch(/\.put\(|addAll\(\[?\s*req|cache\.add\(/);
   });
+  it("js/css da tela offline também saem do cache sem rede (senão a lista não monta)", () => {
+    expect(sw).toMatch(/req\.mode !== "navigate" && PRECACHE\.includes\(url\.pathname\)/);
+    expect(sw).toContain("caches.match(url.pathname)");
+  });
 });
 
 describe("página offline de carteirinhas", () => {

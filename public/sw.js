@@ -52,6 +52,12 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Recursos estáticos da tela offline (js/css/ícone): sem eles a lista de carteirinhas não abre sem internet.
+  if (url.origin === self.location.origin && req.mode !== "navigate" && PRECACHE.includes(url.pathname)) {
+    event.respondWith(fetch(req).catch(() => caches.match(url.pathname).then((res) => res || Response.error())));
+    return;
+  }
+
   // Navegações: sem rede, tela offline (ou a lista de carteirinhas offline).
   if (req.mode !== "navigate") return;
   event.respondWith(fetch(req).catch(() => caches.match(url.pathname === CARDS_PAGE ? CARDS_PAGE : OFFLINE_URL)));
