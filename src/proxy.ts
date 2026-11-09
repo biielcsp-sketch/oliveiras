@@ -8,6 +8,6 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     // Tudo, exceto arquivos estáticos, ícones, arquivos do Oli (worklet e imagem), manifest e service worker
-    "/((?!_next/static|_next/image|favicon.ico|icons/|oli/|sw.js|offline.html|manifest.webmanifest|.*\\.(?:png|jpg|jpeg|svg|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|icons/|oli/|sw.js|offline.html|offline-carteirinhas\\.(?:html|js|css)|manifest.webmanifest|.*\\.(?:png|jpg|jpeg|svg|webp|ico)$).*)",
   ],
 };
