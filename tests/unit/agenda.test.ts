@@ -39,6 +39,7 @@ import {
   toCalendarRow,
   toEventRow,
   toGoogleBody,
+  validReminders,
 } from "@/lib/agenda/google-events";
 import { eventInputFromForm, validateEventInput } from "@/lib/agenda/input";
 import { dotsByDay, eventDays, formValues, groupByDay, timeLabel, whenLabel, type AgendaEvent } from "@/lib/agenda/view";
@@ -352,6 +353,24 @@ describe("formulário de evento", () => {
     f.set("end_date", "2026-12-22");
     f.set("start", "lixo");
     expect(validateEventInput(eventInputFromForm(f))).toMatchObject({ ok: true, value: { allDay: true, start: "2026-12-20", end: "2026-12-22" } });
+  });
+  it("lembretes: validação, corpo com e sem o campo", () => {
+    const base = { title: "Consulta", allDay: false, start: "2026-11-08T19:00", end: "2026-11-08T20:00", location: null, description: null };
+    expect(validReminders([1440, 60])).toBe(true);
+    expect(validReminders([0, 40320])).toBe(true);
+    expect(validReminders([])).toBe(true);
+    for (const bad of [[-1], [40321], [1.5], [60, 60], [1, 2, 3, 4, 5, 6], ["60"], [NaN], "60", null]) expect(validReminders(bad)).toBe(false);
+    expect(toGoogleBody({ ...base, reminders: [1440, 60] }).reminders).toEqual({
+      useDefault: false,
+      overrides: [
+        { method: "popup", minutes: 1440 },
+        { method: "popup", minutes: 60 },
+      ],
+    });
+    expect(() => toGoogleBody({ ...base, reminders: [-5] })).toThrow();
+    // Sem o campo: corpo idêntico ao de antes (eventos da tela Agenda não mudam).
+    expect(Object.keys(toGoogleBody(base)).sort()).toEqual(["description", "end", "location", "start", "summary"]);
+    expect(toGoogleBody({ ...base, reminders: undefined })).toEqual(toGoogleBody(base));
   });
   it("corpo para o Google: dia inteiro com fim exclusivo; horário com offset; troca limpa o outro formato", () => {
     expect(toGoogleBody({ title: "Viagem", allDay: true, start: "2026-12-20", end: "2026-12-22", location: null, description: null })).toEqual({
