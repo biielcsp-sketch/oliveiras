@@ -7,8 +7,8 @@ import { summarize } from "@/lib/financas/summary";
 import { billStatus, dateInMonth, invoiceFor, invoiceTotals, type BillStatus } from "@/lib/financas/planning";
 import { monthLabel } from "@/lib/financas/period";
 import type { Account, Bill, BillPayment, Category, Transaction } from "@/lib/financas/types";
-import { matchByName, type CriarEventoArgs, type CriarLancamentoArgs, type MemoryCategory } from "./tool-args";
-import { eventDays, timeLabel, untitled, type AgendaEvent } from "@/lib/agenda/view";
+import { matchByName, normalizeName, type CriarEventoArgs, type ExcluirEventoArgs, type CriarLancamentoArgs, type MemoryCategory } from "./tool-args";
+import { eventDays, timeLabel, untitled, whenLabel, type AgendaEvent } from "@/lib/agenda/view";
 import { validateEventInput } from "@/lib/agenda/input";
 
 const cents = (v: number) => Math.round(v * 100);
@@ -51,6 +51,8 @@ export type MemoriasData = { busca: string; itens: MemoriaData[] };
 export type MemoriaPreview = { conteudo: string; categoria: MemoryCategory };
 
 export type EventoItem = {
+  /** Id do evento: o modelo o devolve em excluir_evento. */
+  id: string;
   dia: string;
   hora: string;
   titulo: string;
@@ -71,6 +73,16 @@ export type EventoPreview = {
   agenda: { id: string; nome: string };
 };
 
+export type ExcluirEventoPreview = {
+  id: string;
+  titulo: string;
+  /** Data e hora já formatadas (ex.: "seg., 9 de nov. · 19:00 – 21:00"). */
+  quando: string;
+  agenda: string;
+};
+
+export type EventoCandidato = { id: string; titulo: string; quando: string; agenda: string; pessoa: string };
+
 export type ConfirmStatus = "pendente" | "salvando" | "criado" | "cancelado" | "erro";
 
 export type OliPanel =
@@ -85,6 +97,7 @@ export type OliPanel =
   | { id: string; kind: "confirmar_memoria"; data: MemoriaPreview; status: ConfirmStatus; erro?: string }
   | { id: string; kind: "eventos"; data: EventosData }
   | { id: string; kind: "confirmar_evento"; data: EventoPreview; status: ConfirmStatus; erro?: string }
+  | { id: string; kind: "confirmar_excluir_evento"; data: ExcluirEventoPreview; status: ConfirmStatus; erro?: string }
   | { id: string; kind: "aviso"; texto: string };
 
 /* ---------- Montagem dos dados ---------- */
@@ -257,6 +270,7 @@ export function buildEventos(events: AgendaEvent[], de: string, ate: string, pes
     .filter((x) => x !== null)
     .sort((a, b) => a.dia.localeCompare(b.dia) || Number(b.e.allDay) - Number(a.e.allDay) || a.e.startsAt.localeCompare(b.e.startsAt))
     .map(({ e, dia }) => ({
+      id: e.id,
       dia,
       hora: timeLabel(e, dia),
       titulo: untitled(e.title),
@@ -304,6 +318,54 @@ export function resolveEvento(
   };
 }
 
+/** Por que este usuário não pode apagar o evento (null = pode). */
+export function exclusaoNegada(e: Pick<AgendaEvent, "editable" | "owner">): string | null {
+  if (e.editable) return null;
+  if (e.owner !== "Você")
+    return `Só a pessoa dona da agenda (${e.owner}) pode excluir este evento.`;
+  return "Esta agenda é somente leitura (ou a conta Google precisa ser reconectada); não dá para excluir este evento.";
+}
+
+const candidato = (e: AgendaEvent): EventoCandidato => ({
+  id: e.id,
+  titulo: untitled(e.title),
+  quando: whenLabel(e),
+  agenda: e.calendarName,
+  pessoa: e.owner,
+});
+
+/**
+ * Escolhe o evento a excluir entre os candidatos do dia (ou o do id). Sem adivinhar:
+ * nenhum → erro; mais de um → erro com a lista para o modelo perguntar. Só PREPARA; apagar é a confirmação.
+ */
+export function resolveExclusao(
+  args: ExcluirEventoArgs,
+  events: AgendaEvent[],
+): { ok: true; preview: ExcluirEventoPreview } | { ok: false; erro: string; candidatos?: EventoCandidato[] } {
+  let found: AgendaEvent[];
+  if (args.id) {
+    found = events.filter((e) => e.id === args.id);
+    if (found.length === 0) return { ok: false, erro: "Evento não encontrado. Consulte a agenda com agenda_periodo." };
+  } else {
+    const q = normalizeName(args.titulo ?? "");
+    const day = events.filter((e) => eventDays(e).includes(args.data ?? ""));
+    const exact = day.filter((e) => normalizeName(untitled(e.title)) === q);
+    found = exact.length > 0 ? exact : day.filter((e) => q && normalizeName(untitled(e.title)).includes(q));
+    if (found.length === 0)
+      return { ok: false, erro: "Nenhum evento com esse título nesse dia. Consulte a agenda com agenda_periodo e confirme com o usuário." };
+    if (found.length > 1)
+      return {
+        ok: false,
+        erro: "Mais de um evento combina. Pergunte ao usuário qual deles (use o id na próxima chamada).",
+        candidatos: found.slice(0, MAX_OPTIONS).map(candidato),
+      };
+  }
+  const e = found[0];
+  const negado = exclusaoNegada(e);
+  if (negado) return { ok: false, erro: negado };
+  return { ok: true, preview: { id: e.id, titulo: untitled(e.title), quando: whenLabel(e), agenda: e.calendarName } };
+}
+
 /* ---------- Memórias ---------- */
 
 /** Teto de memórias por família (o prompt usa só as 30 mais recentes; isto limita abuso e injeção em massa). */
@@ -323,7 +385,8 @@ const isPending = (p: OliPanel) =>
   (p.kind === "confirmar_lancamento" ||
     p.kind === "confirmar_esquecer" ||
     p.kind === "confirmar_memoria" ||
-    p.kind === "confirmar_evento") &&
+    p.kind === "confirmar_evento" ||
+    p.kind === "confirmar_excluir_evento") &&
   (p.status === "pendente" || p.status === "salvando");
 
 /** Novo painel no topo; no máximo MAX_PANELS. Confirmações pendentes nunca somem. */

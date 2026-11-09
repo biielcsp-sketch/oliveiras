@@ -17,6 +17,7 @@ export const OLI_TOOL_NAMES = [
   "esquecer_memoria",
   "agenda_periodo",
   "criar_evento",
+  "excluir_evento",
 ] as const;
 export type OliToolName = (typeof OLI_TOOL_NAMES)[number];
 
@@ -228,4 +229,24 @@ export function parseCriarEventoArgs(args: unknown): Result<CriarEventoArgs> {
   const agenda = optText(a.agenda, EVENT_LIMITS.title, "Agenda");
   if (!agenda.ok) return agenda;
   return ok({ titulo: titulo.value, dia_inteiro: diaInteiro, inicio, fim, local: local.value, agenda: agenda.value });
+}
+
+export type ExcluirEventoArgs = { id?: string; titulo?: string; data?: string };
+
+/** excluir_evento: ou o id (vindo de agenda_periodo) ou título + data (AAAA-MM-DD). */
+export function parseExcluirEventoArgs(args: unknown): Result<ExcluirEventoArgs> {
+  const a = obj(args);
+  let id: string | undefined;
+  if (a.id !== undefined && a.id !== null && a.id !== "") {
+    if (typeof a.id !== "string" || !UUID_RE.test(a.id.trim())) return fail("Id de evento inválido.");
+    id = a.id.trim().toLowerCase();
+  }
+  const titulo = optText(a.titulo, EVENT_LIMITS.title, "Título");
+  if (!titulo.ok) return titulo;
+  const data = optText(a.data, 10, "Data");
+  if (!data.ok) return data;
+  if (data.value && !isDate(data.value)) return fail("Data inválida. Use AAAA-MM-DD.");
+  if (id) return ok({ id });
+  if (!titulo.value || !data.value) return fail("Informe o id do evento (de agenda_periodo) ou o título e a data.");
+  return ok({ titulo: titulo.value, data: data.value });
 }

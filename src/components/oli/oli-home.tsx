@@ -5,7 +5,7 @@ import clsx from "clsx";
 import { ChevronDown, Mic, SendHorizontal, Square } from "lucide-react";
 import { Button, Input } from "@/components/ui";
 import { clearPanels, pushPanel, type OliPanel } from "@/lib/oli/panels";
-import { confirmOliEsquecer, confirmOliEvento, confirmOliLancamento, confirmOliMemoria, runOliTool } from "@/app/(app)/inicio/oli-actions";
+import { confirmOliEsquecer, confirmOliEvento, confirmOliExcluirEvento, confirmOliLancamento, confirmOliMemoria, runOliTool } from "@/app/(app)/inicio/oli-actions";
 import type { Oli3D, OliState } from "./oli3d";
 import { OliStage } from "./oli-stage";
 import { OliPanels } from "./oli-panels";
@@ -45,7 +45,7 @@ export function OliHome() {
       const res = await runOliTool(String(name ?? ""), args ?? {});
       if (!res.ok) {
         add({ id, kind: "aviso", texto: res.erro });
-        return { erro: res.erro };
+        return { erro: res.erro, ...(res.candidatos ? { candidatos: res.candidatos } : {}) };
       }
       switch (res.tool) {
         case "resumo_do_mes":
@@ -70,6 +70,11 @@ export function OliHome() {
           return new Promise((resolve) => {
             pending.current.set(id, { resolve });
             add({ id, kind: "confirmar_evento", data: res.data, status: "pendente" });
+          });
+        case "excluir_evento":
+          return new Promise((resolve) => {
+            pending.current.set(id, { resolve });
+            add({ id, kind: "confirmar_excluir_evento", data: res.data, status: "pendente" });
           });
         case "criar_lancamento":
         case "esquecer_memoria":
@@ -107,10 +112,15 @@ export function OliHome() {
             ? await confirmOliMemoria(p.data)
             : p.kind === "confirmar_evento"
               ? await confirmOliEvento(p.data)
-              : await confirmOliEsquecer(p.data.id);
+              : p.kind === "confirmar_excluir_evento"
+                ? await confirmOliExcluirEvento(p.data.id)
+                : await confirmOliEsquecer(p.data.id);
       if (r.ok) {
         patch(id, { status: "criado" });
-        settle(id, { status: p.kind === "confirmar_esquecer" ? "apagada" : p.kind === "confirmar_memoria" ? "salva" : "criado" });
+        settle(id, {
+          status:
+            p.kind === "confirmar_esquecer" ? "apagada" : p.kind === "confirmar_excluir_evento" ? "apagado" : p.kind === "confirmar_memoria" ? "salva" : "criado",
+        });
       } else {
         patch(id, { status: "erro", erro: r.erro });
         settle(id, { status: "erro", erro: r.erro });

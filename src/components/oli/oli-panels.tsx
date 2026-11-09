@@ -339,6 +339,30 @@ export function PanelView({
         </Confirm>
       );
     }
+    case "confirmar_excluir_evento": {
+      const d = p.data;
+      return (
+        <Confirm
+          id={p.id}
+          title="Excluir este evento?"
+          status={p.status}
+          erro={p.erro}
+          danger
+          doneText={{ criado: "Evento apagado do Google.", cancelado: "O evento foi mantido." }}
+          onConfirm={onConfirm}
+          onCancel={onCancel}
+        >
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[15px]">
+            <dt className="text-muted">Título</dt>
+            <dd className="truncate">{d.titulo}</dd>
+            <dt className="text-muted">Quando</dt>
+            <dd className="tabular-nums">{d.quando}</dd>
+            <dt className="text-muted">Agenda</dt>
+            <dd className="truncate">{d.agenda}</dd>
+          </dl>
+        </Confirm>
+      );
+    }
     case "aviso":
       return (
         <Card className="p-4">

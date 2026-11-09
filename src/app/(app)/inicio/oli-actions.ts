@@ -9,11 +9,14 @@ import { currentMonth } from "@/lib/financas/period";
 import { todaySP } from "@/lib/financas/today";
 import { validateManualTransaction, UUID_RE } from "@/lib/financas/transaction-input";
 import { validateEventInput } from "@/lib/agenda/input";
-import { getEventsBetween, loadAccounts, writableCalendarsOf, agendaEnabled, createEvent } from "@/lib/google/agenda";
+import { toSpDate } from "@/lib/agenda/dates";
+import { oliAllowedFor } from "@/lib/oli/access";
+import { getEventsBetween, loadAccounts, writableCalendarsOf, agendaEnabled, createEvent, removeEvent } from "@/lib/google/agenda";
 import {
   isToolName,
   parseAgendaPeriodoArgs,
   parseCriarEventoArgs,
+  parseExcluirEventoArgs,
   parseConsultarMemoriaArgs,
   parseCriarLancamentoArgs,
   parseEsquecerMemoriaArgs,
@@ -34,6 +37,10 @@ import {
   type EventoPreview,
   type EventosData,
   resolveEvento,
+  resolveExclusao,
+  exclusaoNegada,
+  type EventoCandidato,
+  type ExcluirEventoPreview,
   type LancamentoPreview,
   type LancamentosData,
   memoryLimitError,
@@ -59,7 +66,8 @@ export type OliToolResult =
   | { ok: true; tool: "esquecer_memoria"; data: MemoriaData }
   | { ok: true; tool: "agenda_periodo"; data: EventosData }
   | { ok: true; tool: "criar_evento"; data: EventoPreview }
-  | { ok: false; erro: string };
+  | { ok: true; tool: "excluir_evento"; data: ExcluirEventoPreview }
+  | { ok: false; erro: string; candidatos?: EventoCandidato[] };
 
 const err = (erro: string): OliToolResult => ({ ok: false, erro });
 
@@ -187,7 +195,28 @@ async function dispatch(name: OliToolName, args: unknown): Promise<OliToolResult
       if (!r.ok) return err(r.erro);
       return { ok: true, tool: name, data: r.preview };
     }
+    case "excluir_evento": {
+      // Só prepara: apaga em confirmOliExcluirEvento, depois do toque do usuário.
+      const a = parseExcluirEventoArgs(args);
+      if (!a.ok) return err(a.erro);
+      const ctx = await getAppContext();
+      if (!oliAllowedFor(ctx.household.id)) return err("O Oli não está liberado para esta família.");
+      if (!agendaEnabled(ctx.household.id)) return err("A Agenda não está liberada para esta família.");
+      const events = a.value.id ? await eventsOfId(ctx, a.value.id) : await getEventsBetween(ctx, a.value.data!, a.value.data!);
+      const r = resolveExclusao(a.value, events);
+      if (!r.ok) return r;
+      return { ok: true, tool: name, data: r.preview };
+    }
   }
+}
+
+/** Evento pelo id (da família, via RLS): carrega o dia dele para reaproveitar a montagem da Agenda. */
+async function eventsOfId(ctx: Awaited<ReturnType<typeof getAppContext>>, id: string) {
+  const db = await createClient();
+  const { data } = await db.from("cal_events").select("starts_at").eq("household_id", ctx.household.id).eq("id", id).maybeSingle();
+  if (!data) return [];
+  const day = toSpDate(data.starts_at);
+  return getEventsBetween(ctx, day, day);
 }
 
 async function writableCalendars() {
@@ -302,6 +331,26 @@ export async function confirmOliEvento(preview: EventoPreview): Promise<ConfirmR
   });
   if (!v.ok) return { ok: false, erro: v.erro };
   const r = await createEvent(ctx, cal.id, v.value);
+  if (!r.ok) return { ok: false, erro: r.erro };
+  revalidatePath("/agenda");
+  return { ok: true };
+}
+
+/**
+ * Apaga o evento no Google depois do toque em Confirmar. O cliente só manda o id: tudo é revalidado aqui
+ * (família do Oli, Agenda liberada, evento da família, dono da conta Google). removeEvent usa If-Match/etag:
+ * 412 recarrega e avisa o conflito; 404/410 contam como já apagado. Só a ocorrência exibida.
+ */
+export async function confirmOliExcluirEvento(id: string): Promise<ConfirmResult> {
+  const ctx = await getAppContext();
+  if (typeof id !== "string" || !UUID_RE.test(id)) return { ok: false, erro: "Evento inválido." };
+  if (!oliAllowedFor(ctx.household.id)) return { ok: false, erro: "O Oli não está liberado para esta família." };
+  if (!agendaEnabled(ctx.household.id)) return { ok: false, erro: "A Agenda não está liberada para esta família." };
+  const event = (await eventsOfId(ctx, id)).find((e) => e.id === id);
+  if (!event) return { ok: false, erro: "Evento não encontrado. Ele pode já ter sido apagado." };
+  const negado = exclusaoNegada(event);
+  if (negado) return { ok: false, erro: negado };
+  const r = await removeEvent(ctx, id);
   if (!r.ok) return { ok: false, erro: r.erro };
   revalidatePath("/agenda");
   return { ok: true };

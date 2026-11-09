@@ -6,7 +6,7 @@ import { E2E_AGENDA_HOUSEHOLD_ID } from "../../playwright.config";
 import { addSpouse, adminClient, createFamilyWithId } from "./admin";
 import { PASSWORD, signUp, uniqueEmail, watchConsole } from "./helpers";
 import { PanelView } from "../../src/components/oli/oli-panels";
-import { buildEventos } from "../../src/lib/oli/panels";
+import { buildEventos, resolveExclusao } from "../../src/lib/oli/panels";
 import type { AgendaEvent } from "../../src/lib/agenda/view";
 
 const MOCK = "http://127.0.0.1:4020";
@@ -239,6 +239,43 @@ test("Agenda: conectar Google, sincronizar nas duas vias e ver a agenda do cônj
     await page.getByRole("group", { name: "Filtrar por pessoa" }).getByRole("button", { name: "Todos" }).click();
   });
   await karenCtx.close();
+
+  await test.step("Oli excluir_evento: o painel só PREPARA (nada some do Google nem da Agenda sem o toque) e recusa evento do cônjuge", async () => {
+    // O Oli real precisa do Gemini; aqui o preparo roda sobre os eventos reais sincronizados do mock.
+    const { data: rows } = await adminClient()
+      .from("cal_events")
+      .select("id, title, all_day, starts_at, ends_at, calendar_ref, cal_calendars(summary, google_calendar_id)")
+      .eq("household_id", E2E_AGENDA_HOUSEHOLD_ID);
+    const events: AgendaEvent[] = (rows ?? []).map((r) => {
+      const cal = r.cal_calendars as unknown as { summary: string; google_calendar_id: string };
+      const mine = cal.google_calendar_id === G_CAL;
+      return {
+        id: r.id, title: r.title, allDay: r.all_day, startsAt: r.starts_at, endsAt: r.ends_at, location: null, description: null, htmlLink: null,
+        calendarId: r.calendar_ref, calendarName: cal.summary, color: null, memberId: "", owner: mine ? "Você" : "Karen", editable: mine,
+      };
+    });
+    const culto = events.find((e) => e.title === "Culto de domingo")!;
+    const prep = resolveExclusao({ id: culto.id }, events);
+    expect(prep.ok).toBe(true);
+    const consulta = events.find((e) => e.title === "Consulta Karen");
+    expect(consulta, "evento da Karen sincronizado").toBeDefined();
+    expect(resolveExclusao({ id: consulta!.id }, events)).toEqual({ ok: false, erro: "Só a pessoa dona da agenda (Karen) pode excluir este evento." });
+
+    const html = renderToStaticMarkup(
+      createElement(PanelView, { panel: { id: "x1", kind: "confirmar_excluir_evento", status: "pendente", data: (prep as Extract<typeof prep, { ok: true }>).preview }, onConfirm: () => {}, onCancel: () => {} }),
+    );
+    await page.goto("/financas");
+    await page.evaluate((h) => {
+      document.querySelector("main")!.innerHTML = h; // só no teste, para ver o painel com o CSS do app
+    }, html);
+    const panel = page.getByRole("group", { name: "Excluir este evento?" });
+    await expect(panel).toContainText("Culto de domingo");
+    await expect(panel.getByRole("button", { name: "Cancelar" })).toBeVisible();
+    await expect(panel.getByRole("button", { name: "Confirmar" })).toBeVisible();
+    // Preparar não apaga: continua no Google e na Agenda.
+    expect((await mockEvents(G_CAL)).find((e) => e.summary === "Culto de domingo")!.status).not.toBe("cancelled");
+    expect(await eventCount("Culto de domingo")).toBe(1);
+  });
 
   await shot(browser, page.context(), "agenda-claro.png", "/agenda");
   await shot(browser, page.context(), "agenda-escuro.png", "/agenda", true);
