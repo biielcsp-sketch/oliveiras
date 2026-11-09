@@ -5,7 +5,7 @@ import clsx from "clsx";
 import { ChevronDown, Mic, SendHorizontal, Square } from "lucide-react";
 import { Button, Input } from "@/components/ui";
 import { clearPanels, pushPanel, type OliPanel } from "@/lib/oli/panels";
-import { confirmOliEsquecer, confirmOliLancamento, confirmOliMemoria, runOliTool } from "@/app/(app)/inicio/oli-actions";
+import { confirmOliEsquecer, confirmOliEvento, confirmOliLancamento, confirmOliMemoria, runOliTool } from "@/app/(app)/inicio/oli-actions";
 import type { Oli3D, OliState } from "./oli3d";
 import { OliStage } from "./oli-stage";
 import { OliPanels } from "./oli-panels";
@@ -63,6 +63,14 @@ export function OliHome() {
         case "consultar_memoria":
           add({ id, kind: "memorias", data: res.data });
           return res.data;
+        case "agenda_periodo":
+          add({ id, kind: "eventos", data: res.data });
+          return res.data;
+        case "criar_evento":
+          return new Promise((resolve) => {
+            pending.current.set(id, { resolve });
+            add({ id, kind: "confirmar_evento", data: res.data, status: "pendente" });
+          });
         case "criar_lancamento":
         case "esquecer_memoria":
         case "salvar_memoria":
@@ -97,7 +105,9 @@ export function OliHome() {
           ? await confirmOliLancamento(p.data)
           : p.kind === "confirmar_memoria"
             ? await confirmOliMemoria(p.data)
-            : await confirmOliEsquecer(p.data.id);
+            : p.kind === "confirmar_evento"
+              ? await confirmOliEvento(p.data)
+              : await confirmOliEsquecer(p.data.id);
       if (r.ok) {
         patch(id, { status: "criado" });
         settle(id, { status: p.kind === "confirmar_esquecer" ? "apagada" : p.kind === "confirmar_memoria" ? "salva" : "criado" });

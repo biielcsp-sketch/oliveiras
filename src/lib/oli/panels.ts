@@ -7,7 +7,9 @@ import { summarize } from "@/lib/financas/summary";
 import { billStatus, dateInMonth, invoiceFor, invoiceTotals, type BillStatus } from "@/lib/financas/planning";
 import { monthLabel } from "@/lib/financas/period";
 import type { Account, Bill, BillPayment, Category, Transaction } from "@/lib/financas/types";
-import { matchByName, type CriarLancamentoArgs, type MemoryCategory } from "./tool-args";
+import { matchByName, type CriarEventoArgs, type CriarLancamentoArgs, type MemoryCategory } from "./tool-args";
+import { eventDays, timeLabel, untitled, type AgendaEvent } from "@/lib/agenda/view";
+import { validateEventInput } from "@/lib/agenda/input";
 
 const cents = (v: number) => Math.round(v * 100);
 const reais = (c: number) => c / 100;
@@ -48,6 +50,27 @@ export type MemoriaData = { id: string; conteudo: string; categoria: MemoryCateg
 export type MemoriasData = { busca: string; itens: MemoriaData[] };
 export type MemoriaPreview = { conteudo: string; categoria: MemoryCategory };
 
+export type EventoItem = {
+  dia: string;
+  hora: string;
+  titulo: string;
+  local: string | null;
+  agenda: string;
+  pessoa: string;
+  cor: string | null;
+};
+export type EventosData = { de: string; ate: string; pessoa: string | null; total: number; itens: EventoItem[] };
+
+export type EventoPreview = {
+  titulo: string;
+  dia_inteiro: boolean;
+  /** Dia inteiro: AAAA-MM-DD (fim inclusivo); senão AAAA-MM-DDTHH:mm (São Paulo). */
+  inicio: string;
+  fim: string;
+  local: string | null;
+  agenda: { id: string; nome: string };
+};
+
 export type ConfirmStatus = "pendente" | "salvando" | "criado" | "cancelado" | "erro";
 
 export type OliPanel =
@@ -60,6 +83,8 @@ export type OliPanel =
   | { id: string; kind: "confirmar_lancamento"; data: LancamentoPreview; status: ConfirmStatus; erro?: string }
   | { id: string; kind: "confirmar_esquecer"; data: MemoriaData; status: ConfirmStatus; erro?: string }
   | { id: string; kind: "confirmar_memoria"; data: MemoriaPreview; status: ConfirmStatus; erro?: string }
+  | { id: string; kind: "eventos"; data: EventosData }
+  | { id: string; kind: "confirmar_evento"; data: EventoPreview; status: ConfirmStatus; erro?: string }
   | { id: string; kind: "aviso"; texto: string };
 
 /* ---------- Montagem dos dados ---------- */
@@ -218,6 +243,67 @@ export function resolveLancamento(
   };
 }
 
+/* ---------- Agenda ---------- */
+
+export const MAX_EVENT_ITEMS = 40;
+
+/** Eventos do período, cada um uma vez, no primeiro dia dele dentro do período. */
+export function buildEventos(events: AgendaEvent[], de: string, ate: string, pessoa?: string | null): EventosData {
+  const itens = events
+    .map((e) => {
+      const dia = eventDays(e).find((d) => d >= de && d <= ate);
+      return dia ? { e, dia } : null;
+    })
+    .filter((x) => x !== null)
+    .sort((a, b) => a.dia.localeCompare(b.dia) || Number(b.e.allDay) - Number(a.e.allDay) || a.e.startsAt.localeCompare(b.e.startsAt))
+    .map(({ e, dia }) => ({
+      dia,
+      hora: timeLabel(e, dia),
+      titulo: untitled(e.title),
+      local: e.location,
+      agenda: e.calendarName,
+      pessoa: e.owner,
+      cor: e.color,
+    }));
+  return { de, ate, pessoa: pessoa ?? null, total: itens.length, itens: itens.slice(0, MAX_EVENT_ITEMS) };
+}
+
+export type WritableCalendar = { id: string; summary: string; primary: boolean };
+
+/**
+ * Resolve a agenda pelo nome ou usa a principal do usuário. Sem adivinhar: ambíguo ou ausente → erro com opções.
+ * Valida o evento com as mesmas regras do formulário.
+ */
+export function resolveEvento(
+  args: CriarEventoArgs,
+  calendars: WritableCalendar[],
+): { ok: true; preview: EventoPreview } | { ok: false; erro: string } {
+  if (calendars.length === 0) return { ok: false, erro: "Nenhuma agenda sua conectada. Conecte o Google na tela Agenda." };
+  const named = calendars.map((c) => ({ ...c, name: c.summary }));
+  let cal: WritableCalendar | null = null;
+  if (args.agenda) {
+    cal = matchByName(named, args.agenda);
+    if (!cal) return { ok: false, erro: `Agenda não encontrada ou ambígua. Opções: ${options(named.map((c) => c.name))}.` };
+  } else {
+    const primaries = calendars.filter((c) => c.primary);
+    cal = primaries.length === 1 ? primaries[0] : calendars.length === 1 ? calendars[0] : null;
+    if (!cal) return { ok: false, erro: `Pergunte em qual agenda criar. Opções: ${options(named.map((c) => c.name))}.` };
+  }
+  const v = validateEventInput({ title: args.titulo, allDay: args.dia_inteiro, start: args.inicio, end: args.fim, location: args.local });
+  if (!v.ok) return { ok: false, erro: v.erro };
+  return {
+    ok: true,
+    preview: {
+      titulo: v.value.title,
+      dia_inteiro: v.value.allDay,
+      inicio: v.value.start,
+      fim: v.value.end,
+      local: v.value.location,
+      agenda: { id: cal.id, nome: cal.summary },
+    },
+  };
+}
+
 /* ---------- Memórias ---------- */
 
 /** Teto de memórias por família (o prompt usa só as 30 mais recentes; isto limita abuso e injeção em massa). */
@@ -234,7 +320,10 @@ export function memoryLimitError(count: number) {
 export const MAX_PANELS = 4;
 
 const isPending = (p: OliPanel) =>
-  (p.kind === "confirmar_lancamento" || p.kind === "confirmar_esquecer" || p.kind === "confirmar_memoria") &&
+  (p.kind === "confirmar_lancamento" ||
+    p.kind === "confirmar_esquecer" ||
+    p.kind === "confirmar_memoria" ||
+    p.kind === "confirmar_evento") &&
   (p.status === "pendente" || p.status === "salvando");
 
 /** Novo painel no topo; no máximo MAX_PANELS. Confirmações pendentes nunca somem. */

@@ -1,5 +1,7 @@
 import clsx from "clsx";
-import { Brain, CalendarClock, Check, ListOrdered, PieChart, Trash2, Wallet, X } from "lucide-react";
+import { Brain, CalendarClock, CalendarDays, Check, ListOrdered, PieChart, Trash2, Wallet, X } from "lucide-react";
+import { brDate, shortDayLabel } from "@/lib/agenda/dates";
+import { safeHex } from "@/lib/agenda/view";
 import type { ReactNode } from "react";
 import { Button, Card } from "@/components/ui";
 import { StatusBadge } from "@/app/(app)/financas/_components/status-badge";
@@ -270,6 +272,73 @@ export function PanelView({
           </div>
         </Confirm>
       );
+    case "eventos": {
+      const d = p.data;
+      const title = `Agenda ${d.de === d.ate ? `de ${brDate(d.de)}` : `${brDate(d.de).slice(0, 5)} a ${brDate(d.ate).slice(0, 5)}`}`;
+      return (
+        <Card>
+          <Head
+            icon={<CalendarDays size={16} aria-hidden />}
+            title={d.pessoa ? `${title} · ${d.pessoa}` : title}
+            aside={<span className="text-sm text-muted">{d.total === 1 ? "1 evento" : `${d.total} eventos`}</span>}
+          />
+          {d.itens.length === 0 ? (
+            <p className="text-sm text-muted">Nenhum evento no período.</p>
+          ) : (
+            <ul className="divide-y divide-line">
+              {d.itens.map((e, i) => (
+                <li key={i} className="flex items-start gap-3 py-2.5 text-[15px]">
+                  <span className="mt-1.5 size-2.5 shrink-0 rounded-full" style={{ background: safeHex(e.cor) }} aria-hidden />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">{e.titulo}</span>
+                    <span className="block truncate text-[12px] text-muted">
+                      {[shortDayLabel(e.dia), e.hora, e.pessoa, e.local].filter(Boolean).join(" · ")}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {d.total > d.itens.length && <p className="mt-2 text-[13px] text-muted">E mais {d.total - d.itens.length} na Agenda.</p>}
+        </Card>
+      );
+    }
+    case "confirmar_evento": {
+      const d = p.data;
+      const when = d.dia_inteiro
+        ? d.inicio === d.fim
+          ? `${brDate(d.inicio)} · Dia inteiro`
+          : `${brDate(d.inicio)} a ${brDate(d.fim)} · Dia inteiro`
+        : d.inicio.slice(0, 10) === d.fim.slice(0, 10)
+          ? `${brDate(d.inicio.slice(0, 10))} · ${d.inicio.slice(11)} – ${d.fim.slice(11)}`
+          : `${brDate(d.inicio.slice(0, 10))} ${d.inicio.slice(11)} – ${brDate(d.fim.slice(0, 10))} ${d.fim.slice(11)}`;
+      return (
+        <Confirm
+          id={p.id}
+          title="Criar este evento?"
+          status={p.status}
+          erro={p.erro}
+          doneText={{ criado: "Evento criado no Google.", cancelado: "Evento não criado." }}
+          onConfirm={onConfirm}
+          onCancel={onCancel}
+        >
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[15px]">
+            <dt className="text-muted">Título</dt>
+            <dd className="truncate">{d.titulo}</dd>
+            <dt className="text-muted">Quando</dt>
+            <dd className="tabular-nums">{when}</dd>
+            {d.local && (
+              <>
+                <dt className="text-muted">Local</dt>
+                <dd className="truncate">{d.local}</dd>
+              </>
+            )}
+            <dt className="text-muted">Agenda</dt>
+            <dd className="truncate">{d.agenda.nome}</dd>
+          </dl>
+        </Confirm>
+      );
+    }
     case "aviso":
       return (
         <Card className="p-4">
