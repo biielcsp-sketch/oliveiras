@@ -84,3 +84,31 @@ export function notificationTarget(raw: unknown, origin: string): string {
     return "/inicio";
   }
 }
+
+/** Etapas da ativação dos avisos, para a mensagem de erro dizer onde falhou. */
+export type ActivationStep = "permissao" | "service-worker" | "inscricao" | "servidor";
+
+const STEP_LABEL: Record<ActivationStep, string> = {
+  permissao: "permissão",
+  "service-worker": "service worker",
+  inscricao: "inscrição no serviço de push",
+  servidor: "envio ao servidor",
+};
+
+/**
+ * Mensagem de erro com a etapa e o código técnico do navegador (ex.: AbortError),
+ * para diagnóstico. Só usa o nome do erro e um trecho curto e higienizado da
+ * mensagem do navegador; nada de endpoint, chave ou dado pessoal.
+ */
+export function describeActivationError(step: ActivationStep, err: unknown): string {
+  const rawName = err instanceof Error ? err.name : "";
+  const name = /^[A-Za-z]{1,40}$/.test(rawName) ? rawName : "Erro";
+  const rawMsg = err instanceof Error ? err.message : "";
+  const msg = rawMsg
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/[^\p{L}\p{N} .,:()-]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+  return `Não foi possível ativar os avisos (etapa: ${STEP_LABEL[step]}; código: ${name}${msg ? ` — ${msg}` : ""}). Tente de novo.`;
+}
