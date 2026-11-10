@@ -4,8 +4,9 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getAppContext } from "@/lib/data";
 import { todaySP } from "@/lib/financas/today";
-import { getItem, listAccounts, pluggyAllowedFor, pluggyConfigured, PluggyError } from "@/lib/pluggy/client";
+import { getItem, listAccounts, pluggyAllowedFor, pluggyConfigured } from "@/lib/pluggy/client";
 import { accountKindFrom, defaultSyncFrom } from "@/lib/pluggy/normalize";
+import { pluggyErrorLog, pluggyErrorMessage } from "@/lib/pluggy/errors";
 import { matchOpeningToBank, syncHousehold, type SyncResult } from "@/lib/pluggy/sync";
 
 export type OfState = { error?: string; ok?: boolean; message?: string } | null;
@@ -37,10 +38,8 @@ export async function addItem(_: OfState, form: FormData): Promise<OfState> {
     const item = await getItem(itemId);
     label ||= item.connector?.name?.slice(0, 60) ?? "Banco";
   } catch (e) {
-    if (e instanceof PluggyError && e.status === 404) {
-      return { error: "Item não encontrado na Pluggy. Confira se copiou o id da aplicação certa." };
-    }
-    return { error: "Não foi possível falar com a Pluggy agora. Tente de novo." };
+    console.error(pluggyErrorLog(e));
+    return { error: pluggyErrorMessage(e) };
   }
 
   const supabase = await createClient();
@@ -91,8 +90,9 @@ export async function linkAccount(_: OfState, form: FormData): Promise<OfState> 
   let remote;
   try {
     remote = (await listAccounts(item.item_id)).find((a) => a.id === remoteId);
-  } catch {
-    return { error: "Não foi possível falar com a Pluggy agora." };
+  } catch (e) {
+    console.error(pluggyErrorLog(e));
+    return { error: pluggyErrorMessage(e) };
   }
   if (!remote) return { error: "Conta não encontrada nesta conexão." };
 
