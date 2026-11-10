@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback } from "react";
 import { ArcNav, type ArcItem } from "@/components/arc-nav";
-import { activeRouteIndex } from "@/lib/arc-nav";
+import { activeRouteIndex, rootIndex } from "@/lib/arc-nav";
 
 type RouteItem = ArcItem & { href: string };
 
@@ -13,5 +13,5 @@ export function RouteArcNav({ items, label }: { items: RouteItem[]; label: strin
   const router = useRouter();
   const active = activeRouteIndex(items, path);
   const onChange = useCallback((i: number) => router.push(items[i].href, { scroll: false }), [items, router]);
-  return <ArcNav items={items} active={active} onChange={onChange} label={label} />;
+  return <ArcNav items={items} active={active} fallback={rootIndex(items)} onChange={onChange} label={label} />;
 }

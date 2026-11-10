@@ -49,3 +49,9 @@ export function activeRouteIndex(items: { href: string }[], path: string) {
     return isRoot ? path === it.href : path === it.href || path.startsWith(it.href + "/");
   });
 }
+
+/** Aba raiz do módulo (endereço prefixo das outras); fica no centro em páginas fora das abas. 0 se não houver. */
+export function rootIndex(items: { href: string }[]) {
+  const i = items.findIndex((it) => items.some((o) => o !== it && o.href.startsWith(it.href + "/")));
+  return i < 0 ? 0 : i;
+}
