@@ -13,6 +13,7 @@ import {
   MOBILE_NAV_LEFT,
   MOBILE_NAV_RIGHT,
   SIDEBAR_NAV,
+  isHeroRoute,
   type ModuleDef,
 } from "@/lib/modules";
 import { Logo } from "@/components/logo";
@@ -153,20 +154,30 @@ export function BottomNav() {
 
 const roundBtn =
   "grid size-12 place-items-center rounded-full bg-surface-solid text-ink shadow-round transition hover:text-primary active:scale-95";
+/** Sobre o cabeçalho azul dos módulos: botões de vidro com ícone branco. */
+const roundBtnHero =
+  "grid size-12 place-items-center rounded-full bg-white/15 text-white ring-1 ring-white/25 transition hover:bg-white/25 active:scale-95";
 
-/** Topo no celular: logo (→ Início) + Agenda (calendário) e Família. */
+/** Topo no celular: logo (→ Início) + Agenda (calendário) e Família. Nos módulos, fica sobre o painel azul. */
 export function MobileTopBar() {
+  const hero = isHeroRoute(usePathname());
+  const btn = hero ? roundBtnHero : roundBtn;
   return (
-    <header className="flex items-center justify-between px-5 pb-2 pt-[calc(env(safe-area-inset-top)+16px)] md:hidden">
+    <header
+      className={clsx(
+        "relative z-20 flex items-center justify-between px-5 pb-2 pt-[calc(env(safe-area-inset-top)+16px)] md:hidden",
+        hero && "text-white",
+      )}
+    >
       <Link href={HOME.href} aria-label="Oliveira's, ir para o Início" className="rounded-2xl">
-        <Logo />
+        <Logo inverted={hero} />
       </Link>
       <div className="flex items-center gap-3">
-        <ThemeToggle className={roundBtn} />
-        <AgendaCalendarButton className={roundBtn}>
+        <ThemeToggle className={btn} />
+        <AgendaCalendarButton className={btn}>
           <CalendarDays size={22} strokeWidth={1.8} aria-hidden />
         </AgendaCalendarButton>
-        <Link href={FAMILY.href} aria-label="Família" className={roundBtn}>
+        <Link href={FAMILY.href} aria-label="Família" className={btn}>
           <FAMILY.icon size={22} strokeWidth={1.8} aria-hidden />
         </Link>
       </div>

@@ -47,3 +47,7 @@ export const AGENDA = byHref("/agenda");
 
 /** Barra lateral no desktop (Agenda abre o calendário, separado). O Oli está no Início. */
 export const SIDEBAR_NAV = [HOME, ...MODULES.filter((m) => m.href !== "/agenda")];
+
+/** Telas com o cabeçalho azul em ferradura: a barra do topo do celular fica clara sobre ele. */
+export const HERO_ROUTES = ["/financas", "/saude", "/casa", "/ministerio"];
+export const isHeroRoute = (path: string) => HERO_ROUTES.some((r) => path === r || path.startsWith(r + "/"));

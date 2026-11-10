@@ -1,34 +1,17 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { chipClass } from "@/components/ui";
+import { IdCard, Pill, Scissors, Stethoscope, Syringe, TestTube } from "lucide-react";
+import { RouteArcNav } from "@/components/route-arc-nav";
 
 const TABS = [
-  { href: "/saude", label: "Carteirinhas" },
-  { href: "/saude/consultas", label: "Consultas" },
-  { href: "/saude/exames", label: "Exames" },
-  { href: "/saude/procedimentos", label: "Procedimentos" },
-  { href: "/saude/medicamentos", label: "Medicamentos" },
-  { href: "/saude/vacinas", label: "Vacinas" },
+  { key: "carteirinhas", href: "/saude", label: "Carteirinhas", icon: IdCard },
+  { key: "consultas", href: "/saude/consultas", label: "Consultas", icon: Stethoscope },
+  { key: "exames", href: "/saude/exames", label: "Exames", icon: TestTube },
+  { key: "procedimentos", href: "/saude/procedimentos", label: "Procedimentos", icon: Scissors },
+  { key: "medicamentos", href: "/saude/medicamentos", label: "Medicamentos", icon: Pill },
+  { key: "vacinas", href: "/saude/vacinas", label: "Vacinas", icon: Syringe },
 ];
 
 export function SaudeSubnav() {
-  const path = usePathname();
-  return (
-    <nav aria-label="Seções de Saúde" className="-mx-5 mb-6 overflow-x-auto px-5 py-2 [scrollbar-width:none] md:mx-0 md:px-0">
-      <ul className="flex w-max gap-3">
-        {TABS.map(({ href, label }) => {
-          const active = href === "/saude" ? path === href : path === href || path.startsWith(href + "/");
-          return (
-            <li key={href}>
-              <Link href={href} aria-current={active ? "page" : undefined} className={chipClass(active)}>
-                {label}
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
-    </nav>
-  );
+  return <RouteArcNav items={TABS} label="Seções de Saúde" />;
 }

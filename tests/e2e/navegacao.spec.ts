@@ -31,6 +31,14 @@ test("navegação: barra inferior, logo para o Início e calendário da Agenda",
     await expect(nav.getByRole("link", { name: "Igreja" })).toHaveAttribute("aria-current", "page");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Igreja");
 
+    // Menu em ferradura: o botão central é o selecionado e troca o conteúdo abaixo
+    const arc = page.getByRole("navigation", { name: "Seções de Igreja" });
+    await expect(arc.getByRole("button", { name: "Escalas" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByText("Escalas de serviço (vão para a agenda)")).toBeVisible();
+    await arc.getByRole("button", { name: "Pessoas" }).click();
+    await expect(arc.getByRole("button", { name: "Pessoas" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByText("Pessoas acompanhadas e follow-up")).toBeVisible();
+
     await nav.getByRole("link", { name: "Oli, tela inicial" }).click();
     await expect(page).toHaveURL(/\/inicio$/);
     await expect(page.getByTestId("oli-stage")).toBeVisible();

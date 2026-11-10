@@ -218,6 +218,12 @@ body {
   stop-color: var(--nav-to);
 }
 
+/* Cabeçalho azul dos módulos: termina em --hero-to para emendar com a ponta em V */
+.hero-panel {
+  background-color: var(--hero-to);
+  background-image: linear-gradient(170deg, var(--hero-from), var(--hero-to));
+}
+
 /* Calendário modal */
 dialog.calendar-dialog::backdrop {
   background: var(--backdrop);
