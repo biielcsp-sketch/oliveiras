@@ -1,18 +1,12 @@
 import "server-only";
 import type { PluggyAccount, PluggyTransaction } from "./normalize";
+import { PluggyError } from "./errors";
 
 const BASE = (process.env.PLUGGY_API_URL || "https://api.pluggy.ai").replace(/\/$/, "");
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_PAGES = 40;
 
-export class PluggyError extends Error {
-  constructor(
-    message: string,
-    readonly status?: number,
-  ) {
-    super(message);
-  }
-}
+export { PluggyError } from "./errors";
 
 export function pluggyConfigured() {
   return Boolean(process.env.PLUGGY_CLIENT_ID && process.env.PLUGGY_CLIENT_SECRET);
@@ -35,9 +29,9 @@ async function apiKey(force = false) {
     signal: AbortSignal.timeout(15_000),
     cache: "no-store",
   });
-  if (!res.ok) throw new PluggyError("Credenciais da Pluggy recusadas.", res.status);
+  if (!res.ok) throw new PluggyError("Credenciais da Pluggy recusadas.", res.status, "auth");
   const { apiKey: key } = (await res.json()) as { apiKey?: string };
-  if (!key) throw new PluggyError("Resposta de autenticação inválida.");
+  if (!key) throw new PluggyError("Resposta de autenticação inválida.", undefined, "invalid");
   // A chave vale 2 horas; renovamos antes.
   cached = { key, expiresAt: Date.now() + 100 * 60_000 };
   return key;
@@ -51,15 +45,15 @@ async function get<T>(path: string): Promise<T> {
       cache: "no-store",
     });
     if ((res.status === 401 || res.status === 403) && !force) continue;
-    if (res.status === 404) throw new PluggyError("Não encontrado na Pluggy.", 404);
+    if (res.status === 404) throw new PluggyError("Não encontrado na Pluggy.", 404, "not_found");
     if (!res.ok) throw new PluggyError(`Pluggy respondeu ${res.status}.`, res.status);
     return (await res.json()) as T;
   }
-  throw new PluggyError("Acesso negado pela Pluggy.", 403);
+  throw new PluggyError("Acesso negado pela Pluggy.", 403, "forbidden");
 }
 
 function assertUuid(id: string) {
-  if (!UUID.test(id)) throw new PluggyError("Identificador inválido.");
+  if (!UUID.test(id)) throw new PluggyError("Identificador inválido.", undefined, "invalid");
   return id;
 }
 
