@@ -32,7 +32,7 @@ export function ModuleHero({ title, children }: { title: string; children?: Reac
       </div>
       <span
         aria-hidden="true"
-        className="glass-clear absolute bottom-[-18px] left-1/2 grid size-12 -translate-x-1/2 place-items-center rounded-full text-white"
+        className="glass-orb absolute bottom-[-18px] left-1/2 grid size-12 -translate-x-1/2 place-items-center rounded-full text-white"
       >
         <ChevronDown size={20} strokeWidth={2} />
       </span>
