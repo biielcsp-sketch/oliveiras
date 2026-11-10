@@ -173,14 +173,15 @@ export function ArcNav({
               <>
                 <span
                   className={clsx(
-                    "grid size-[62px] place-items-center rounded-full bg-[var(--hero-to)] text-white ring-[1.5px] ring-white/30 transition-[outline-color]",
+                    "glass-orb grid size-[62px] place-items-center rounded-full text-white transition-[outline-color,box-shadow]",
                     "outline-[2.5px] outline-offset-[4px]",
-                    isCentered ? "outline-solid outline-[var(--info)]" : "outline-solid outline-transparent",
+                    isCentered ? "outline-solid outline-white" : "outline-solid outline-transparent",
                   )}
+                  data-selected={isCentered}
                 >
                   <Icon size={25} strokeWidth={1.8} aria-hidden />
                 </span>
-                <span className={clsx("text-center text-[12.5px] leading-tight", isCentered ? "font-semibold text-white" : "text-white/80")}>
+                <span className={clsx("text-on-image text-center text-[12.5px] leading-tight text-white", isCentered ? "font-semibold" : "font-medium")}>
                   {item.label}
                 </span>
               </>

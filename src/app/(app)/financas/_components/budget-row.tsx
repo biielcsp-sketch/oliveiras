@@ -64,7 +64,7 @@ export function BudgetRow({ categoryId, name, color, month, spent, budget }: Pro
             <option value="padrao">Todo mês</option>
             <option value="mes">Só este mês</option>
           </Select>
-          <button disabled={pending} className="h-11 rounded-full bg-hero px-5 text-[15px] font-medium text-on-primary shadow-soft disabled:opacity-50">
+          <button disabled={pending} className="h-11 rounded-full glass-primary px-5 text-[15px] font-medium disabled:opacity-50">
             Salvar
           </button>
           <div className="col-span-3">
