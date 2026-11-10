@@ -4,6 +4,7 @@ import clsx from "clsx";
 import { ChevronDown } from "lucide-react";
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useId,
@@ -23,8 +24,13 @@ const HeroDrawerCtx = createContext<Ctx | null>(null);
 /** Liga a setinha da ponta do cabeçalho (ModuleHero) a um conteúdo escondido da página (HeroDrawer). */
 export function HeroDrawerProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
-  const [hasPanel, setHasPanel] = useState(false);
+  const [hasPanel, setHasPanelState] = useState(false);
   const panelId = useId();
+  // Ao sair da tela que tem o conteúdo, ele volta fechado (e a setinha volta a apontar para baixo)
+  const setHasPanel = useCallback((v: boolean) => {
+    setHasPanelState(v);
+    if (!v) setOpen(false);
+  }, []);
   return (
     <HeroDrawerCtx.Provider
       value={{
@@ -56,7 +62,7 @@ export function HeroDrawerButton({ label }: { label: string }) {
       aria-hidden
       className={clsx(
         "transition-transform duration-300",
-        ctx?.open && "rotate-180",
+        ctx?.hasPanel && ctx.open && "rotate-180",
       )}
     />
   );

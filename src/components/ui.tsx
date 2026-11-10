@@ -126,7 +126,7 @@ export function Tag({ tone = "warning", children }: { tone?: "warning" | "info";
     <span
       className={clsx(
         "inline-flex h-7 items-center rounded-full px-2.5 text-[12px] font-medium",
-        tone === "warning" ? "bg-warning-soft text-warning" : "bg-white/10 text-on-primary",
+        tone === "warning" ? "bg-warning-soft text-warning" : "bg-[rgb(5_30_80/0.45)] text-white",
       )}
     >
       {children}
