@@ -6,6 +6,7 @@ import { getAppContext } from "@/lib/data";
 import { getFinanceBase, getTransactions } from "@/lib/financas/data";
 import { getBillPayments, getBills, getTransactionsAround } from "@/lib/financas/planning-data";
 import { currentMonth } from "@/lib/financas/period";
+import { getConfirmedBillDocs } from "@/lib/financas/documentos/data";
 import { todaySP } from "@/lib/financas/today";
 import { validateManualTransaction, UUID_RE } from "@/lib/financas/transaction-input";
 import { validateEventInput } from "@/lib/agenda/input";
@@ -20,6 +21,8 @@ import {
   parseResumoArgs,
   parseSalvarMemoriaArgs,
   parseUltimosArgs,
+  parseDocumentosArgs,
+  parseLerDocumentoArgs,
   matchByName,
   type OliToolName,
 } from "@/lib/oli/tool-args";
@@ -42,6 +45,10 @@ import {
   type MemoriasData,
   type ResumoData,
   type SaldosData,
+  buildDocumento,
+  buildDocumentos,
+  type DocumentoData,
+  type DocumentosData,
 } from "@/lib/oli/panels";
 
 /**
@@ -59,6 +66,8 @@ export type OliToolResult =
   | { ok: true; tool: "esquecer_memoria"; data: MemoriaData }
   | { ok: true; tool: "agenda_periodo"; data: EventosData }
   | { ok: true; tool: "criar_evento"; data: EventoPreview }
+  | { ok: true; tool: "documentos_recentes"; data: DocumentosData }
+  | { ok: true; tool: "ler_documento"; data: DocumentoData }
   | { ok: false; erro: string };
 
 const err = (erro: string): OliToolResult => ({ ok: false, erro });
@@ -90,15 +99,16 @@ async function dispatch(name: OliToolName, args: unknown): Promise<OliToolResult
       const month = currentMonth();
       const { accounts, categories } = await getFinanceBase();
       const cards = accounts.filter((a) => a.kind === "cartao" && !a.archived && a.closing_day && a.due_day);
-      const [bills, payments, cardTxs] = await Promise.all([
+      const [bills, payments, cardTxs, billDocs] = await Promise.all([
         getBills(),
         getBillPayments(month),
         getTransactionsAround(month, cards.map((c) => c.id)),
+        getConfirmedBillDocs(month),
       ]);
       return {
         ok: true,
         tool: name,
-        data: buildContasAPagar({ month, today: todaySP(), bills, payments, accounts, categories, cardTxs }),
+        data: buildContasAPagar({ month, today: todaySP(), bills, payments, accounts, categories, cardTxs, billDocs }),
       };
     }
     case "ultimos_lancamentos": {
@@ -186,6 +196,38 @@ async function dispatch(name: OliToolName, args: unknown): Promise<OliToolResult
       const r = resolveEvento(a.value, await writableCalendars());
       if (!r.ok) return err(r.erro);
       return { ok: true, tool: name, data: r.preview };
+    }
+    case "documentos_recentes": {
+      // Só leitura, com a sessão (RLS). Descartados não entram.
+      const a = parseDocumentosArgs(args);
+      if (!a.ok) return err(a.erro);
+      const { household } = await getAppContext();
+      const supabase = await createClient();
+      const { data, error } = await supabase
+        .from("fin_documents")
+        .select("id, kind, status, payee, amount, due_date, paid_on")
+        .eq("household_id", household.id)
+        .neq("status", "descartado")
+        .order("created_at", { ascending: false })
+        .limit(a.value.limite);
+      if (error) return err("Não consegui consultar os documentos.");
+      return { ok: true, tool: name, data: buildDocumentos(data ?? []) };
+    }
+    case "ler_documento": {
+      // Só os dados validados do documento; o Oli nunca recebe o arquivo.
+      const a = parseLerDocumentoArgs(args);
+      if (!a.ok) return err(a.erro);
+      const { household } = await getAppContext();
+      const supabase = await createClient();
+      const { data } = await supabase
+        .from("fin_documents")
+        .select("id, kind, status, payee, amount, due_date, paid_on, extracted, bill_id, transaction_id")
+        .eq("household_id", household.id)
+        .eq("id", a.value.id)
+        .neq("status", "descartado")
+        .maybeSingle();
+      if (!data) return err("Documento não encontrado.");
+      return { ok: true, tool: name, data: buildDocumento(data) };
     }
   }
 }

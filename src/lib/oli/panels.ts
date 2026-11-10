@@ -4,12 +4,14 @@
  * e decidem quais painéis ficam visíveis. Nada de HTML vindo do modelo.
  */
 import { summarize } from "@/lib/financas/summary";
-import { billStatus, dateInMonth, invoiceFor, invoiceTotals, type BillStatus } from "@/lib/financas/planning";
+import { billStatus, invoiceFor, invoiceTotals, type BillStatus } from "@/lib/financas/planning";
 import { monthLabel } from "@/lib/financas/period";
 import type { Account, Bill, BillPayment, Category, Transaction } from "@/lib/financas/types";
 import { matchByName, type CriarEventoArgs, type CriarLancamentoArgs, type MemoryCategory } from "./tool-args";
 import { eventDays, timeLabel, untitled, type AgendaEvent } from "@/lib/agenda/view";
 import { validateEventInput } from "@/lib/agenda/input";
+import { cleanText, DOC_LIMITS, storedExtracted } from "@/lib/financas/documentos/schema";
+import { billForMonth } from "@/lib/financas/documentos/rules";
 
 const cents = (v: number) => Math.round(v * 100);
 const reais = (c: number) => c / 100;
@@ -71,6 +73,18 @@ export type EventoPreview = {
   agenda: { id: string; nome: string };
 };
 
+export type DocumentoItem = {
+  id: string;
+  tipo: string;
+  beneficiario: string | null;
+  valor: number | null;
+  vencimento: string | null;
+  pagamento: string | null;
+  status: string;
+};
+export type DocumentosData = { itens: DocumentoItem[] };
+export type DocumentoData = DocumentoItem & { descricao: string | null; conta_ligada: boolean; lancamento_ligado: boolean };
+
 export type ConfirmStatus = "pendente" | "salvando" | "criado" | "cancelado" | "erro";
 
 export type OliPanel =
@@ -85,6 +99,8 @@ export type OliPanel =
   | { id: string; kind: "confirmar_memoria"; data: MemoriaPreview; status: ConfirmStatus; erro?: string }
   | { id: string; kind: "eventos"; data: EventosData }
   | { id: string; kind: "confirmar_evento"; data: EventoPreview; status: ConfirmStatus; erro?: string }
+  | { id: string; kind: "documentos"; data: DocumentosData }
+  | { id: string; kind: "documento"; data: DocumentoData }
   | { id: string; kind: "aviso"; texto: string };
 
 /* ---------- Montagem dos dados ---------- */
@@ -130,8 +146,10 @@ export function buildContasAPagar(input: {
   accounts: Account[];
   categories: Category[];
   cardTxs: Transaction[];
+  /** Boleto confirmado do mês por conta: valor e vencimento dele prevalecem (mesma regra da tela). */
+  billDocs?: Map<string, { amount: number | null; due_date: string | null }>;
 }): ContasData {
-  const { month, today, bills, payments, accounts, categories, cardTxs } = input;
+  const { month, today, bills, payments, accounts, categories, cardTxs, billDocs } = input;
   const paymentByBill = new Map(payments.map((p) => [p.bill_id, p]));
   const transferIds = new Set(categories.filter((c) => c.kind === "transferencia").map((c) => c.id));
   const cards = accounts.filter((a) => a.kind === "cartao" && !a.archived && a.closing_day && a.due_day);
@@ -140,11 +158,11 @@ export function buildContasAPagar(input: {
     ...bills
       .filter((b) => b.active || paymentByBill.has(b.id))
       .map((b) => {
-        const due = dateInMonth(month, b.due_day);
+        const { amount, due } = billForMonth(b, month, billDocs?.get(b.id));
         const payment = paymentByBill.get(b.id);
         return {
           nome: b.name,
-          valor: payment?.amount ?? b.amount,
+          valor: payment?.amount ?? amount,
           vencimento: due,
           status: billStatus(due, Boolean(payment), today),
           fatura: false,
@@ -346,4 +364,58 @@ export function pushPanel(list: OliPanel[], panel: OliPanel, max = MAX_PANELS): 
 /** Limpa os painéis, mantendo confirmações que ainda esperam o toque. */
 export function clearPanels(list: OliPanel[]) {
   return list.filter(isPending);
+}
+
+/* ---------- Documentos (só leitura) ---------- */
+
+export const MAX_DOC_ITEMS = 10;
+const DOC_KINDS_OK = ["boleto", "comprovante", "outro"];
+const DOC_STATUS_OK = ["pendente", "confirmado", "descartado"];
+const ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+export type DocRow = {
+  id: string;
+  kind: string;
+  status: string;
+  payee: string | null;
+  amount: number | string | null;
+  due_date: string | null;
+  paid_on: string | null;
+  extracted?: unknown;
+  bill_id?: string | null;
+  transaction_id?: string | null;
+};
+
+/** Texto de documento para o modelo: uma linha, sem marcadores, curto. É DADO, nunca instrução. */
+const docText = (v: unknown, max: number) => {
+  const t = cleanText(v, max);
+  return t ? t.replace(/[<>]/g, " ").trim() || null : null;
+};
+
+function docItem(r: DocRow): DocumentoItem {
+  const valor = r.amount === null || r.amount === undefined ? null : Number(r.amount);
+  return {
+    id: r.id,
+    tipo: DOC_KINDS_OK.includes(r.kind) ? r.kind : "outro",
+    beneficiario: docText(r.payee, DOC_LIMITS.payee),
+    valor: valor !== null && Number.isFinite(valor) ? valor : null,
+    vencimento: r.due_date && ISO.test(r.due_date) ? r.due_date : null,
+    pagamento: r.paid_on && ISO.test(r.paid_on) ? r.paid_on : null,
+    status: DOC_STATUS_OK.includes(r.status) ? r.status : "pendente",
+  };
+}
+
+export function buildDocumentos(rows: DocRow[]): DocumentosData {
+  return { itens: rows.slice(0, MAX_DOC_ITEMS).map(docItem) };
+}
+
+/** Dados de um documento: colunas conferidas + descrição sugerida (revalidada); nunca o arquivo bruto. */
+export function buildDocumento(r: DocRow): DocumentoData {
+  const ex = storedExtracted(r.extracted);
+  return {
+    ...docItem(r),
+    descricao: docText(ex?.descricao ?? null, DOC_LIMITS.description),
+    conta_ligada: Boolean(r.bill_id),
+    lancamento_ligado: Boolean(r.transaction_id),
+  };
 }

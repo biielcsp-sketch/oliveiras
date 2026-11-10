@@ -3,13 +3,16 @@ import { CreditCard, Plus } from "lucide-react";
 import { Card, EmptyState, LinkButton } from "@/components/ui";
 import { getFinanceBase } from "@/lib/financas/data";
 import { getBillPayments, getBills, getTransactionsAround } from "@/lib/financas/planning-data";
-import { billStatus, dateInMonth, invoiceFor, invoiceTotals } from "@/lib/financas/planning";
+import { billStatus, invoiceFor, invoiceTotals } from "@/lib/financas/planning";
 import { formatBRL } from "@/lib/financas/money";
 import { parseMonth, shortDate } from "@/lib/financas/period";
 import { todaySP } from "@/lib/financas/today";
 import { MonthSwitcher } from "../_components/month-switcher";
 import { StatusBadge } from "../_components/status-badge";
 import { undoPayment } from "../planning-actions";
+import { DocUpload } from "../_components/doc-upload";
+import { countPendingDocuments, getConfirmedBillDocs } from "@/lib/financas/documentos/data";
+import { billForMonth } from "@/lib/financas/documentos/rules";
 
 export const metadata = { title: "Contas a pagar" };
 
@@ -18,15 +21,19 @@ export default async function ContasAPagarPage({ searchParams }: { searchParams:
   const today = todaySP();
   const { accounts, categories } = await getFinanceBase();
   const cards = accounts.filter((a) => a.kind === "cartao" && !a.archived && a.closing_day && a.due_day);
-  const [bills, payments, cardTxs] = await Promise.all([
+  const [bills, payments, cardTxs, billDocs, pendingDocs] = await Promise.all([
     getBills(),
     getBillPayments(month),
     getTransactionsAround(month, cards.map((c) => c.id)),
+    getConfirmedBillDocs(month),
+    countPendingDocuments(),
   ]);
   const transferIds = new Set(categories.filter((c) => c.kind === "transferencia").map((c) => c.id));
   const paymentByBill = new Map(payments.map((p) => [p.bill_id, p]));
   const activeBills = bills.filter((b) => b.active || paymentByBill.has(b.id));
-  const totalBills = activeBills.reduce((s, b) => s + Math.round(b.amount * 100), 0) / 100;
+  // Boleto confirmado do mês: o valor e o vencimento dele valem para este mês (o valor fixo da conta não muda).
+  const expectedOf = (b: (typeof bills)[number]) => billForMonth(b, month, billDocs.get(b.id)).amount;
+  const totalBills = activeBills.reduce((s, b) => s + Math.round(expectedOf(b) * 100), 0) / 100;
 
   return (
     <div className="flex flex-col gap-4">
@@ -36,6 +43,8 @@ export default async function ContasAPagarPage({ searchParams }: { searchParams:
           <Plus size={16} /> Nova conta
         </LinkButton>
       </div>
+
+      <DocUpload pending={pendingDocs} />
 
       {cards.length > 0 && (
         <Card className="py-1">
@@ -76,7 +85,8 @@ export default async function ContasAPagarPage({ searchParams }: { searchParams:
           </div>
           <ul className="divide-y divide-line">
             {activeBills.map((b) => {
-              const due = dateInMonth(month, b.due_day);
+              const doc = billDocs.get(b.id);
+              const due = billForMonth(b, month, doc).due;
               const payment = paymentByBill.get(b.id);
               const status = billStatus(due, Boolean(payment), today);
               return (
@@ -89,10 +99,18 @@ export default async function ContasAPagarPage({ searchParams }: { searchParams:
                       vence {shortDate(due)}
                       {payment &&
                         ` · paga em ${shortDate(payment.paid_on)}${payment.transaction_id ? " (no extrato)" : ""}`}
+                      {doc && (
+                        <>
+                          {" · "}
+                          <a href={`/financas/documentos/${doc.id}/arquivo`} target="_blank" rel="noopener" className="font-medium text-link">
+                            {doc.file_mime === "application/pdf" ? "boleto (PDF)" : "boleto (foto)"}
+                          </a>
+                        </>
+                      )}
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-1">
-                    <span className="tabular-nums">{formatBRL(payment?.amount ?? b.amount)}</span>
+                    <span className="tabular-nums">{formatBRL(payment?.amount ?? expectedOf(b))}</span>
                     {payment ? (
                       <form action={undoPayment} className="flex items-center gap-2">
                         <input type="hidden" name="id" value={payment.id} />
