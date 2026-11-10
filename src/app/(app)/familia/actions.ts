@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getAppContext } from "@/lib/data";
+import { isValidPushEndpoint } from "@/lib/saude/push";
 
 export type ActionState = { error?: string; ok?: boolean } | null;
 
@@ -41,8 +42,20 @@ export async function removeDependent(form: FormData) {
   revalidatePath("/familia");
 }
 
-export async function signOut() {
+/**
+ * Sair da conta. Se este aparelho tinha assinatura de avisos push, o endpoint chega aqui e a linha é apagada
+ * ANTES do signOut (ainda há sessão, então o RLS deixa apagar). Só o endpoint deste aparelho: os outros
+ * aparelhos da pessoa continuam recebendo. Falha ao apagar nunca impede a saída da conta.
+ */
+export async function signOut(pushEndpoint?: string | null) {
   const supabase = await createClient();
+  if (isValidPushEndpoint(pushEndpoint)) {
+    try {
+      await supabase.from("push_subscriptions").delete().eq("endpoint", pushEndpoint);
+    } catch {
+      /* segue para o signOut */
+    }
+  }
   await supabase.auth.signOut();
   redirect("/login");
 }

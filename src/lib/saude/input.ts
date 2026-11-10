@@ -253,7 +253,27 @@ export type MedicationInput = {
   active: boolean;
   prescribed_by: string | null;
   notes: string | null;
+  /** Horários dos avisos push, 'HH:MM' (24h), sem repetição e em ordem. */
+  reminder_times: string[];
 };
+
+export const MAX_REMINDER_TIMES = 6;
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** Horários dos avisos: 'HH:MM' estrito, vazios ignorados, repetidos some, ordem crescente, no máximo 6. */
+export function validateReminderTimes(raw: unknown): Ok<string[]> | Fail {
+  const list = Array.isArray(raw) ? raw : raw === undefined || raw === null ? [] : [raw];
+  const times: string[] = [];
+  for (const item of list) {
+    if (typeof item !== "string") return { ok: false, erro: "Horário de aviso inválido." };
+    const t = item.trim();
+    if (!t) continue;
+    if (!HHMM.test(t)) return { ok: false, erro: "Horário de aviso inválido." };
+    if (!times.includes(t)) times.push(t);
+  }
+  if (times.length > MAX_REMINDER_TIMES) return { ok: false, erro: `No máximo ${MAX_REMINDER_TIMES} horários de aviso.` };
+  return { ok: true, value: times.sort() };
+}
 
 export function validateMedicationInput(raw: Record<string, unknown>, memberIds: string[]): Ok<MedicationInput> | Fail {
   const m = member(raw.member_id, memberIds);
@@ -276,6 +296,8 @@ export function validateMedicationInput(raw: Record<string, unknown>, memberIds:
   if (started && !isDate(started)) return { ok: false, erro: "Data de início inválida." };
   if (ended && !isDate(ended)) return { ok: false, erro: "Data de término inválida." };
   if (started && ended && ended < started) return { ok: false, erro: "O término não pode ser antes do início." };
+  const times = validateReminderTimes(raw.reminder_times);
+  if (!times.ok) return times;
   return {
     ok: true,
     value: {
@@ -288,6 +310,7 @@ export function validateMedicationInput(raw: Record<string, unknown>, memberIds:
       active: !ended,
       prescribed_by: orNull(prescribedBy),
       notes: orNull(notes),
+      reminder_times: times.value,
     },
   };
 }
@@ -301,6 +324,7 @@ export const medicationInputFromForm = (f: FormData) => ({
   ended_on: f.get("ended_on"),
   prescribed_by: f.get("prescribed_by"),
   notes: f.get("notes"),
+  reminder_times: f.getAll("reminder_times"),
 });
 
 /** Data de término ao encerrar: hoje, mas nunca antes do início (regra ended_on >= started_on do banco). */

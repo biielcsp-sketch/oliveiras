@@ -31,6 +31,8 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+          # Chave pública VAPID de teste (formato válido; não envia push de verdade).
+          NEXT_PUBLIC_VAPID_PUBLIC_KEY: BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 
   seguranca:
     name: Segurança do código (SAST, segredos, dependências)
@@ -75,6 +77,8 @@ jobs:
           npx supabase status -o json 2>/dev/null > /tmp/sb.json
           echo "NEXT_PUBLIC_SUPABASE_URL=$(jq -r .API_URL /tmp/sb.json)" >> "$GITHUB_ENV"
           echo "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$(jq -r .PUBLISHABLE_KEY /tmp/sb.json)" >> "$GITHUB_ENV"
+          # Chave pública VAPID de teste (formato válido; não envia push de verdade).
+          echo "NEXT_PUBLIC_VAPID_PUBLIC_KEY=BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" >> "$GITHUB_ENV"
           # Chave de serviço do Supabase LOCAL (de demonstração), só para preparar dados nos testes E2E.
           echo "SUPABASE_TEST_SERVICE_ROLE_KEY=$(jq -r .SERVICE_ROLE_KEY /tmp/sb.json)" >> "$GITHUB_ENV"
       - run: npm run build

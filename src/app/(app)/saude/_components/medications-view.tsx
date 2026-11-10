@@ -5,10 +5,11 @@ import { Plus } from "lucide-react";
 import { Button, Card, EmptyState, Field, FormError, Input, Select, Textarea } from "@/components/ui";
 import { Modal } from "@/components/modal";
 import { brDate } from "@/lib/agenda/dates";
-import { LIMITS } from "@/lib/saude/input";
+import { LIMITS, MAX_REMINDER_TIMES } from "@/lib/saude/input";
 import { splitMedications } from "@/lib/saude/view";
 import { deleteMedication, saveMedication, setMedicationActive, type SaudeState } from "../actions";
 import { ConfirmDelete, type Person } from "./shared";
+import { PushNotifications } from "./push-notifications";
 
 export type MedicationVM = {
   id: string;
@@ -22,7 +23,39 @@ export type MedicationVM = {
   active: boolean;
   prescribedBy: string | null;
   notes: string | null;
+  reminderTimes: string[];
 };
+
+/** Horários dos avisos: até 6 campos de hora; vazios e repetidos são descartados no servidor. */
+function ReminderTimes({ initial }: { initial: string[] }) {
+  const [times, setTimes] = useState<string[]>(initial);
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="mb-1.5 text-[13px] font-medium text-muted">Horários dos avisos</legend>
+      {times.length === 0 && <p className="text-sm text-muted">Sem horário: nenhum aviso deste medicamento.</p>}
+      {times.map((t, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <Input
+            name="reminder_times"
+            type="time"
+            aria-label={`Horário do aviso ${i + 1}`}
+            value={t}
+            onChange={(e) => setTimes(times.map((x, j) => (j === i ? e.target.value : x)))}
+            required
+          />
+          <Button type="button" variant="ghost" className="h-12 px-3 text-sm" aria-label={`Remover horário ${i + 1}`} onClick={() => setTimes(times.filter((_, j) => j !== i))}>
+            Remover
+          </Button>
+        </div>
+      ))}
+      {times.length < MAX_REMINDER_TIMES && (
+        <Button type="button" variant="ghost" className="h-11 self-start px-3 text-sm" onClick={() => setTimes([...times, ""])}>
+          <Plus size={16} aria-hidden /> Adicionar horário
+        </Button>
+      )}
+    </fieldset>
+  );
+}
 
 function MedicationForm({ item, people, defaultMember, onDone }: { item?: MedicationVM; people: Person[]; defaultMember: string; onDone: () => void }) {
   const [state, action, pending] = useActionState<SaudeState, FormData>(saveMedication, null);
@@ -63,6 +96,7 @@ function MedicationForm({ item, people, defaultMember, onDone }: { item?: Medica
       <Field label="Fim do uso (deixe vazio se continua em uso)">
         <Input name="ended_on" type="date" defaultValue={item?.endedOn ?? ""} />
       </Field>
+      <ReminderTimes initial={item?.reminderTimes ?? []} />
       <Field label="Prescrito por">
         <Input name="prescribed_by" maxLength={LIMITS.doctor} defaultValue={item?.prescribedBy ?? ""} autoComplete="off" />
       </Field>
@@ -106,6 +140,7 @@ export function MedicationsView({ people, items, defaultMember }: { people: Pers
             {x.endedOn ? `Até ${brDate(x.endedOn)}` : ""}
           </p>
         )}
+        {x.reminderTimes.length > 0 && <p className="text-sm text-muted">Avisos às {x.reminderTimes.join(", ")}</p>}
         {x.prescribedBy && <p className="text-sm text-muted">Prescrito por {x.prescribedBy}</p>}
         {x.notes && <p className="mt-2 whitespace-pre-wrap text-sm">{x.notes}</p>}
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -129,6 +164,7 @@ export function MedicationsView({ people, items, defaultMember }: { people: Pers
 
   return (
     <div className="flex flex-col gap-6">
+      <PushNotifications />
       <div className="flex justify-end">
         <Button onClick={() => setModal({})}>
           <Plus size={18} aria-hidden /> Novo medicamento

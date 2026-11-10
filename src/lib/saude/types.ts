@@ -72,6 +72,7 @@ export type HealthMedication = {
   active: boolean;
   prescribed_by: string | null;
   notes: string | null;
+  reminder_times: string[];
 };
 
 export type HealthVaccine = {
@@ -90,5 +91,5 @@ export type HealthVaccine = {
 };
 
 export const PROCEDURE_COLS = "id, member_id, name, performed_on, place, doctor, notes, file_path, file_mime, file_size";
-export const MEDICATION_COLS = "id, member_id, name, dosage, frequency, started_on, ended_on, active, prescribed_by, notes";
+export const MEDICATION_COLS = "id, member_id, name, dosage, frequency, started_on, ended_on, active, prescribed_by, notes, reminder_times";
 export const VACCINE_COLS = "id, member_id, name, dose_label, applied_on, next_dose_on, place, lot, notes, file_path, file_mime, file_size";
