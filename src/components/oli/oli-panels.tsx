@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { Brain, CalendarClock, CalendarDays, Check, ListOrdered, PieChart, Trash2, Wallet, X } from "lucide-react";
+import { Brain, CalendarClock, CalendarDays, Check, FileText, ListOrdered, PieChart, Trash2, Wallet, X } from "lucide-react";
 import { brDate, shortDayLabel } from "@/lib/agenda/dates";
 import { safeHex } from "@/lib/agenda/view";
 import type { ReactNode } from "react";
@@ -61,6 +61,11 @@ function Head({ icon, title, aside }: { icon: ReactNode; title: string; aside?: 
 }
 
 const money = (v: number) => <span className="tabular-nums">{formatBRL(v)}</span>;
+
+const DOC_KIND: Record<string, string> = { boleto: "Boleto", comprovante: "Comprovante", outro: "Outro" };
+const DOC_STATUS: Record<string, string> = { pendente: "Pendente", confirmado: "Confirmado", descartado: "Descartado" };
+const docWhen = (x: { tipo: string; vencimento: string | null; pagamento: string | null }) =>
+  x.tipo === "comprovante" ? (x.pagamento ? `pago ${shortDate(x.pagamento)}` : null) : x.vencimento ? `vence ${shortDate(x.vencimento)}` : null;
 
 export function PanelView({
   panel: p,
@@ -337,6 +342,47 @@ export function PanelView({
             <dd className="truncate">{d.agenda.nome}</dd>
           </dl>
         </Confirm>
+      );
+    }
+    case "documentos": {
+      const d = p.data;
+      return (
+        <Card>
+          <Head icon={<FileText size={16} aria-hidden />} title="Documentos recentes" />
+          {d.itens.length === 0 ? (
+            <p className="text-sm text-muted">Nenhum documento enviado.</p>
+          ) : (
+            <ul className="divide-y divide-line">
+              {d.itens.map((x) => (
+                <li key={x.id} className="flex items-center gap-3 py-2.5 text-[15px]">
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">{x.beneficiario ?? DOC_KIND[x.tipo] ?? x.tipo}</span>
+                    <span className="block truncate text-[12px] text-muted">
+                      {[DOC_KIND[x.tipo] ?? x.tipo, docWhen(x), DOC_STATUS[x.status] ?? x.status].filter(Boolean).join(" · ")}
+                    </span>
+                  </span>
+                  {x.valor !== null && money(x.valor)}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      );
+    }
+    case "documento": {
+      const d = p.data;
+      return (
+        <Card>
+          <Head icon={<FileText size={16} aria-hidden />} title={d.beneficiario ?? DOC_KIND[d.tipo] ?? "Documento"} aside={<span className="text-sm text-muted">{DOC_STATUS[d.status] ?? d.status}</span>} />
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[15px]">
+            <dt className="text-muted">Tipo</dt>
+            <dd>{DOC_KIND[d.tipo] ?? d.tipo}</dd>
+            {d.valor !== null && (<><dt className="text-muted">Valor</dt><dd>{money(d.valor)}</dd></>)}
+            {d.vencimento && (<><dt className="text-muted">Vencimento</dt><dd className="tabular-nums">{brDate(d.vencimento)}</dd></>)}
+            {d.pagamento && (<><dt className="text-muted">Pago em</dt><dd className="tabular-nums">{brDate(d.pagamento)}</dd></>)}
+            {d.descricao && (<><dt className="text-muted">Descrição</dt><dd className="truncate">{d.descricao}</dd></>)}
+          </dl>
+        </Card>
       );
     }
     case "aviso":

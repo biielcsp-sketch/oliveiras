@@ -66,6 +66,12 @@ export function OliHome() {
         case "agenda_periodo":
           add({ id, kind: "eventos", data: res.data });
           return res.data;
+        case "documentos_recentes":
+          add({ id, kind: "documentos", data: res.data });
+          return res.data;
+        case "ler_documento":
+          add({ id, kind: "documento", data: res.data });
+          return res.data;
         case "criar_evento":
           return new Promise((resolve) => {
             pending.current.set(id, { resolve });

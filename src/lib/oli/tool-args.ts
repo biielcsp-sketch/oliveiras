@@ -17,6 +17,8 @@ export const OLI_TOOL_NAMES = [
   "esquecer_memoria",
   "agenda_periodo",
   "criar_evento",
+  "documentos_recentes",
+  "ler_documento",
 ] as const;
 export type OliToolName = (typeof OLI_TOOL_NAMES)[number];
 
@@ -122,6 +124,27 @@ export function parseCriarLancamentoArgs(args: unknown): Result<CriarLancamentoA
   if (!data.ok) return data;
   if (data.value && !validDate(data.value)) return fail("Data inválida. Use AAAA-MM-DD.");
   return ok({ descricao: descricao.value, valor, categoria: categoria.value, conta: conta.value, data: data.value });
+}
+
+export const DOCS_DEFAULT = 10;
+
+/** documentos_recentes: limite opcional de 1 a 10 (padrão 10). */
+export function parseDocumentosArgs(args: unknown): Result<{ limite: number }> {
+  const a = obj(args);
+  let limite = DOCS_DEFAULT;
+  if (a.limite !== undefined && a.limite !== null) {
+    const n = typeof a.limite === "string" ? Number(a.limite) : a.limite;
+    if (typeof n !== "number" || !Number.isFinite(n)) return fail("Limite inválido.");
+    limite = Math.min(DOCS_DEFAULT, Math.max(1, Math.trunc(n)));
+  }
+  return ok({ limite });
+}
+
+/** ler_documento: id (uuid) de um documento da família. */
+export function parseLerDocumentoArgs(args: unknown): Result<{ id: string }> {
+  const id = obj(args).id;
+  if (typeof id !== "string" || !UUID_RE.test(id.trim())) return fail("Id de documento inválido.");
+  return ok({ id: id.trim().toLowerCase() });
 }
 
 export function parseSalvarMemoriaArgs(args: unknown): Result<{ conteudo: string; categoria: MemoryCategory }> {
