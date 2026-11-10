@@ -3,13 +3,13 @@ import clsx from "clsx";
 import { ChevronRight } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 
-/** Card de vidro com brilho (radius 24). `tone="hero"`: card escuro em gradiente petróleo, texto branco. */
+/** Card de vidro com brilho (radius 24). `tone="hero"`: card de destaque em vidro azul (mesmo azul do botão principal), texto branco. */
 export function Card({ className, tone = "glass", ...props }: ComponentProps<"div"> & { tone?: "glass" | "hero" }) {
   return (
     <div
       className={clsx(
         "rounded-[24px] p-5",
-        tone === "glass" ? "glass glass-shine border border-[var(--glass-edge)] shadow-glass" : "bg-hero text-on-primary shadow-card",
+        tone === "glass" ? "glass glass-shine border border-[var(--glass-edge)] shadow-glass" : "glass-primary",
         className,
       )}
       {...props}
@@ -126,7 +126,7 @@ export function Tag({ tone = "warning", children }: { tone?: "warning" | "info";
     <span
       className={clsx(
         "inline-flex h-7 items-center rounded-full px-2.5 text-[12px] font-medium",
-        tone === "warning" ? "bg-warning-soft text-warning" : "bg-white/10 text-on-primary",
+        tone === "warning" ? "bg-warning-soft text-warning" : "bg-[rgb(5_30_80/0.45)] text-white",
       )}
     >
       {children}
