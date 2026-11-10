@@ -167,10 +167,9 @@ export function BottomNav() {
 }
 
 const roundBtn =
-  "grid size-12 place-items-center rounded-full bg-surface-solid text-ink shadow-round transition hover:text-primary active:scale-95";
-/** Sobre o cabeçalho azul dos módulos: botões de vidro com ícone branco. */
-const roundBtnHero =
-  "grid size-12 place-items-center rounded-full bg-white/15 text-white ring-1 ring-white/25 transition hover:bg-white/25 active:scale-95";
+  "glass glass-shine grid size-12 place-items-center rounded-full border border-[var(--glass-edge)] text-ink shadow-glass transition hover:text-primary active:scale-95";
+/** Sobre a imagem do cabeçalho dos módulos: vidro transparente com ícone branco. */
+const roundBtnHero = "glass-clear grid size-12 place-items-center rounded-full text-white transition hover:brightness-110 active:scale-95";
 
 /** Topo no celular: logo (→ Início) + Agenda (calendário) e Família. Nos módulos, fica sobre o painel azul. */
 export function MobileTopBar() {
@@ -180,7 +179,7 @@ export function MobileTopBar() {
     <header
       className={clsx(
         "relative z-20 flex items-center justify-between px-5 pb-2 pt-[calc(env(safe-area-inset-top)+16px)] md:hidden",
-        hero && "text-white",
+        hero && "text-on-image text-white",
       )}
     >
       <Link href={HOME.href} aria-label="Oliveira's, ir para o Início" className="rounded-2xl">
