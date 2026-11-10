@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { describe, expect, it } from "vitest";
 import { validateMedicationInput, validateReminderTimes } from "@/lib/saude/input";
-import { isValidPushEndpoint, notificationTarget, pushUiState, truncateUserAgent, urlBase64ToUint8Array, validatePushSubscription } from "@/lib/saude/push";
+import { describeActivationError, isValidPushEndpoint, notificationTarget, pushUiState, truncateUserAgent, urlBase64ToUint8Array, validatePushSubscription } from "@/lib/saude/push";
 
 const MEMBER = "11111111-1111-4111-8111-111111111111";
 const P256 = "B" + "a".repeat(86);
@@ -223,5 +223,28 @@ describe("service worker: strings (nada de cache novo; carteirinhas intactas)", 
     expect(push).not.toMatch(/caches|\.put\(|addAll|cache\.add/);
     expect(sw).toContain('const CACHE = "oliveiras-v2"');
     expect(sw).toMatch(/k !== CACHE && k !== CARDS_CACHE/);
+  });
+});
+
+describe("mensagem de erro da ativação", () => {
+  it("mostra a etapa e o código do erro do navegador", () => {
+    const e = new DOMException("Registration failed - push service error", "AbortError");
+    const m = describeActivationError("inscricao", e);
+    expect(m).toContain("inscrição no serviço de push");
+    expect(m).toContain("AbortError");
+    expect(m).toContain("Registration failed - push service error");
+  });
+  it("remove URLs e caracteres estranhos da mensagem e limita o tamanho", () => {
+    const e = new Error("falhou em https://fcm.googleapis.com/fcm/send/abc123 <script>" + "x".repeat(200));
+    const m = describeActivationError("servidor", e);
+    expect(m).not.toContain("fcm.googleapis.com");
+    expect(m).not.toContain("<");
+    expect(m.length).toBeLessThan(220);
+  });
+  it("erro sem nome válido ou que não é Error vira código genérico", () => {
+    expect(describeActivationError("permissao", "texto")).toContain("código: Erro)");
+    const e = new Error("x");
+    e.name = "Nome com espaço";
+    expect(describeActivationError("service-worker", e)).toContain("código: Erro");
   });
 });

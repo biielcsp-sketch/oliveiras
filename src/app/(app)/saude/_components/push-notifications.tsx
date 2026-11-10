@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Bell } from "lucide-react";
 import { Button, Card, FormError } from "@/components/ui";
-import { pushUiState, urlBase64ToUint8Array, type PushUi } from "@/lib/saude/push";
+import { describeActivationError, pushUiState, urlBase64ToUint8Array, type ActivationStep, type PushUi } from "@/lib/saude/push";
 import { hasPushSubscription, removePushSubscription, savePushSubscription } from "../push-actions";
 
 const VAPID_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
@@ -62,6 +62,7 @@ export function PushNotifications() {
   async function activate() {
     setBusy(true);
     setError(null);
+    let step: ActivationStep = "permissao";
     try {
       // Pedido de permissão logo no clique (gesto do usuário).
       const permission = await Notification.requestPermission();
@@ -69,21 +70,25 @@ export function PushNotifications() {
         await refresh();
         return;
       }
+      step = "service-worker";
       const reg = await getRegistration();
       if (!reg) throw new Error("sem service worker");
+      step = "servidor";
       const old = await reg.pushManager.getSubscription();
       if (old && !(await hasPushSubscription(old.endpoint))) await old.unsubscribe(); // era de outra conta: começa limpo
+      step = "inscricao";
       const sub =
         (await reg.pushManager.getSubscription()) ??
         (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(VAPID_KEY) }));
       const json = sub.toJSON();
+      step = "servidor";
       const saved = await savePushSubscription({ endpoint: sub.endpoint, p256dh: json.keys?.p256dh, auth: json.keys?.auth });
       if (!saved.ok) {
         await sub.unsubscribe().catch(() => {});
         setError(saved.erro ?? "Não foi possível ativar os avisos.");
       }
-    } catch {
-      setError("Não foi possível ativar os avisos neste aparelho. Tente de novo.");
+    } catch (err) {
+      setError(describeActivationError(step, err));
     } finally {
       setBusy(false);
       await refresh();
