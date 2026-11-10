@@ -124,12 +124,26 @@ export function ArcNav({
     };
   }, [active, home, animate, layout, max, onChange]);
 
+  // Foco pelo teclado: leva o item focado ao centro para ele ficar visível
+  function focusItem(i: number) {
+    if (drag.current) return;
+    target.current = i;
+    animate();
+  }
+  function blurItem() {
+    if (drag.current) return;
+    target.current = home;
+    animate();
+  }
+
   function onKeyDown(e: KeyboardEvent) {
     if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
     e.preventDefault();
-    const next = clampIndex(home + (e.key === "ArrowRight" ? 1 : -1), max);
-    if (next === active) return;
-    onChange(next);
+    // Parte do item focado (pode não ser o ativo, se a pessoa navegou com Tab)
+    const focused = itemRefs.current.findIndex((el) => el === document.activeElement);
+    const base = focused >= 0 ? focused : home;
+    const next = clampIndex(base + (e.key === "ArrowRight" ? 1 : -1), max);
+    if (next !== active) onChange(next);
     requestAnimationFrame(() => itemRefs.current[next]?.focus());
   }
 
@@ -180,16 +194,8 @@ export function ArcNav({
                       itemRefs.current[i] = el;
                     }}
                     aria-current={i === active ? "page" : undefined}
-                    onFocus={() => {
-                      if (drag.current) return;
-                      target.current = i;
-                      animate();
-                    }}
-                    onBlur={() => {
-                      if (drag.current) return;
-                      target.current = home;
-                      animate();
-                    }}
+                    onFocus={() => focusItem(i)}
+                    onBlur={blurItem}
                     draggable={false}
                     className={cls}
                   >
@@ -202,6 +208,8 @@ export function ArcNav({
                       itemRefs.current[i] = el;
                     }}
                     aria-pressed={i === active}
+                    onFocus={() => focusItem(i)}
+                    onBlur={blurItem}
                     onClick={() => onChange(i)}
                     className={cls}
                   >
