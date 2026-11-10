@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ARC_BASE_Y, activeRouteIndex, arcPlacement, clampIndex, dragToPosition } from "../../src/lib/arc-nav";
+import { ARC_BASE_Y, activeRouteIndex, arcPlacement, clampIndex, dragToPosition, rootIndex } from "../../src/lib/arc-nav";
 
 describe("menu em ferradura", () => {
   it("botão central fica no ponto mais baixo e as pontas sobem simetricamente", () => {
@@ -48,5 +48,14 @@ describe("menu em ferradura", () => {
     expect(activeRouteIndex(tabs, "/financas/contas")).toBe(2);
     expect(activeRouteIndex(tabs, "/financas/contas-a-pagar")).toBe(-1);
     expect(activeRouteIndex(tabs, "/financas/importar")).toBe(-1);
+  });
+
+  it("aba raiz no meio do arco continua casando só a rota exata", () => {
+    const tabs = [{ href: "/financas/lancamentos" }, { href: "/financas/orcamento" }, { href: "/financas" }, { href: "/financas/metas" }];
+    expect(activeRouteIndex(tabs, "/financas")).toBe(2);
+    expect(activeRouteIndex(tabs, "/financas/metas/nova")).toBe(3);
+    expect(activeRouteIndex(tabs, "/financas/importar")).toBe(-1);
+    // Fora das abas, o centro volta para o Resumo (raiz), não para a primeira da lista
+    expect(rootIndex(tabs)).toBe(2);
   });
 });

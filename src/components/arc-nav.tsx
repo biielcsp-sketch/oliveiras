@@ -20,14 +20,17 @@ export function ArcNav({
   active,
   onChange,
   label,
+  fallback = 0,
 }: {
   items: ArcItem[];
   active: number;
   onChange: (index: number) => void;
   label: string;
+  /** Botão do centro quando `active` é -1 (página fora das abas). */
+  fallback?: number;
 }) {
-  // -1: página fora das abas; centraliza a primeira, sem marcar nenhuma como atual
-  const home = Math.max(0, active);
+  // -1: página fora das abas; centraliza o `fallback`, sem marcar nenhuma como atual
+  const home = active >= 0 ? active : fallback;
   const wrapRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLElement | null)[]>([]);
   const pos = useRef(home);
