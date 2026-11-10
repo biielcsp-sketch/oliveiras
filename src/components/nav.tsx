@@ -39,12 +39,12 @@ export function Sidebar({ familyName }: { familyName: string }) {
           <p className="mt-1 pl-[42px] text-xs text-muted">{familyName}</p>
         </Link>
         <nav aria-label="Principal" className="mt-8 flex flex-1 flex-col gap-1">
-          {SIDEBAR_NAV.map(({ href, label, icon: Icon }: ModuleDef) => {
+          {SIDEBAR_NAV.map(({ href, entry, label, icon: Icon }: ModuleDef) => {
             const active = isActive(path, href);
             return (
               <Link
                 key={href}
-                href={href}
+                href={entry ?? href}
                 aria-current={active ? "page" : undefined}
                 className={clsx(
                   sideItem,
@@ -91,7 +91,7 @@ function TabLink({ item, path }: { item: ModuleDef; path: string }) {
   return (
     <li className="flex-1">
       <Link
-        href={item.href}
+        href={item.entry ?? item.href}
         aria-current={active ? "page" : undefined}
         className={clsx(
           "flex h-14 flex-col items-center justify-center gap-1 text-[13px] transition",

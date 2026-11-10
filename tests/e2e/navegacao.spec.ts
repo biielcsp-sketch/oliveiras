@@ -18,6 +18,8 @@ test("navegação: barra inferior, logo para o Início e calendário da Agenda",
     expect(names).toEqual(["Finanças", "Saúde", "Oli, tela inicial", "Casa", "Igreja"]);
     const oli = nav.getByRole("link", { name: "Oli, tela inicial" });
     await expect(oli).toHaveAttribute("href", "/inicio");
+    // Saúde abre em Consultas (Carteirinhas continua em /saude)
+    await expect(nav.getByRole("link", { name: "Saúde" })).toHaveAttribute("href", "/saude/consultas");
     await expect(oli).toHaveAttribute("aria-current", "page");
     // Imagem estática do avatar (não 3D), carregada de verdade
     const img = oli.locator("img");

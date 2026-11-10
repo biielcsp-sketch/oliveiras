@@ -39,9 +39,13 @@ export function dragToPosition(start: number, dx: number, max: number) {
 }
 
 /**
- * Aba da rota atual: a primeira (raiz do módulo) só casa exato; as demais casam também subpáginas.
+ * Aba da rota atual. A aba raiz do módulo (cujo endereço é prefixo das outras, ex.: /financas) só casa exato,
+ * esteja em qualquer posição do arco; as demais casam também subpáginas.
  * -1 quando a página não é de nenhuma aba (ex.: /financas/importar).
  */
 export function activeRouteIndex(items: { href: string }[], path: string) {
-  return items.findIndex((it, idx) => (idx === 0 ? path === it.href : path === it.href || path.startsWith(it.href + "/")));
+  return items.findIndex((it) => {
+    const isRoot = items.some((o) => o !== it && o.href.startsWith(it.href + "/"));
+    return isRoot ? path === it.href : path === it.href || path.startsWith(it.href + "/");
+  });
 }

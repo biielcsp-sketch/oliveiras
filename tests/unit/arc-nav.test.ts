@@ -49,4 +49,11 @@ describe("menu em ferradura", () => {
     expect(activeRouteIndex(tabs, "/financas/contas-a-pagar")).toBe(-1);
     expect(activeRouteIndex(tabs, "/financas/importar")).toBe(-1);
   });
+
+  it("aba raiz no meio do arco continua casando só a rota exata", () => {
+    const tabs = [{ href: "/financas/lancamentos" }, { href: "/financas/orcamento" }, { href: "/financas" }, { href: "/financas/metas" }];
+    expect(activeRouteIndex(tabs, "/financas")).toBe(2);
+    expect(activeRouteIndex(tabs, "/financas/metas/nova")).toBe(3);
+    expect(activeRouteIndex(tabs, "/financas/importar")).toBe(-1);
+  });
 });

@@ -16,12 +16,14 @@ export type ModuleDef = {
   icon: LucideIcon;
   description: string;
   phase?: number;
+  /** Página que o menu abre, quando não é a raiz do módulo (a raiz continua valendo para marcar o item ativo). */
+  entry?: string;
 };
 
 export const MODULES: ModuleDef[] = [
   { href: "/financas", label: "Finanças", icon: Wallet, description: "Contas, cartões, orçamento e metas", phase: 1 },
   { href: "/agenda", label: "Agenda", icon: CalendarDays, description: "Agendas do casal integradas ao Google", phase: 3 },
-  { href: "/saude", label: "Saúde", icon: HeartPulse, description: "Carteirinhas, consultas, exames, medicamentos e vacinas", phase: 4 },
+  { href: "/saude", label: "Saúde", icon: HeartPulse, description: "Carteirinhas, consultas, exames, medicamentos e vacinas", phase: 4, entry: "/saude/consultas" },
   { href: "/casa", label: "Casa", icon: Home, description: "Compras, tarefas, manutenção e documentos", phase: 5 },
   { href: "/ministerio", label: "Igreja", icon: Church, description: "Carisma, Consolidação e GC", phase: 6 },
 ];
