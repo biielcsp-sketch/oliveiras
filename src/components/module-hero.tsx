@@ -1,10 +1,10 @@
-import { ChevronDown } from "lucide-react";
 import type { ReactNode } from "react";
+import { HeroDrawerButton } from "@/components/hero-drawer";
 
 /**
  * Cabeçalho padrão dos módulos (Finanças, Saúde, Casa, Igreja): painel com a imagem azul de fundo
  * (public/modulos/hero-fundo.webp) que ocupa o topo da tela (por trás da barra do topo no celular),
- * fecha em "V" com a setinha na ponta e leva o menu em ferradura.
+ * fecha em "V" com a setinha na ponta e leva o menu em ferradura. A setinha abre o HeroDrawer da página, se houver.
  * A barra do topo fica clara sobre ele (ver HERO_ROUTES em src/lib/modules.ts).
  */
 export function ModuleHero({ title, children }: { title: string; children?: ReactNode }) {
@@ -30,12 +30,7 @@ export function ModuleHero({ title, children }: { title: string; children?: Reac
         <h1 className="text-glow text-center text-[34px] font-bold tracking-tight">{title}</h1>
         <div className="mt-2">{children}</div>
       </div>
-      <span
-        aria-hidden="true"
-        className="glass-orb absolute bottom-[-18px] left-1/2 grid size-12 -translate-x-1/2 place-items-center rounded-full text-white"
-      >
-        <ChevronDown size={20} strokeWidth={2} />
-      </span>
+      <HeroDrawerButton label={`detalhes de ${title}`} />
     </div>
   );
 }
