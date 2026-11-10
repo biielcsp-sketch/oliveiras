@@ -62,3 +62,60 @@ self.addEventListener("fetch", (event) => {
   if (req.mode !== "navigate") return;
   event.respondWith(fetch(req).catch(() => caches.match(url.pathname === CARDS_PAGE ? CARDS_PAGE : OFFLINE_URL)));
 });
+
+// ---------- Avisos por notificação push (Web Push) ----------
+// Não guarda nada em cache. O servidor manda { title, body, tag, url }; aqui só se mostra o aviso.
+// Payload ausente ou inválido vira um aviso genérico (o navegador exige mostrar algo a cada push).
+const GENERIC_TITLE = "Oliveira's: você tem um aviso";
+// Lista fechada de destinos: qualquer outra coisa abre /inicio.
+const NOTIFICATION_PATHS = ["/saude/medicamentos", "/saude/vacinas"];
+
+function cut(v, max) {
+  return typeof v === "string" ? v.slice(0, max) : "";
+}
+
+function notificationTarget(raw) {
+  try {
+    if (typeof raw !== "string") return "/inicio";
+    const u = new URL(raw, self.location.origin);
+    return u.origin === self.location.origin && NOTIFICATION_PATHS.includes(u.pathname) ? u.pathname : "/inicio";
+  } catch {
+    return "/inicio";
+  }
+}
+
+self.addEventListener("push", (event) => {
+  let data = null;
+  try {
+    data = event.data ? event.data.json() : null;
+  } catch {
+    data = null;
+  }
+  if (typeof data !== "object" || data === null) data = {};
+  const title = cut(data.title, 80) || GENERIC_TITLE;
+  const options = {
+    body: cut(data.body, 200),
+    tag: cut(data.tag, 100) || "oliveiras-aviso",
+    icon: "/icons/icon-192.png",
+    data: { url: notificationTarget(data.url) },
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const path = notificationTarget(event.notification.data && event.notification.data.url);
+  const target = self.location.origin + path;
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((list) => {
+        const open = list.find((c) => new URL(c.url).origin === self.location.origin);
+        if (open) {
+          return open.focus().then((c) => (c && "navigate" in c ? c.navigate(target) : self.clients.openWindow(target)));
+        }
+        return self.clients.openWindow(target);
+      })
+      .catch(() => self.clients.openWindow(target)),
+  );
+});

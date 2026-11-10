@@ -182,7 +182,7 @@ describe("medicamento", () => {
   it("sem término = em uso; com término = encerrado", () => {
     expect(validateMedicationInput({ member_id: M1, name: " Dipirona ", dosage: "500 mg", started_on: "2026-01-01" }, IDS)).toEqual({
       ok: true,
-      value: { member_id: M1, name: "Dipirona", dosage: "500 mg", frequency: null, started_on: "2026-01-01", ended_on: null, active: true, prescribed_by: null, notes: null },
+      value: { member_id: M1, name: "Dipirona", dosage: "500 mg", frequency: null, started_on: "2026-01-01", ended_on: null, active: true, prescribed_by: null, notes: null, reminder_times: [] },
     });
     const ended = validateMedicationInput({ member_id: M1, name: "X", started_on: "2026-01-01", ended_on: "2026-01-10" }, IDS);
     expect(ended.ok && ended.value).toMatchObject({ ended_on: "2026-01-10", active: false });

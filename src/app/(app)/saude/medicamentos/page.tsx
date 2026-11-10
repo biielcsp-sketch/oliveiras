@@ -28,6 +28,7 @@ export default async function Page() {
     active: x.active,
     prescribedBy: x.prescribed_by,
     notes: x.notes,
+    reminderTimes: x.reminder_times ?? [],
   }));
   return <MedicationsView people={people} items={items} defaultMember={ctx.me?.id ?? people[0]?.id ?? ""} />;
 }

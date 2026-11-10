@@ -2,7 +2,7 @@
 
 # Oliveira's
 
-App da família Oliveira Rodrigues: Next.js 16 (App Router) + Supabase (projeto `bzwffrkeylsvqevixyur`) + Vercel. Dados sensíveis (finanças, saúde): segurança vem antes de funcionalidade.
+App da família Oliveira Rodrigues: Next.js 16 (App Router) + Supabase (projeto `kovpwyzmbpgmxassgolh`, recriado em 10/11/2026 após o antigo `bzwffrkeylsvqevixyur` sumir) + Vercel. Dados sensíveis (finanças, saúde): segurança vem antes de funcionalidade.
 
 ## Fluxo de trabalho
 

@@ -9,6 +9,7 @@ import { LIMITS } from "@/lib/saude/input";
 import { formatSize } from "@/lib/saude/files";
 import { isOverdue } from "@/lib/saude/view";
 import { deleteVaccine, saveVaccine, type SaudeState } from "../actions";
+import { PushNotifications } from "./push-notifications";
 import { ConfirmDelete, FileLink, fileInputClass, type Person } from "./shared";
 
 export type VaccineVM = {
@@ -109,6 +110,7 @@ export function VaccinesView({ people, items, defaultMember, today }: { people: 
 
   return (
     <div className="flex flex-col gap-6">
+      <PushNotifications />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div role="group" aria-label="Filtrar por pessoa" className="-mx-5 flex max-w-full gap-2 overflow-x-auto px-5 py-1 [scrollbar-width:none] md:mx-0 md:px-0">
           <button type="button" aria-pressed={filter === ""} className={chipClass(filter === "")} onClick={() => setFilter("")}>
