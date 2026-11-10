@@ -46,6 +46,9 @@
   --nav-from: #e4f3fc;
   --nav-to: #bfe2f5;
   --nav-ring: #f4fafe;
+  /* halo e contorno claro do domo do Oli na barra inferior */
+  --nav-halo: #eef8fe;
+  --nav-edge: rgb(255 255 255 / 0.9);
   --round-edge: #9cc6de;
   --plexus: #5b9cc4;
   --plexus-opacity: 0.18;
@@ -88,6 +91,8 @@
     --nav-from: #0f2433;
     --nav-to: #0f3550;
     --nav-ring: #0a141c;
+    --nav-halo: #17405c;
+    --nav-edge: rgb(255 255 255 / 0.1);
     --round-edge: #1f4a66;
     --plexus: #3fa6da;
     --plexus-opacity: 0.1;
@@ -125,6 +130,8 @@
   --nav-from: #0f2433;
   --nav-to: #0f3550;
   --nav-ring: #0a141c;
+  --nav-halo: #17405c;
+  --nav-edge: rgb(255 255 255 / 0.1);
   --round-edge: #1f4a66;
   --plexus: #3fa6da;
   --plexus-opacity: 0.1;

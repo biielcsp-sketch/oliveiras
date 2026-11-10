@@ -105,14 +105,14 @@ function TabLink({ item, path }: { item: ModuleDef; path: string }) {
   );
 }
 
-/** Barra inferior no celular: faixa em onda com o mini Oli elevado no centro (leva ao Início, a tela do Oli). */
+/** Barra inferior no celular: faixa com um domo arredondado no centro abraçando o mini Oli (leva ao Início, a tela do Oli). */
 export function BottomNav() {
   const path = usePathname();
   const oliActive = isActive(path, ASSISTANT.href);
   return (
     <nav aria-label="Principal" className="fixed inset-x-0 bottom-0 z-30 md:hidden">
       <div className="relative mx-auto max-w-lg">
-        {/* Faixa: sobe nas laterais e afunda no centro */}
+        {/* Faixa: reta nas laterais e sobe em domo no centro, com contorno claro na borda de cima */}
         <svg
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 h-full w-full drop-shadow-[0_-6px_16px_rgb(20_40_60/0.08)]"
@@ -125,7 +125,14 @@ export function BottomNav() {
               <stop offset="1" className="nav-stop-from" />
             </linearGradient>
           </defs>
-          <path d="M0 2 C70 2 120 26 195 26 C270 26 320 2 390 2 L390 100 L0 100 Z" fill="url(#bottom-nav-fill)" />
+          <path d="M0 32 H92 C134 32 138 1 195 1 C252 1 256 32 298 32 H390 V100 H0 Z" fill="url(#bottom-nav-fill)" />
+          <path
+            d="M0 32 H92 C134 32 138 1 195 1 C252 1 256 32 298 32 H390"
+            fill="none"
+            stroke="var(--nav-edge)"
+            strokeWidth="1.5"
+            vectorEffect="non-scaling-stroke"
+          />
         </svg>
         <div className="safe-bottom relative">
           <ul className="flex items-end px-2 pb-2 pt-7">
@@ -133,14 +140,21 @@ export function BottomNav() {
               <TabLink key={item.href} item={item} path={path} />
             ))}
             <li className="flex w-[84px] shrink-0 justify-center">
-              <Link
-                href={ASSISTANT.href}
-                aria-label="Oli, tela inicial"
-                aria-current={oliActive ? "page" : undefined}
-                className="-mt-12 grid size-16 place-items-center overflow-hidden rounded-full bg-[#0a141c] shadow-soft ring-[6px] ring-[var(--nav-ring)] transition active:scale-95"
-              >
-                <Image src="/oli/oli-mini.webp" alt="" width={52} height={52} unoptimized className="size-[52px]" />
-              </Link>
+              <div className="relative -mt-[88px] h-fit">
+                {/* Halo claro em volta do Oli */}
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute -inset-[10px] rounded-full bg-[var(--nav-halo)] shadow-[0_6px_18px_rgb(20_90_140/0.18)] ring-1 ring-[var(--nav-edge)]"
+                />
+                <Link
+                  href={ASSISTANT.href}
+                  aria-label="Oli, tela inicial"
+                  aria-current={oliActive ? "page" : undefined}
+                  className="relative grid size-16 place-items-center overflow-hidden rounded-full bg-[#0a141c] shadow-soft ring-[5px] ring-[var(--nav-ring)] transition active:scale-95"
+                >
+                  <Image src="/oli/oli-mini.webp" alt="" width={52} height={52} unoptimized className="size-[52px]" />
+                </Link>
+              </div>
             </li>
             {MOBILE_NAV_RIGHT.map((item) => (
               <TabLink key={item.href} item={item} path={path} />
