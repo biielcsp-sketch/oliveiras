@@ -105,14 +105,14 @@ function TabLink({ item, path }: { item: ModuleDef; path: string }) {
   );
 }
 
-/** Barra inferior no celular: faixa com um domo arredondado no centro abraçando o mini Oli (leva ao Início, a tela do Oli). */
+/** Barra inferior no celular: faixa em onda que sobe em domo arredondado abraçando o mini Oli (leva ao Início, a tela do Oli). */
 export function BottomNav() {
   const path = usePathname();
   const oliActive = isActive(path, ASSISTANT.href);
   return (
     <nav aria-label="Principal" className="fixed inset-x-0 bottom-0 z-30 md:hidden">
       <div className="relative mx-auto max-w-lg">
-        {/* Faixa: reta nas laterais e sobe em domo no centro, com contorno claro na borda de cima */}
+        {/* Faixa em onda: alta nos cantos, desce e sobe em domo em volta do Oli, com contorno claro na borda */}
         <svg
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 h-full w-full drop-shadow-[0_-6px_16px_rgb(20_40_60/0.08)]"
@@ -125,9 +125,9 @@ export function BottomNav() {
               <stop offset="1" className="nav-stop-from" />
             </linearGradient>
           </defs>
-          <path d="M0 32 H92 C134 32 138 1 195 1 C252 1 256 32 298 32 H390 V100 H0 Z" fill="url(#bottom-nav-fill)" />
+          <path d="M0 2 C50 2 66 30 98 30 C136 30 140 3 195 3 C250 3 254 30 292 30 C324 30 340 2 390 2 V100 H0 Z" fill="url(#bottom-nav-fill)" />
           <path
-            d="M0 32 H92 C134 32 138 1 195 1 C252 1 256 32 298 32 H390"
+            d="M0 2 C50 2 66 30 98 30 C136 30 140 3 195 3 C250 3 254 30 292 30 C324 30 340 2 390 2"
             fill="none"
             stroke="var(--nav-edge)"
             strokeWidth="1.5"
