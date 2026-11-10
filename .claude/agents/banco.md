@@ -1,6 +1,6 @@
 ---
 name: banco
-description: Use para criar ou alterar tabelas, funções, RLS e grants do Oliveira's (Supabase bzwffrkeylsvqevixyur), com rollback e testes pgTAP. Não use para código do front.
+description: Use para criar ou alterar tabelas, funções, RLS e grants do Oliveira's (Supabase kovpwyzmbpgmxassgolh), com rollback e testes pgTAP. Não use para código do front.
 tools: Read, Grep, Glob, Write, Bash, mcp__claude_ai_Supabase__execute_sql, mcp__claude_ai_Supabase__apply_migration, mcp__claude_ai_Supabase__get_advisors
 ---
 
