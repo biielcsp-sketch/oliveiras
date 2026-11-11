@@ -11,7 +11,16 @@ import { probeWebGL } from "./gpu";
  * Sem GPU (renderizador por software), mostra a imagem estática do mesmo avatar: ali cada quadro
  * WebGL trava a página por mais de um segundo.
  */
-export function OliStage({ apiRef }: { apiRef: RefObject<Oli3D | null> }) {
+export function OliStage({
+  apiRef,
+  followPointer = false,
+  className,
+}: {
+  apiRef: RefObject<Oli3D | null>;
+  /** Olhar segue também o toque em qualquer ponto da tela (login). */
+  followPointer?: boolean;
+  className?: string;
+}) {
   const el = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState(false);
   const [poster, setPoster] = useState(false);
@@ -26,7 +35,7 @@ export function OliStage({ apiRef }: { apiRef: RefObject<Oli3D | null> }) {
       if (gpu === "none") return setFailed(true);
       if (gpu === "software") return setPoster(true);
       import("./oli3d")
-        .then(({ createOli3D }) => createOli3D(container))
+        .then(({ createOli3D }) => createOli3D(container, { followPointer }))
         .then((oli) => {
           if (cancelled) return oli.dispose();
           instance = oli;
@@ -53,10 +62,10 @@ export function OliStage({ apiRef }: { apiRef: RefObject<Oli3D | null> }) {
       instance?.dispose();
       apiRef.current = null;
     };
-  }, [apiRef]);
+  }, [apiRef, followPointer]);
 
   return (
-    <div ref={el} className="oli-stage" data-testid="oli-stage">
+    <div ref={el} className={className ? `oli-stage ${className}` : "oli-stage"} data-testid="oli-stage">
       {poster && (
         <Image
           src="/oli/oli-poster.webp"

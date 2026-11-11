@@ -26,11 +26,12 @@ type NeonSet = {
 
 /**
  * opts.scenery=false: só o robô, fundo transparente (imagem da barra inferior).
+ * opts.followPointer=true: o olhar também segue o dedo/caneta em qualquer ponto da tela (tela de login).
  * opts.offline=true: qualidade máxima mesmo sem GPU (só para os scripts que geram imagens estáticas).
  */
 export async function createOli3D(
   container: HTMLElement,
-  opts: { scenery?: boolean; offline?: boolean } = {},
+  opts: { scenery?: boolean; offline?: boolean; followPointer?: boolean } = {},
 ): Promise<Oli3D> {
   const textures: THREE.Texture[] = [];
   const track = <T extends THREE.Texture>(t: T) => {
@@ -588,9 +589,22 @@ export async function createOli3D(
   canvas.addEventListener("pointerup", up);
   canvas.addEventListener("pointercancel", up);
   const onWindowMove = (e: PointerEvent) => {
-    if (e.pointerType === "mouse" && !dragging) aimEye(e);
+    if (dragging) return;
+    if (e.pointerType === "mouse") aimEye(e);
+    else if (opts.followPointer) {
+      aimEye(e);
+      wake(INTERACTION_MS);
+    }
   };
   window.addEventListener("pointermove", onWindowMove, { passive: true });
+  // Toque fora do palco (ex.: num campo do formulário): o olhar vai até o dedo.
+  const onWindowDown = (e: PointerEvent) => {
+    if (opts.followPointer && !dragging && e.pointerType !== "mouse") {
+      aimEye(e);
+      wake(INTERACTION_MS);
+    }
+  };
+  if (opts.followPointer) window.addEventListener("pointerdown", onWindowDown, { passive: true });
 
   // ---------- laço de animação ----------
   const clock = new THREE.Clock();
@@ -848,6 +862,7 @@ export async function createOli3D(
       io.disconnect();
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("pointermove", onWindowMove);
+      window.removeEventListener("pointerdown", onWindowDown);
       // Libera tudo da GPU: geometrias, materiais e texturas (a tela pode montar/desmontar).
       const mats = new Set<THREE.Material>();
       scene.traverse((o) => {

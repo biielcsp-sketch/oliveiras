@@ -1,12 +1,12 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import clsx from "clsx";
+import Link from "next/link";
 import { signIn, signUp, type AuthState } from "./actions";
 import { Button, Field, FormError, Input } from "@/components/ui";
 import { PasskeySignIn } from "./passkey-sign-in";
 
-export function LoginForm() {
+export function LoginForm({ notice }: { notice?: string }) {
   const [mode, setMode] = useState<"in" | "up">("in");
   const [inState, inAction, inPending] = useActionState<AuthState, FormData>(signIn, null);
   const [upState, upAction, upPending] = useActionState<AuthState, FormData>(signUp, null);
@@ -15,21 +15,11 @@ export function LoginForm() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="grid grid-cols-2 rounded-full bg-surface-2 p-1 text-[15px]">
-        {(["in", "up"] as const).map((m) => (
-          <button
-            key={m}
-            type="button"
-            onClick={() => setMode(m)}
-            className={clsx(
-              "h-11 rounded-full transition",
-              mode === m ? "bg-surface-solid font-medium text-ink shadow-soft" : "text-muted",
-            )}
-          >
-            {m === "in" ? "Entrar" : "Criar conta"}
-          </button>
-        ))}
-      </div>
+      {notice && (
+        <p role="status" className="rounded-2xl bg-surface-2 px-4 py-3 text-sm text-ink">
+          {notice}
+        </p>
+      )}
 
       <form action={mode === "in" ? inAction : upAction} className="flex flex-col gap-4">
         <Field label="E-mail">
@@ -44,6 +34,11 @@ export function LoginForm() {
             required
           />
         </Field>
+        {mode === "in" && (
+          <Link href="/esqueci-senha" className="-mt-2 self-end text-[13px] text-muted underline-offset-4 hover:underline">
+            Esqueci minha senha
+          </Link>
+        )}
         <FormError message={state?.error} />
         {state?.info && <p className="text-sm text-olive">{state.info}</p>}
         <Button type="submit" disabled={pending} className="mt-1">
@@ -52,6 +47,17 @@ export function LoginForm() {
       </form>
 
       {mode === "in" && <PasskeySignIn />}
+
+      <p className="text-center text-sm text-muted">
+        {mode === "in" ? "Não tem conta? " : "Já tem conta? "}
+        <button
+          type="button"
+          onClick={() => setMode(mode === "in" ? "up" : "in")}
+          className="font-medium text-ink underline underline-offset-4"
+        >
+          {mode === "in" ? "Criar conta" : "Entrar"}
+        </button>
+      </p>
     </div>
   );
 }

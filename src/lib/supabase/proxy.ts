@@ -2,7 +2,8 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { buildCsp, createNonce } from "@/lib/security-headers";
 
-const PUBLIC_PATHS = ["/login", "/auth"];
+// /redefinir-senha é pública para o próprio fluxo avisar quem chega sem sessão de recuperação.
+const PUBLIC_PATHS = ["/login", "/auth", "/esqueci-senha", "/redefinir-senha"];
 
 export async function updateSession(request: NextRequest) {
   const nonce = createNonce();

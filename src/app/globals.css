@@ -240,6 +240,12 @@ dialog.calendar-dialog::backdrop {
   mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 86%, transparent 100%);
 }
 
+.oli-stage.oli-stage--compact {
+  aspect-ratio: auto;
+  height: 100%;
+  max-height: none;
+}
+
 /* Painel do Oli subindo ao aparecer */
 @keyframes oli-rise {
   from {
