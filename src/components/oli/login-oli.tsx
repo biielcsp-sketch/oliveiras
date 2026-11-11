@@ -7,7 +7,8 @@ import { OliStage } from "./oli-stage";
 const FIELDS = "input[name=email], input[name=password], input[name=confirm]";
 
 /**
- * Oli compacto no topo do login: o mesmo avatar do Início, sem sessão de voz.
+ * Oli grande e solto no topo do login (sem quadro, o fundo da tela é o palco): o mesmo avatar do Início, sem sessão de voz.
+ * A altura é reservada por CSS (sem deslocamento de layout quando o 3D ou o poster chegam).
  * Ao focar em e-mail/senha ele passa a "ouvir"; ao sair do campo, volta ao repouso.
  */
 export function LoginOli() {
@@ -26,8 +27,8 @@ export function LoginOli() {
   }, []);
 
   return (
-    <div className="mx-auto h-[200px] w-[200px] overflow-hidden rounded-[32px]">
-      <OliStage apiRef={avatar} followPointer placeholderSrc="/oli/oli-login.webp" className="oli-stage--compact" />
+    <div className="mx-auto h-[clamp(200px,40dvh,380px)] w-full">
+      <OliStage apiRef={avatar} followPointer placeholderSrc="/oli/oli-login-transparent.webp" className="oli-stage--fullscreen" />
     </div>
   );
 }

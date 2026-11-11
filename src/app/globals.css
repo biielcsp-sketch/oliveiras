@@ -405,15 +405,106 @@ dialog.calendar-dialog::backdrop {
   mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 86%, transparent 100%);
 }
 
-.oli-stage.oli-stage--compact {
-  aspect-ratio: auto;
+/* Variante da tela de login: sem quadro. O palco é transparente e as bordas do cenário (halo, grade, brilhos)
+   somem num degradê radial, então o Oli fica solto sobre o fundo cheio de .login-screen. */
+.oli-stage.oli-stage--fullscreen {
+  aspect-ratio: 1 / 1;
   height: 100%;
+  width: auto;
   max-height: none;
+  margin-inline: auto;
+  background: none;
+  -webkit-mask-image: radial-gradient(closest-side, #000 62%, transparent 100%);
+  mask-image: radial-gradient(closest-side, #000 62%, transparent 100%);
 }
 /* O canvas 3D pinta acima do placeholder (imagem absoluta) e este sai depois. */
-.oli-stage--compact canvas {
+.oli-stage--fullscreen canvas {
   position: relative;
   z-index: 1;
+}
+
+/* Tela de login: fundo azul-petróleo de ponta a ponta, nos dois temas do app (variáveis locais, nada vaza). */
+.login-screen {
+  --ls-base: #0b1f2c;
+  --ls-soft: #a9c7d6; /* 9,4:1 sobre o fundo */
+  --ls-glass: rgb(255 255 255 / 0.14);
+  --ls-glass-edge: rgb(255 255 255 / 0.28);
+  --ls-danger: #ff9a9c; /* 7,6:1 sobre o fundo */
+  color-scheme: dark;
+  color: #fff;
+  min-height: 100dvh;
+  background:
+    radial-gradient(120% 55% at 50% 22%, rgb(26 121 168 / 0.38), rgb(15 92 130 / 0.18) 55%, transparent 85%),
+    var(--ls-base);
+}
+body:has(.login-screen) {
+  background: #0b1f2c;
+}
+.login-screen .ls-input {
+  width: 100%;
+  height: 3rem;
+  border-radius: 9999px;
+  border: 1px solid var(--ls-glass-edge);
+  background: var(--ls-glass);
+  padding-inline: 1.25rem;
+  font-size: 15px;
+  color: #fff;
+  outline: none;
+}
+.login-screen .ls-input::placeholder {
+  color: #c9dde8;
+}
+.login-screen .ls-input:focus {
+  border-color: #fff;
+  background: rgb(255 255 255 / 0.2);
+}
+.login-screen .ls-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ls-soft);
+  padding-inline: 0.5rem;
+}
+.login-screen .ls-soft {
+  color: var(--ls-soft);
+}
+.login-screen .ls-btn {
+  height: 3rem;
+  width: 100%;
+  border-radius: 9999px;
+  font-size: 15px;
+  font-weight: 500;
+  color: #fff;
+}
+.login-screen .ls-btn--primary {
+  background: #2a6fc4; /* branco sobre ele: 5,1:1 */
+  border: 1px solid transparent;
+  box-shadow: none;
+}
+.login-screen .ls-btn--glass {
+  background: var(--ls-glass);
+  border: 1px solid var(--ls-glass-edge);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.login-screen .ls-btn:focus-visible,
+.login-screen a:focus-visible,
+.login-screen button:focus-visible,
+.login-screen input:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+.login-screen .ls-notice {
+  border-radius: 1.25rem;
+  background: var(--ls-glass);
+  border: 1px solid var(--ls-glass-edge);
+  padding: 0.75rem 1rem;
+  font-size: 14px;
+  color: #fff;
+}
+.login-screen .ls-error {
+  font-size: 14px;
+  color: var(--ls-danger);
 }
 
 /* Painel do Oli subindo ao aparecer */
@@ -441,4 +532,8 @@ dialog.calendar-dialog::backdrop {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
   }
+}
+.login-screen .ls-btn--tall {
+  height: 3.5rem;
+  font-size: 16px;
 }

@@ -52,7 +52,7 @@ export function OliStage({
           if (cancelled) return oli.dispose();
           instance = oli;
           apiRef.current = oli;
-          // O canvas fica por cima do placeholder (CSS .oli-stage--compact canvas); este sai depois do primeiro quadro.
+          // O canvas fica por cima do placeholder (CSS .oli-stage--fullscreen canvas); este sai depois do primeiro quadro.
           if (placeholderSrc) setCanvasUp(true);
           if (placeholderSrc) hideTimer = window.setTimeout(() => setPoster(false), 800);
         })
