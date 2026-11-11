@@ -56,8 +56,11 @@ test("Pet: foto de perfil (cadastrar, trocar, remover, apagar) e outra família 
   await createFamily(a, "pet-foto-a");
   const admin = adminClient();
 
+  // Depois do cadastro, consulta pelo id: casa-pet.spec.ts também cria um pet "Moisés" em paralelo, e o mais recente por nome
+  // (de qualquer família) poderia ser o dele, sem foto.
   const photoOf = async (name: string) => {
-    const { data } = await admin.from("casa_pets").select("id, household_id, photo_path, photo_mime, photo_size").eq("name", name).order("created_at", { ascending: false }).limit(1).single();
+    const q = admin.from("casa_pets").select("id, household_id, photo_path, photo_mime, photo_size");
+    const { data } = await (petId ? q.eq("id", petId) : q.eq("name", name).order("created_at", { ascending: false }).limit(1)).single();
     return data!;
   };
   const stored = async (path: string) => !(await admin.storage.from("casa").download(path)).error;

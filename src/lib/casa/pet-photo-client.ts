@@ -10,8 +10,11 @@ async function decode(file: File): Promise<Source> {
       // "from-image": aplica a orientação EXIF (celular na vertical) antes de desenhar.
       const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
       return { width: bmp.width, height: bmp.height, draw: (c, w, h) => c.drawImage(bmp, 0, 0, w, h), close: () => bmp.close() };
-    } catch {
-      /* tenta pelo <img> */
+    } catch (err) {
+      // Imagem ilegível (arquivo corrompido, HEIC sem suporte): o <img> também não leria, e carregar o blob nele
+      // faz o Chrome registrar violação de CSP (connect-src) à toa. Só cai no <img> quando o erro NÃO é de decodificação
+      // (ex.: navegador antigo que rejeita a opção imageOrientation, com TypeError).
+      if (err instanceof DOMException && err.name === "InvalidStateError") throw new Error(PHOTO_DECODE_ERROR);
     }
   }
   const url = URL.createObjectURL(file);
