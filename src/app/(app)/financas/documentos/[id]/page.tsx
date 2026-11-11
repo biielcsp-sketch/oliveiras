@@ -15,7 +15,6 @@ import { reconcile, storedExtracted } from "@/lib/financas/documentos/schema";
 import { DOC_BUCKET, isDocPath, KIND_LABEL, monthOf, sameBarcodeDocs, STATUS_LABEL, suggestBill } from "@/lib/financas/documentos/rules";
 import { DocReview } from "../../_components/doc-review";
 import { docsAiAllowedFor } from "@/lib/financas/documentos/access";
-import { discardDocument } from "../../documentos-actions";
 
 export const metadata = { title: "Conferir documento" };
 
@@ -52,14 +51,14 @@ export default async function ConferirDocumentoPage({ params }: { params: Promis
             <a href={fileHref} target="_blank" rel="noopener" className="text-link">{isPdf ? "Abrir PDF" : "Abrir foto"}</a>
           )}
           {doc.transaction_id && <Link href={`/financas/lancamentos/${doc.transaction_id}`} className="text-link">Ver lançamento</Link>}
-          {doc.bill_month && doc.kind === "boleto" && <Link href={`/financas/contas-a-pagar?mes=${doc.bill_month}`} className="text-link">Ver em Contas a pagar</Link>}
+          {doc.bill_month && doc.kind === "boleto" && <Link href={`/financas/contas-fixas?mes=${doc.bill_month}`} className="text-link">Ver em Contas fixas</Link>}
         </div>
-        {hasFile && (
-          <form action={discardDocument} className="mt-5">
-            <input type="hidden" name="id" value={doc.id} />
-            <button className="text-sm text-danger underline">Descartar documento e apagar o arquivo</button>
-          </form>
-        )}
+        <div className="mt-5 flex flex-wrap gap-4 text-sm">
+          {doc.status === "confirmado" && (doc.kind === "boleto" || doc.kind === "comprovante") && (
+            <Link href={`/financas/documentos/${doc.id}/editar`} className="font-medium text-link">Editar documento</Link>
+          )}
+          <Link href={`/financas/documentos/${doc.id}/apagar`} className="text-danger underline">Apagar documento</Link>
+        </div>
       </Card>
     );
   }
@@ -131,6 +130,9 @@ export default async function ConferirDocumentoPage({ params }: { params: Promis
         dupComprovante={dupComprovante}
         boletoLink={boletoLink ? { billId: boletoLink.bill_id!, month: boletoLink.bill_month! } : null}
       />
+      <Link href={`/financas/documentos/${doc.id}/apagar`} className="mt-4 block text-center text-sm text-danger underline">
+        Apagar documento
+      </Link>
     </Card>
   );
 }

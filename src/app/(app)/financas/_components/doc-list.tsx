@@ -12,6 +12,7 @@ export function DocList({ docs }: { docs: DocListItem[] }) {
     <ul className="divide-y divide-line" data-testid="lista-documentos">
       {docs.map((d) => {
         const when = d.kind === "comprovante" ? d.paid_on : d.due_date;
+        const label = d.payee ?? `${KIND_LABEL[d.kind]} sem beneficiário`;
         return (
           <li key={d.id} className="flex items-center gap-3 py-3">
             {d.file_mime === "application/pdf" ? (
@@ -21,7 +22,7 @@ export function DocList({ docs }: { docs: DocListItem[] }) {
             )}
             <div className="min-w-0 flex-1">
               <Link href={`/financas/documentos/${d.id}`} className="block truncate font-medium hover:underline">
-                {d.payee ?? `${KIND_LABEL[d.kind]} sem beneficiário`}
+                {label}
               </Link>
               <p className="text-[12px] text-muted">
                 {KIND_LABEL[d.kind]}
@@ -38,6 +39,16 @@ export function DocList({ docs }: { docs: DocListItem[] }) {
                 )}
               >
                 {STATUS_LABEL[d.status]}
+              </span>
+              <span className="flex gap-2 text-[12px]">
+                {d.status === "confirmado" && (d.kind === "boleto" || d.kind === "comprovante") && (
+                  <Link href={`/financas/documentos/${d.id}/editar`} className="font-medium text-link" aria-label={`Editar ${label}`}>
+                    Editar
+                  </Link>
+                )}
+                <Link href={`/financas/documentos/${d.id}/apagar`} className="text-danger" aria-label={`Apagar ${label}`}>
+                  Apagar
+                </Link>
               </span>
             </div>
           </li>

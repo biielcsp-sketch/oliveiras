@@ -44,7 +44,7 @@ export function BillForm({ bill, categories, accounts }: { bill?: Bill; categori
         </label>
       )}
       <FormError message={state?.error} />
-      <Button disabled={pending}>{pending ? "Salvando…" : bill ? "Salvar conta" : "Criar conta a pagar"}</Button>
+      <Button disabled={pending}>{pending ? "Salvando…" : bill ? "Salvar conta" : "Criar conta fixa"}</Button>
     </form>
   );
 }

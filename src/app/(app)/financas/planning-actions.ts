@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getAppContext } from "@/lib/data";
 import { parseBRL } from "@/lib/financas/money";
+import { dismissPair, runBaixaAutomatica } from "@/lib/financas/baixa-data";
 
 export type PlanState = { error?: string; ok?: boolean } | null;
 
@@ -65,7 +66,7 @@ export async function saveBudget(_: PlanState, form: FormData): Promise<PlanStat
   return { ok: true };
 }
 
-/* ---------- Contas a pagar ---------- */
+/* ---------- Contas fixas ---------- */
 
 export async function saveBill(_: PlanState, form: FormData): Promise<PlanState> {
   const { household } = await getAppContext();
@@ -91,7 +92,7 @@ export async function saveBill(_: PlanState, form: FormData): Promise<PlanState>
     : await supabase.from("fin_bills").insert({ ...data, household_id: household.id });
   if (error) return { error: "Não foi possível salvar a conta." };
   refresh();
-  redirect("/financas/contas-a-pagar");
+  redirect("/financas/contas-fixas");
 }
 
 export async function deleteBill(form: FormData) {
@@ -102,7 +103,7 @@ export async function deleteBill(form: FormData) {
     await supabase.from("fin_bills").delete().eq("id", id).eq("household_id", household.id);
   }
   refresh();
-  redirect("/financas/contas-a-pagar");
+  redirect("/financas/contas-fixas");
 }
 
 /** Marca a conta do mês como paga, ligada a um lançamento do extrato ou sem lançamento. */
@@ -143,7 +144,7 @@ export async function payBill(_: PlanState, form: FormData): Promise<PlanState> 
     return { error: "Não foi possível registrar o pagamento." };
   }
   refresh();
-  redirect(`/financas/contas-a-pagar?mes=${month}`);
+  redirect(`/financas/contas-fixas?mes=${month}`);
 }
 
 export async function undoPayment(form: FormData) {
@@ -152,10 +153,50 @@ export async function undoPayment(form: FormData) {
   const month = str(form, "month");
   if (id) {
     const supabase = await createClient();
-    await supabase.from("fin_bill_payments").delete().eq("id", id).eq("household_id", household.id);
+    const { data: pay } = await supabase
+      .from("fin_bill_payments")
+      .select("bill_id, transaction_id, auto")
+      .eq("id", id)
+      .eq("household_id", household.id)
+      .maybeSingle();
+    // Baixa automática desfeita: grava a dispensa ANTES de apagar, para nenhuma sincronização
+    // (de qualquer aparelho do casal) refazer o mesmo par no meio do caminho.
+    const dismissed = pay?.auto && pay.transaction_id ? await dismissPair(pay.bill_id, pay.transaction_id, "desfeita") : true;
+    if (pay && dismissed) await supabase.from("fin_bill_payments").delete().eq("id", id).eq("household_id", household.id);
   }
   refresh();
-  redirect(`/financas/contas-a-pagar${MONTH.test(month) ? `?mes=${month}` : ""}`);
+  redirect(`/financas/contas-fixas${MONTH.test(month) ? `?mes=${month}` : ""}`);
+}
+
+/* ---------- Baixa automática pelo extrato ---------- */
+
+/** Botão "Procurar pagamentos no extrato": cruza o mês e grava as baixas sem ambiguidade. */
+export async function searchStatementPayments(form: FormData) {
+  await getAppContext();
+  const month = str(form, "month");
+  if (!MONTH.test(month)) redirect("/financas/contas-fixas");
+  const { applied } = await runBaixaAutomatica([month]);
+  refresh();
+  redirect(`/financas/contas-fixas?mes=${month}&procurado=${applied.length}`);
+}
+
+/** "Não é": a sugestão some para a família e o par nunca vira baixa automática. */
+export async function dismissSuggestion(form: FormData) {
+  const { household } = await getAppContext();
+  const billId = uuid(str(form, "bill_id"));
+  const txId = uuid(str(form, "transaction_id"));
+  const month = str(form, "month");
+  if (billId && txId) {
+    // Só grava par desta família (o RLS também barra conta ou lançamento de outra família pelas FKs/políticas).
+    const supabase = await createClient();
+    const [{ data: bill }, { data: tx }] = await Promise.all([
+      supabase.from("fin_bills").select("id").eq("household_id", household.id).eq("id", billId).maybeSingle(),
+      supabase.from("fin_transactions").select("id").eq("household_id", household.id).eq("id", txId).maybeSingle(),
+    ]);
+    if (bill && tx) await dismissPair(bill.id, tx.id, "nao_e");
+  }
+  refresh();
+  redirect(`/financas/contas-fixas${MONTH.test(month) ? `?mes=${month}` : ""}`);
 }
 
 /* ---------- Metas ---------- */

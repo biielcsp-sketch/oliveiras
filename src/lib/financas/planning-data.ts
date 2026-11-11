@@ -30,7 +30,7 @@ export async function getBillPayments(month: string): Promise<BillPayment[]> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("fin_bill_payments")
-    .select("id, bill_id, month, transaction_id, paid_on, amount")
+    .select("id, bill_id, month, transaction_id, paid_on, amount, auto")
     .eq("household_id", household.id)
     .eq("month", month);
   return (data ?? []).map((p) => ({ ...p, amount: num(p.amount) }));

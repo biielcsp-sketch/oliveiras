@@ -72,7 +72,7 @@ export function resolveBudgets(rows: BudgetRow[], month: string) {
   return result;
 }
 
-/* ---------- Contas a pagar ---------- */
+/* ---------- Contas fixas ---------- */
 
 export type BillStatus = "paga" | "atrasada" | "vence_hoje" | "a_vencer";
 

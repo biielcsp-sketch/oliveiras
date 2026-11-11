@@ -21,8 +21,16 @@ export function ImportWizard({ accounts }: { accounts: Account[] }) {
           {result.inserted} lançamentos importados
           {result.skipped > 0 && `, ${result.skipped} já existiam e foram ignorados`}.
         </p>
+        {result.baixas.length > 0 && (
+          <p className="text-sm" data-testid="baixas-automaticas">
+            Baixa automática em Contas fixas: {result.baixas.map((b) => `${b.bill} (${b.month.slice(5)}/${b.month.slice(0, 4)})`).join(", ")}.
+          </p>
+        )}
         <div className="flex gap-2">
           <LinkButton href="/financas/lancamentos">Ver lançamentos</LinkButton>
+          {result.baixas.length > 0 && (
+            <LinkButton href={`/financas/contas-fixas?mes=${result.baixas[0].month}`} variant="ghost">Ver contas fixas</LinkButton>
+          )}
           <LinkButton href="/financas/importar" variant="ghost">Importar outro</LinkButton>
         </div>
       </Card>

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CreditCard, Plus } from "lucide-react";
+import { CreditCard, Plus, Search } from "lucide-react";
 import { Card, EmptyState, LinkButton } from "@/components/ui";
 import { getFinanceBase } from "@/lib/financas/data";
 import { getBillPayments, getBills, getTransactionsAround } from "@/lib/financas/planning-data";
@@ -9,25 +9,33 @@ import { parseMonth, shortDate } from "@/lib/financas/period";
 import { todaySP } from "@/lib/financas/today";
 import { MonthSwitcher } from "../_components/month-switcher";
 import { StatusBadge } from "../_components/status-badge";
-import { undoPayment } from "../planning-actions";
+import { searchStatementPayments, undoPayment } from "../planning-actions";
+import { BaixaSuggestion } from "../_components/baixa-suggestion";
+import { getBaixaSuggestions, getPaymentTransactions } from "@/lib/financas/baixa-data";
 import { DocUpload } from "../_components/doc-upload";
 import { countPendingDocuments, getConfirmedBillDocs } from "@/lib/financas/documentos/data";
 import { billForMonth } from "@/lib/financas/documentos/rules";
 
-export const metadata = { title: "Contas a pagar" };
+export const metadata = { title: "Contas fixas" };
 
-export default async function ContasAPagarPage({ searchParams }: { searchParams: Promise<{ mes?: string }> }) {
-  const month = parseMonth((await searchParams).mes);
+export default async function ContasFixasPage({ searchParams }: { searchParams: Promise<{ mes?: string; procurado?: string }> }) {
+  const sp = await searchParams;
+  const month = parseMonth(sp.mes);
+  const searched = sp.procurado !== undefined && /^\d{1,3}$/.test(sp.procurado) ? Number(sp.procurado) : null;
   const today = todaySP();
   const { accounts, categories } = await getFinanceBase();
   const cards = accounts.filter((a) => a.kind === "cartao" && !a.archived && a.closing_day && a.due_day);
-  const [bills, payments, cardTxs, billDocs, pendingDocs] = await Promise.all([
+  const [bills, payments, cardTxs, billDocs, pendingDocs, suggestions] = await Promise.all([
     getBills(),
     getBillPayments(month),
     getTransactionsAround(month, cards.map((c) => c.id)),
     getConfirmedBillDocs(month),
     countPendingDocuments(),
+    getBaixaSuggestions(month),
   ]);
+  const linkedTxs = await getPaymentTransactions([...new Set(suggestions.map((m) => m.transaction_id))]);
+  const suggestionsByBill = new Map<string, typeof suggestions>();
+  for (const m of suggestions) suggestionsByBill.set(m.bill_id, [...(suggestionsByBill.get(m.bill_id) ?? []), m]);
   const transferIds = new Set(categories.filter((c) => c.kind === "transferencia").map((c) => c.id));
   const paymentByBill = new Map(payments.map((p) => [p.bill_id, p]));
   const activeBills = bills.filter((b) => b.active || paymentByBill.has(b.id));
@@ -38,11 +46,27 @@ export default async function ContasAPagarPage({ searchParams }: { searchParams:
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <MonthSwitcher month={month} basePath="/financas/contas-a-pagar" />
-        <LinkButton href="/financas/contas-a-pagar/nova">
+        <MonthSwitcher month={month} basePath="/financas/contas-fixas" />
+        <LinkButton href="/financas/contas-fixas/nova">
           <Plus size={16} /> Nova conta
         </LinkButton>
       </div>
+
+      {activeBills.length > 0 && (
+        <form action={searchStatementPayments} className="flex flex-wrap items-center gap-3">
+          <input type="hidden" name="month" value={month} />
+          <button className="flex items-center gap-1.5 text-sm font-medium text-link">
+            <Search size={15} aria-hidden /> Procurar pagamentos no extrato
+          </button>
+          {searched !== null && (
+            <span role="status" className="text-sm text-muted">
+              {searched === 0
+                ? "Nenhum pagamento novo encontrado com certeza."
+                : `${searched} ${searched === 1 ? "conta paga" : "contas pagas"} pelo extrato.`}
+            </span>
+          )}
+        </form>
+      )}
 
       <DocUpload pending={pendingDocs} />
 
@@ -76,7 +100,7 @@ export default async function ContasAPagarPage({ searchParams }: { searchParams:
       )}
 
       {activeBills.length === 0 ? (
-        <EmptyState title="Nenhuma conta a pagar cadastrada">Aluguel, luz, água, internet, escola, plano de saúde…</EmptyState>
+        <EmptyState title="Nenhuma conta fixa cadastrada">Aluguel, luz, água, internet, escola, plano de saúde…</EmptyState>
       ) : (
         <Card className="py-1">
           <div className="flex items-baseline justify-between pt-3">
@@ -89,16 +113,25 @@ export default async function ContasAPagarPage({ searchParams }: { searchParams:
               const due = billForMonth(b, month, doc).due;
               const payment = paymentByBill.get(b.id);
               const status = billStatus(due, Boolean(payment), today);
+              const auto = Boolean(payment?.auto);
+              const billSuggestions = payment ? [] : (suggestionsByBill.get(b.id) ?? []);
               return (
-                <li key={b.id} className="flex items-center gap-3 py-3">
+                <li key={b.id} className="flex flex-wrap items-center gap-3 py-3">
                   <div className="min-w-0 flex-1">
-                    <Link href={`/financas/contas-a-pagar/${b.id}`} className="block truncate font-medium hover:underline">
+                    <Link href={`/financas/contas-fixas/${b.id}`} className="block truncate font-medium hover:underline">
                       {b.name}
                     </Link>
                     <p className="text-[12px] text-muted">
                       vence {shortDate(due)}
-                      {payment &&
-                        ` · paga em ${shortDate(payment.paid_on)}${payment.transaction_id ? " (no extrato)" : ""}`}
+                      {payment && ` · paga em ${shortDate(payment.paid_on)}${payment.transaction_id && !auto ? " (no extrato)" : ""}`}
+                      {payment?.transaction_id && auto && (
+                        <>
+                          {" · "}
+                          <Link href={`/financas/lancamentos/${payment.transaction_id}`} className="font-medium text-link">
+                            Baixa automática
+                          </Link>
+                        </>
+                      )}
                       {doc && (
                         <>
                           {" · "}
@@ -122,7 +155,7 @@ export default async function ContasAPagarPage({ searchParams }: { searchParams:
                       <span className="flex items-center gap-2">
                         <StatusBadge status={status} />
                         <Link
-                          href={`/financas/contas-a-pagar/${b.id}/pagar?mes=${month}`}
+                          href={`/financas/contas-fixas/${b.id}/pagar?mes=${month}`}
                           className="text-[12px] font-medium text-olive"
                         >
                           Marcar paga
@@ -130,6 +163,25 @@ export default async function ContasAPagarPage({ searchParams }: { searchParams:
                       </span>
                     )}
                   </div>
+                  {billSuggestions.length > 0 && (
+                    <div className="basis-full">
+                      {billSuggestions.map((m) => {
+                        const t = linkedTxs.get(m.transaction_id);
+                        return (
+                          <BaixaSuggestion
+                            key={m.transaction_id}
+                            billId={b.id}
+                            billName={b.name}
+                            month={month}
+                            transactionId={m.transaction_id}
+                            description={t?.description ?? "Lançamento do extrato"}
+                            date={m.paid_on}
+                            amount={m.amount}
+                          />
+                        );
+                      })}
+                    </div>
+                  )}
                 </li>
               );
             })}

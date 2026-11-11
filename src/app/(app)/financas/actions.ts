@@ -10,6 +10,8 @@ import { decodeStatement, parseOfx } from "@/lib/financas/ofx";
 import { parseCsv } from "@/lib/financas/csv";
 import { buildImportRows, suggestInvert } from "@/lib/financas/import";
 import { validateManualTransaction } from "@/lib/financas/transaction-input";
+import { monthsAround } from "@/lib/financas/baixa";
+import { runBaixaAutomatica } from "@/lib/financas/baixa-data";
 
 export type FormState = { error?: string; ok?: boolean } | null;
 
@@ -236,7 +238,7 @@ export type ImportState =
       rows: PreviewRow[];
       errors: string[];
     }
-  | { step: "done"; inserted: number; skipped: number };
+  | { step: "done"; inserted: number; skipped: number; baixas: { bill: string; month: string }[] };
 
 async function readStatement(form: FormData) {
   const { household } = await getAppContext();
@@ -342,6 +344,19 @@ export async function confirmImport(_: ImportState, form: FormData): Promise<Imp
     if (error) return { error: "Falha ao gravar os lançamentos. Nada foi duplicado; tente de novo." };
     inserted += data?.length ?? 0;
   }
+  // Saídas do arquivo cruzam com as contas fixas (baixa automática, com a sessão do usuário).
+  const outflowDates = rows.filter((x) => x.amount < 0).map((x) => x.date);
+  const { applied } = inserted > 0 && outflowDates.length ? await runBaixaAutomatica(monthsAround(outflowDates)) : { applied: [] };
+  let baixas: { bill: string; month: string }[] = [];
+  if (applied.length) {
+    const { data: bills } = await r.supabase
+      .from("fin_bills")
+      .select("id, name")
+      .eq("household_id", r.household.id)
+      .in("id", [...new Set(applied.map((m) => m.bill_id))]);
+    const name = new Map((bills ?? []).map((b) => [b.id, b.name]));
+    baixas = applied.map((m) => ({ bill: name.get(m.bill_id) ?? "Conta", month: m.month }));
+  }
   refresh();
-  return { step: "done", inserted, skipped: rows.length - inserted };
+  return { step: "done", inserted, skipped: rows.length - inserted, baixas };
 }

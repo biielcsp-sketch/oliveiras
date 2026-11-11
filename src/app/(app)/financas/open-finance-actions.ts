@@ -160,6 +160,7 @@ function describe(r: SyncResult): string {
     }[r.reason];
   }
   const parts = [`${r.inserted} novos`, `${r.updated} atualizados`, `${r.removed} removidos`];
+  if (r.baixas > 0) parts.push(`${r.baixas} ${r.baixas === 1 ? "conta fixa paga" : "contas fixas pagas"} automaticamente`);
   return `Sincronizado: ${parts.join(", ")}.${r.errors.length ? ` Atenção: ${r.errors[0]}` : ""}`;
 }
 

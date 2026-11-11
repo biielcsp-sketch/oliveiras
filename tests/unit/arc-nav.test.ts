@@ -46,7 +46,7 @@ describe("menu em ferradura", () => {
     expect(activeRouteIndex(tabs, "/financas")).toBe(0);
     expect(activeRouteIndex(tabs, "/financas/lancamentos/novo")).toBe(1);
     expect(activeRouteIndex(tabs, "/financas/contas")).toBe(2);
-    expect(activeRouteIndex(tabs, "/financas/contas-a-pagar")).toBe(-1);
+    expect(activeRouteIndex(tabs, "/financas/contas-fixas")).toBe(-1);
     expect(activeRouteIndex(tabs, "/financas/importar")).toBe(-1);
   });
 
