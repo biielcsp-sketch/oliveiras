@@ -1,4 +1,7 @@
 import { LoginOli } from "@/components/oli/login-oli";
+import { cookies } from "next/headers";
+import { RememberedLogin } from "./remembered-login";
+import { REMEMBER_COOKIE, parseRememberedEmail } from "@/lib/remember";
 import { LoginForm } from "./login-form";
 import { OfflineCardsWipe } from "@/components/offline-cards";
 
@@ -14,6 +17,8 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const { erro } = await searchParams;
   const notice = typeof erro === "string" && Object.hasOwn(NOTICES, erro) ? NOTICES[erro] : undefined;
 
+  const remembered = parseRememberedEmail((await cookies()).get(REMEMBER_COOKIE)?.value);
+
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-sm flex-col justify-center px-6 py-12">
       <div className="mb-8 flex flex-col items-center text-center">
@@ -23,7 +28,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
       </div>
       {/* Sair da conta cai aqui: apaga as carteirinhas offline deste aparelho. */}
       <OfflineCardsWipe />
-      <LoginForm notice={notice} />
+      {remembered ? <RememberedLogin email={remembered} notice={notice} /> : <LoginForm notice={notice} />}
     </main>
   );
 }
