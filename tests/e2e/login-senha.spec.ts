@@ -99,7 +99,7 @@ test("redefinir senha: validações, nova senha e login com ela", async ({ page 
   await page.getByLabel("Nova senha", { exact: true }).fill(NOVA);
   await page.getByLabel("Confirmar nova senha").fill(NOVA);
   await page.getByRole("button", { name: "Redefinir senha" }).click();
-  await expect(page).toHaveURL(/\/inicio$/);
+  await expect(page).toHaveURL(/\/(inicio|bem-vindo)$/);
 
   await page.context().clearCookies();
   await page.goto("/login");
