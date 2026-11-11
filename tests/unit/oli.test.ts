@@ -345,6 +345,13 @@ describe("Oli: systemInstruction com memórias", () => {
     expect(decl.description).toContain("só grava depois que o usuário toca em Confirmar");
   });
 
+  it("persona: entende português do Brasil e, na dúvida, pede para repetir em vez de adivinhar", () => {
+    expect(OLI_PERSONA).toContain("O usuário fala português do Brasil");
+    expect(OLI_PERSONA).toContain("não adivinhe nem responda como se tivesse entendido");
+    expect(OLI_PERSONA).toContain("pode repetir?");
+    expect(OLI_PERSONA).toContain("Nunca invente o que o usuário disse");
+  });
+
   it("sem memórias: só a persona (com a regra dos painéis)", () => {
     const s = buildSystemInstruction([]);
     expect(s).toBe(OLI_PERSONA);
