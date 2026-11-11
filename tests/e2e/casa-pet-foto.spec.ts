@@ -118,7 +118,7 @@ test("Pet: foto de perfil (cadastrar, trocar, remover, apagar) e outra família 
     secondPath = (await photoOf("Moisés")).photo_path as string;
     expect(secondPath).not.toBe(firstPath);
     expect(await stored(secondPath)).toBe(true);
-    expect(await stored(firstPath)).toBe(false);
+    await expect.poll(() => stored(firstPath)).toBe(false);
   });
 
   await test.step("editar sem mexer na foto a mantém", async () => {
@@ -159,9 +159,13 @@ test("Pet: foto de perfil (cadastrar, trocar, remover, apagar) e outra família 
     await d.getByRole("button", { name: "Remover foto" }).click();
     await d.getByRole("button", { name: "Salvar alterações" }).click();
     await expect(status(a, "Moisés atualizado.")).toBeVisible();
+    // O aviso "Moisés atualizado." de um salvamento anterior continua na tela: ele não prova que ESTE salvamento terminou.
+    // Espera o banco (e só então confere as colunas), em vez de ler logo depois do clique.
+    await expect.poll(async () => (await photoOf("Moisés")).photo_path).toBeNull();
     const row = await photoOf("Moisés");
     expect([row.photo_path, row.photo_mime, row.photo_size]).toEqual([null, null, null]);
-    expect(await stored(secondPath)).toBe(false);
+    // O servidor grava o banco e só depois apaga o arquivo: espera o arquivo sumir.
+    await expect.poll(() => stored(secondPath)).toBe(false);
     await expect(a.getByTestId("pet").getByTestId("pet-avatar-vazio")).toHaveText("M");
     expect((await a.request.get(`/casa/pet/arquivo/foto/${petId}`)).status()).toBe(404);
   });
