@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Fingerprint } from "lucide-react";
 import { Button, FormError } from "@/components/ui";
-import { signInErrorMessage } from "@/lib/passkey-errors";
+import { runPasskeySignIn } from "@/lib/passkey-sign-in";
 import { useWebAuthnSupport } from "@/lib/use-webauthn-support";
 
 /**
@@ -24,10 +24,9 @@ export function PasskeySignIn({ prominent = false, autoPrompt = false }: { promi
     setPending(true);
     setError(null);
     // Cliente do Supabase (+ WebAuthn, ~70 KB) só é baixado quando a digital é usada: fora do caminho do primeiro paint.
-    const { createClient } = await import("@/lib/supabase/browser");
-    const { data, error } = await createClient().auth.signInWithPasskey();
-    if (error || !data?.session) {
-      if (!silent) setError(signInErrorMessage(error));
+    const outcome = await runPasskeySignIn(() => import("@/lib/supabase/browser").then((m) => m.createClient()), silent);
+    if (!outcome.ok) {
+      if (outcome.message) setError(outcome.message);
       setPending(false);
       return;
     }
