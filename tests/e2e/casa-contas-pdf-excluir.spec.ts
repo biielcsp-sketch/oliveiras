@@ -32,6 +32,10 @@ async function uploadFromCasa(page: Page, tag: string) {
   await page.getByRole("radio", { name: "Boleto" }).click();
 }
 
+/** A conta mais recente com esse nome: o retry cria outra família, então `.single()` por nome pegaria duas linhas. */
+const latestBill = (admin: ReturnType<typeof adminClient>, name: string, cols: string) =>
+  admin.from("fin_bills").select(cols).eq("name", name).order("created_at", { ascending: false }).limit(1).single();
+
 test("Casa > Contas: enviar boleto (liga à conta e cria conta da casa) e excluir conta com confirmação", async ({ page }) => {
   test.setTimeout(240_000);
   const problems = watchConsole(page);
@@ -77,7 +81,7 @@ test("Casa > Contas: enviar boleto (liga à conta e cria conta da casa) e exclui
     await page.getByRole("button", { name: "Confirmar conta fixa" }).click();
     await expect(page).toHaveURL(new RegExp(`/casa/contas\\?mes=${MES}$`));
     await expect(page.getByTestId("conta-casa").filter({ hasText: "Gás" })).toBeVisible();
-    const { data } = await admin.from("fin_bills").select("is_home").eq("name", "Gás").single();
+    const { data } = await latestBill(admin, "Gás", "is_home");
     expect(data).toEqual({ is_home: true });
   });
 
@@ -103,9 +107,9 @@ test("Casa > Contas: enviar boleto (liga à conta e cria conta da casa) e exclui
     await row.getByRole("link", { name: "Marcar paga" }).click();
     await page.getByRole("button", { name: "Confirmar pagamento" }).click();
     await expect(page).toHaveURL(/\/financas\/contas-fixas\?mes=/);
-    const { data: bill } = await admin.from("fin_bills").select("id, household_id").eq("name", "Condomínio").single();
-    billId = bill!.id;
-    householdId = bill!.household_id;
+    const { data: bill } = await latestBill(admin, "Condomínio", "id, household_id");
+    billId = bill!.id as string;
+    householdId = bill!.household_id as string;
     const { data: acc } = await admin.from("fin_accounts").select("id").eq("household_id", householdId).single();
     const { data: tx, error } = await admin
       .from("fin_transactions")
@@ -155,10 +159,12 @@ test("Casa > Contas: enviar boleto (liga à conta e cria conta da casa) e exclui
     await page.getByRole("link", { name: "Excluir Gás" }).click();
     await expect(page).toHaveURL(/\/excluir\?voltar=casa/);
     const confirmUrl = page.url();
-    const { error } = await admin.from("fin_bills").delete().eq("name", "Gás");
+    const { data: gas } = await latestBill(admin, "Gás", "id");
+    const { error } = await admin.from("fin_bills").delete().eq("id", gas!.id as string);
     expect(error).toBeNull();
     await page.getByRole("button", { name: "Excluir conta e pagamentos" }).click();
-    await expect(page.getByRole("alert")).toContainText("A conta não foi encontrada");
+    // `p[role=alert]`: o anunciador de rota do Next também é role="alert" (getByRole("alert") pegaria os dois).
+    await expect(page.locator("p[role=alert]")).toContainText("A conta não foi encontrada");
     await expect(page).toHaveURL(confirmUrl);
     // A página de confirmação de conta inexistente é 404 (requisição direta: uma navegação 404 vira erro no console).
     expect((await page.request.get(confirmUrl)).status()).toBe(404);
@@ -176,7 +182,7 @@ test("Casa > Contas: enviar boleto (liga à conta e cria conta da casa) e exclui
     await expect(page).toHaveURL(/\/excluir$/);
     await page.getByRole("button", { name: "Excluir conta e pagamentos" }).click();
     await expect(page).toHaveURL(/\/financas\/contas-fixas$/);
-    expect((await admin.from("fin_bills").select("id", { count: "exact", head: true }).eq("name", "Internet")).count).toBe(0);
+    expect((await admin.from("fin_bills").select("id", { count: "exact", head: true }).eq("household_id", householdId).eq("name", "Internet")).count).toBe(0);
   });
 
   expect(problems).toEqual([]);

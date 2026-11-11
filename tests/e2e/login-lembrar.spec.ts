@@ -36,12 +36,12 @@ test("lembrar: cookie HttpOnly só com a caixa marcada; sair mostra a tela do us
   expect(decodeURIComponent(cookie?.value ?? "")).toBe(email);
   expect(cookie?.sameSite).toBe("Lax");
 
-  // Conta nova cai em /bem-vindo: cria a família para chegar em /familia, onde fica o "Sair".
-  if (/\/bem-vindo$/.test(page.url())) {
-    await page.getByLabel("Seu nome").fill("Gabriel");
-    await page.locator("form").getByRole("button", { name: "Criar família" }).click();
-    await expect(page).toHaveURL(/\/inicio$/);
-  }
+  // Conta nova (sem família) passa por /inicio e é redirecionada a /bem-vindo: espera o destino final
+  // em vez de olhar a URL naquele instante (corrida). Cria a família para chegar em /familia, onde fica o "Sair".
+  await expect(page).toHaveURL(/\/bem-vindo$/);
+  await page.getByLabel("Seu nome").fill("Gabriel");
+  await page.locator("form").getByRole("button", { name: "Criar família" }).click();
+  await expect(page).toHaveURL(/\/inicio$/);
   await signOut(page);
   expect(await rememberedCookie(page)).toBeDefined(); // sair não apaga o cookie
 
