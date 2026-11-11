@@ -10,6 +10,7 @@ export const PASSKEY_MSG = {
   notRegistered: "Esta digital não está cadastrada. Entre com a senha e ative em Família.",
   disabled: "Entrada com digital indisponível no momento.",
   signInFailed: "Não foi possível entrar com a digital.",
+  loadFailed: "Não foi possível carregar a digital. Tente de novo.",
   alreadyRegistered: "Este aparelho já está cadastrado.",
   tooMany: "Limite de digitais atingido. Remova uma antes de ativar outra.",
   registerFailed: "Não foi possível ativar a digital.",
