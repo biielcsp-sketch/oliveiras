@@ -172,7 +172,22 @@ export type EventInput = {
   end: string;
   location: string | null;
   description: string | null;
+  /** Opcional: lembretes popup, em minutos antes do início (substituem os padrões da agenda). Ausente = não mexe nos lembretes. */
+  reminders?: number[];
 };
+
+/** Limites da API (events.reminders.overrides): minutos 0..40320 (4 semanas), no máximo 5 lembretes. */
+export const REMINDER_MAX_MINUTES = 40320;
+export const REMINDER_MAX_COUNT = 5;
+
+export function validReminders(v: unknown): v is number[] {
+  return (
+    Array.isArray(v) &&
+    v.length <= REMINDER_MAX_COUNT &&
+    v.every((m) => Number.isInteger(m) && m >= 0 && m <= REMINDER_MAX_MINUTES) &&
+    new Set(v).size === v.length
+  );
+}
 
 /**
  * Corpo para events.insert/patch. No patch, `null` apaga o campo do outro formato
@@ -183,11 +198,16 @@ export function toGoogleBody(input: EventInput) {
     input.allDay
       ? { date: exclusiveEnd ? addDays(v, 1) : v, dateTime: null, timeZone: null }
       : { date: null, dateTime: spLocalToRfc3339(v), timeZone: TZ };
+  if (input.reminders !== undefined && !validReminders(input.reminders)) throw new Error("Lembretes inválidos.");
   return {
     summary: input.title,
     location: input.location ?? "",
     description: input.description ?? "",
     start: time(input.start, false),
     end: time(input.end, true),
+    // Só quando informado: sem o campo o corpo é o de sempre (no PATCH, o Google mantém os lembretes do evento).
+    ...(input.reminders
+      ? { reminders: { useDefault: false, overrides: input.reminders.map((minutes) => ({ method: "popup" as const, minutes })) } }
+      : {}),
   };
 }

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Sem script nem estilo inline: tudo em arquivo externo. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>Carteirinhas offline · Oliveira's</title>
+    <link rel="stylesheet" href="/offline-carteirinhas.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Carteirinhas</h1>
+      <p id="aviso">Guardadas neste aparelho para uso sem internet.</p>
+      <ul id="lista"></ul>
+      <p><a href="/inicio" class="voltar">Voltar ao app</a></p>
+    </main>
+    <script src="/offline-carteirinhas.js"></script>
+  </body>
+</html>

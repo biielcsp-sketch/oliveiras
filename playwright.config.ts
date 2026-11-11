@@ -4,6 +4,8 @@ const PORT = Number(process.env.E2E_PORT ?? 3000);
 export const E2E_HOUSEHOLD_ID = "eeeeeeee-0000-4000-8000-000000000001";
 // Família da Agenda separada da do Open Finance: as duas specs rodam em paralelo e recriam a família.
 export const E2E_AGENDA_HOUSEHOLD_ID = "eeeeeeee-0000-4000-8000-000000000002";
+// Família autorizada para a leitura de documentos com IA (própria, para não colidir com Open Finance/Oli em paralelo).
+export const E2E_DOCS_HOUSEHOLD_ID = "eeeeeeee-0000-4000-8000-000000000003";
 
 export default defineConfig({
   testDir: "tests/e2e",
@@ -30,6 +32,12 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
     },
     {
+      // Gemini simulado para a leitura de boletos/comprovantes (só nos testes; nunca chama a API real)
+      command: "node tests/e2e/gemini-mock.mjs",
+      port: 4030,
+      reuseExistingServer: !process.env.CI,
+    },
+    {
       // O app precisa ter sido gerado antes com `npm run build` apontando para o Supabase local.
       command: `npm run start -- -p ${PORT}`,
       port: PORT,
@@ -43,6 +51,10 @@ export default defineConfig({
         // Oli: família autorizada fixa e sem chave do Gemini (o token responde 503; nunca chama o Gemini real).
         OLI_HOUSEHOLD_ID: E2E_HOUSEHOLD_ID,
         GEMINI_API_KEY: "",
+        // Documentos: chave própria + Gemini simulado. O token do Oli lê só GEMINI_API_KEY, então segue em 503.
+        GEMINI_DOCS_API_KEY: "test-key",
+        GEMINI_API_BASE: "http://127.0.0.1:4030",
+        DOCS_HOUSEHOLD_ID: E2E_DOCS_HOUSEHOLD_ID,
         // Agenda: Google simulado em localhost e família própria.
         GOOGLE_CLIENT_ID: "test-google-client",
         GOOGLE_CLIENT_SECRET: "test-google-secret",

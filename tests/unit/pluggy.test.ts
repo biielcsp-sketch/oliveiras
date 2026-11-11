@@ -156,3 +156,33 @@ describe("saúde do item", () => {
     expect(itemHealthy(status, exp, now)).toBe(expected);
   });
 });
+
+import { PluggyError, pluggyErrorLog, pluggyErrorMessage } from "@/lib/pluggy/errors";
+
+describe("mensagens de erro da Pluggy", () => {
+  it("credencial recusada aponta para Client ID/Secret", () => {
+    expect(pluggyErrorMessage(new PluggyError("x", 401, "auth"))).toMatch(/PLUGGY_CLIENT_ID e PLUGGY_CLIENT_SECRET/);
+  });
+  it("acesso negado ao item aponta para outra aplicação", () => {
+    expect(pluggyErrorMessage(new PluggyError("x", 403, "forbidden"))).toMatch(/outra aplicação/);
+  });
+  it("item inexistente", () => {
+    expect(pluggyErrorMessage(new PluggyError("x", 404, "not_found"))).toMatch(/não encontrado/i);
+  });
+  it("erro 5xx é instabilidade da Pluggy", () => {
+    expect(pluggyErrorMessage(new PluggyError("x", 503))).toMatch(/instabilidade \(erro 503\)/);
+  });
+  it("timeout", () => {
+    const e = new Error("t");
+    e.name = "TimeoutError";
+    expect(pluggyErrorMessage(e)).toMatch(/demorou demais/);
+  });
+  it("falha de rede cai na mensagem genérica", () => {
+    expect(pluggyErrorMessage(new TypeError("fetch failed"))).toMatch(/Não foi possível falar com a Pluggy/);
+  });
+  it("log não inclui nada além de tipo, status e mensagem fixa", () => {
+    expect(pluggyErrorLog(new PluggyError("Credenciais da Pluggy recusadas.", 401, "auth"))).toBe(
+      "[pluggy] kind=auth status=401 msg=Credenciais da Pluggy recusadas.",
+    );
+  });
+});

@@ -55,11 +55,15 @@ export type Bill = {
   category_id: string | null;
   account_id: string | null;
   active: boolean;
+  /** Conta fixa "da casa" (0017): aparece também em Casa > Contas. */
+  is_home?: boolean;
 };
 export type BillPayment = {
   id: string;
   bill_id: string;
   month: string;
+  /** true só quando a baixa automática gravou (0016); "Marcar paga" manual é false. */
+  auto?: boolean;
   transaction_id: string | null;
   paid_on: string;
   amount: number;

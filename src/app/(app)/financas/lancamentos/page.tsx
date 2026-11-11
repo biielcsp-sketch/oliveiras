@@ -6,6 +6,8 @@ import { formatBRL } from "@/lib/financas/money";
 import { parseMonth } from "@/lib/financas/period";
 import { MonthSwitcher } from "../_components/month-switcher";
 import { TxList } from "../_components/tx-list";
+import { DocUpload } from "../_components/doc-upload";
+import { countPendingDocuments } from "@/lib/financas/documentos/data";
 
 export const metadata = { title: "Lançamentos" };
 
@@ -21,16 +23,19 @@ export default async function LancamentosPage({ searchParams }: { searchParams: 
     category: sp.categoria || undefined,
     q: sp.q?.trim() || undefined,
   });
+  const pendingDocs = await countPendingDocuments();
   const { income, expense } = summarize(transactions, categories, new Set(accounts.filter((a) => a.kind === "cartao").map((a) => a.id)));
 
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <MonthSwitcher month={month} basePath="/financas/lancamentos" params={{ conta: sp.conta, categoria: sp.categoria, q: sp.q }} />
-        <LinkButton href="/financas/lancamentos/novo">
+        <LinkButton href="/financas/lancamentos/novo" className="ml-auto">
           <Plus size={16} /> Lançar
         </LinkButton>
       </div>
+
+      <DocUpload pending={pendingDocs} />
 
       <form className="grid gap-3 sm:grid-cols-[1fr_auto_auto_auto]" role="search">
         <input type="hidden" name="mes" value={month} />

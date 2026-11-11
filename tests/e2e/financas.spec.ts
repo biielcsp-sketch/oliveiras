@@ -78,6 +78,12 @@ test("finanças: contas, lançamento manual, importação OFX/CSV sem duplicar e
   await test.step("resumo de novembro/2026 confere", async () => {
     await page.goto("/financas?mes=2026-11");
     const main = page.locator("main");
+    // Saldo das contas começa escondido e abre pela setinha da ponta do cabeçalho
+    const seta = page.getByRole("button", { name: "Mostrar detalhes de Finanças" });
+    await expect(seta).toHaveAttribute("aria-expanded", "false");
+    await seta.click();
+    await expect(page.getByRole("button", { name: "Ocultar detalhes de Finanças" })).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByText("Disponível nas contas")).toBeVisible();
     // Conta: 1000 − 150,50 − 152,30 + 3500 − 89,90 = 4.107,30
     await expect(main).toContainText("R$ 4.107,30", { useInnerText: true });
     // Cartão: −45,90 −45,90 −23,10 +10 +500 (pagamento) = 395,10

@@ -45,6 +45,8 @@ test("família: criar, adicionar dependente, convidar e isolar de terceiros", as
   await c.getByLabel("Nome da família").fill("Família C");
   await c.getByLabel("Seu nome").fill("Carlos");
   await c.locator("form").getByRole("button", { name: "Criar família" }).click();
+  // Espera a família ser criada (vai para /inicio) antes de navegar; sem isso o goto pode cancelar o envio
+  await expect(c).toHaveURL(/\/inicio$/);
   await c.goto("/familia");
   await expect(c.locator("li").filter({ hasText: "Carlos" })).toHaveCount(1);
   for (const name of ["Gabriel", "Karen", "Filho Teste"]) {

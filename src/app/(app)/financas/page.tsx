@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Plus, Upload, Wallet } from "lucide-react";
 import { Card, EmptyState, LinkButton, SectionHeader, Tag } from "@/components/ui";
+import { HeroDrawer } from "@/components/hero-drawer";
 import { getFinanceBase, getTransactions } from "@/lib/financas/data";
 import { summarize } from "@/lib/financas/summary";
 import { formatBRL } from "@/lib/financas/money";
@@ -40,7 +41,7 @@ export default async function FinancasPage({ searchParams }: { searchParams: Pro
   const cardIds = new Set(accounts.filter((a) => a.kind === "cartao").map((a) => a.id));
   const { income, expense, result, expenseByCategory } = summarize(transactions, categories, cardIds);
 
-  // Vencimentos do mês (contas a pagar + faturas) e orçamento
+  // Vencimentos do mês (contas fixas + faturas) e orçamento
   const today = todaySP();
   const billingCards = cards.filter((c) => c.closing_day && c.due_day);
   const [bills, payments, cardTxs, budgetRows] = await Promise.all([
@@ -75,140 +76,148 @@ export default async function FinancasPage({ searchParams }: { searchParams: Pro
   const maxCat = expenseByCategory[0]?.total ?? 0;
 
   return (
-    <div className="flex flex-col gap-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <MonthSwitcher month={month} basePath="/financas" />
-        <div className="flex gap-2">
-          <LinkButton href="/financas/importar" variant="ghost">
-            <Upload size={16} /> Importar
-          </LinkButton>
-          <LinkButton href="/financas/lancamentos/novo">
-            <Plus size={16} /> Lançar
-          </LinkButton>
+    <>
+      {/* Saldo das contas: escondido; abre pela setinha da ponta do cabeçalho */}
+      <HeroDrawer>
+        <div className="pb-8">
+          <Card tone="hero">
+            <div className="flex items-start justify-between">
+              <span className="grid size-12 place-items-center rounded-full border border-white/25">
+                <Wallet size={22} aria-hidden />
+              </span>
+              {cards.length > 0 && <Tag tone="info">{cards.length === 1 ? "1 cartão" : `${cards.length} cartões`}</Tag>}
+            </div>
+            <p className="mt-4 text-[15px] font-medium">Disponível nas contas</p>
+            <p className="mt-1 text-[32px] font-semibold tracking-tight tabular-nums">{formatBRL(available)}</p>
+            {cards.length > 0 && (
+              <p className="mt-1 text-[13px] text-white/85">
+                Cartões: <span className="tabular-nums">{formatBRL(cardDebt)}</span>
+              </p>
+            )}
+          </Card>
         </div>
-      </div>
+      </HeroDrawer>
 
-      <section className="grid grid-cols-2 gap-5">
-        <Card tone="hero" className="col-span-2">
-          <div className="flex items-start justify-between">
-            <span className="grid size-12 place-items-center rounded-full border border-white/25">
-              <Wallet size={22} aria-hidden />
-            </span>
-            {cards.length > 0 && <Tag tone="info">{cards.length === 1 ? "1 cartão" : `${cards.length} cartões`}</Tag>}
+      <div className="flex flex-col gap-8">
+        <div className="flex flex-col gap-3">
+          <MonthSwitcher month={month} basePath="/financas" />
+          <div className="flex items-center justify-between gap-2">
+            <LinkButton href="/financas/importar" variant="ghost">
+              <Upload size={16} /> Importar
+            </LinkButton>
+            <LinkButton href="/financas/lancamentos/novo">
+              <Plus size={16} /> Lançar
+            </LinkButton>
           </div>
-          <p className="mt-4 text-[15px] font-medium">Disponível nas contas</p>
-          <p className="mt-1 text-[32px] font-semibold tracking-tight tabular-nums">{formatBRL(available)}</p>
-          {cards.length > 0 && (
-            <p className="mt-1 text-[13px] text-info">
-              Cartões: <span className="tabular-nums">{formatBRL(cardDebt)}</span>
-            </p>
-          )}
-        </Card>
-        <Card className="p-4">
-          <p className="text-[13px] text-muted">Entradas</p>
-          <p className="mt-1 text-lg font-semibold tabular-nums text-primary">{formatBRL(income)}</p>
-        </Card>
-        <Card className="p-4">
-          <p className="text-[13px] text-muted">Saídas</p>
-          <p className="mt-1 text-lg font-semibold tabular-nums">{formatBRL(-expense)}</p>
-        </Card>
-        <Card className="col-span-2 flex items-center justify-between p-4">
-          <p className="text-[13px] text-muted">Resultado do mês</p>
-          <p className={`text-lg font-semibold tabular-nums ${result >= 0 ? "text-primary" : "text-danger"}`}>
-            {formatBRL(result)}
-          </p>
-        </Card>
-      </section>
+        </div>
 
-      {dues.length > 0 && (
+        <section className="grid grid-cols-2 gap-5">
+          <Card className="p-4">
+            <p className="text-[13px] text-muted">Entradas</p>
+            <p className="mt-1 text-lg font-semibold tabular-nums text-primary">{formatBRL(income)}</p>
+          </Card>
+          <Card className="p-4">
+            <p className="text-[13px] text-muted">Saídas</p>
+            <p className="mt-1 text-lg font-semibold tabular-nums">{formatBRL(-expense)}</p>
+          </Card>
+          <Card className="col-span-2 flex items-center justify-between p-4">
+            <p className="text-[13px] text-muted">Resultado do mês</p>
+            <p className={`text-lg font-semibold tabular-nums ${result >= 0 ? "text-primary" : "text-danger"}`}>
+              {formatBRL(result)}
+            </p>
+          </Card>
+        </section>
+
+        {dues.length > 0 && (
+          <section>
+            <SectionHeader
+              title="A pagar neste mês"
+              count={dues.length}
+              href={`/financas/contas-fixas?mes=${month}`}
+              linkLabel="Ver contas"
+            />
+            <Card className="py-2">
+              <ul className="divide-y divide-line">
+                {dues.slice(0, 6).map((d) => (
+                  <li key={d.key} className="flex items-center gap-3 py-3 text-[15px]">
+                    <span className="w-11 shrink-0 text-[13px] tabular-nums text-muted">{shortDate(d.due)}</span>
+                    <span className="min-w-0 flex-1 truncate">{d.name}</span>
+                    <StatusBadge status={billStatus(d.due, false, today)} />
+                    <span className="tabular-nums">{formatBRL(d.amount)}</span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          </section>
+        )}
+
+        {budgetTotal > 0 && (
+          <Link href={`/financas/orcamento?mes=${month}`} className="block rounded-[24px]">
+            <Card className="p-4 transition hover:bg-surface-2">
+              <div className="flex items-baseline justify-between text-sm">
+                <span className="text-muted">Orçamento</span>
+                <span className="tabular-nums">
+                  {formatBRL(budgetSpent / 100)} <span className="text-muted">de {formatBRL(budgetTotal / 100)}</span>
+                </span>
+              </div>
+              <div className="mt-3 h-2 rounded-full bg-surface-2">
+                <div
+                  className={`h-full rounded-full ${budgetSpent > budgetTotal ? "bg-danger" : "bg-hero"}`}
+                  style={{ width: `${Math.min(budgetSpent / budgetTotal, 1) * 100}%` }}
+                />
+              </div>
+            </Card>
+          </Link>
+        )}
+
+        {expenseByCategory.length > 0 && (
+          <section>
+            <SectionHeader title="Gastos por categoria" />
+            <Card>
+              <ul className="flex flex-col gap-3">
+                {expenseByCategory.slice(0, 8).map(({ category_id, total }) => {
+                  const cat = category_id ? catById.get(category_id) : undefined;
+                  return (
+                    <li key={category_id ?? "sem"}>
+                      <Link
+                        href={`/financas/lancamentos?mes=${month}&categoria=${category_id ?? "sem"}`}
+                        className="block"
+                      >
+                        <div className="flex justify-between text-sm">
+                          <span>{cat?.name ?? "Sem categoria"}</span>
+                          <span className="tabular-nums text-muted">{formatBRL(total)}</span>
+                        </div>
+                        <div className="mt-1.5 h-2 rounded-full bg-surface-2">
+                          <div
+                            className="h-full rounded-full"
+                            style={{ width: `${Math.max(4, (total / maxCat) * 100)}%`, background: cat?.color ?? "var(--muted)" }}
+                          />
+                        </div>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </Card>
+          </section>
+        )}
+
         <section>
           <SectionHeader
-            title="A pagar neste mês"
-            count={dues.length}
-            href={`/financas/contas-a-pagar?mes=${month}`}
-            linkLabel="Ver contas"
+            title="Últimos lançamentos"
+            count={transactions.length}
+            href={`/financas/lancamentos?mes=${month}`}
+            linkLabel="Ver todos"
           />
           <Card className="py-2">
-            <ul className="divide-y divide-line">
-              {dues.slice(0, 6).map((d) => (
-                <li key={d.key} className="flex items-center gap-3 py-3 text-[15px]">
-                  <span className="w-11 shrink-0 text-[13px] tabular-nums text-muted">{shortDate(d.due)}</span>
-                  <span className="min-w-0 flex-1 truncate">{d.name}</span>
-                  <StatusBadge status={billStatus(d.due, false, today)} />
-                  <span className="tabular-nums">{formatBRL(d.amount)}</span>
-                </li>
-              ))}
-            </ul>
+            {transactions.length > 0 ? (
+              <TxList transactions={transactions.slice(0, 6)} accounts={accounts} categories={categories} />
+            ) : (
+              <p className="py-3 text-sm text-muted">Nenhum lançamento neste mês.</p>
+            )}
           </Card>
         </section>
-      )}
-
-      {budgetTotal > 0 && (
-        <Link href={`/financas/orcamento?mes=${month}`} className="block rounded-[24px]">
-          <Card className="p-4 transition hover:bg-surface-2">
-            <div className="flex items-baseline justify-between text-sm">
-              <span className="text-muted">Orçamento</span>
-              <span className="tabular-nums">
-                {formatBRL(budgetSpent / 100)} <span className="text-muted">de {formatBRL(budgetTotal / 100)}</span>
-              </span>
-            </div>
-            <div className="mt-3 h-2 rounded-full bg-surface-2">
-              <div
-                className={`h-full rounded-full ${budgetSpent > budgetTotal ? "bg-danger" : "bg-hero"}`}
-                style={{ width: `${Math.min(budgetSpent / budgetTotal, 1) * 100}%` }}
-              />
-            </div>
-          </Card>
-        </Link>
-      )}
-
-      {expenseByCategory.length > 0 && (
-        <section>
-          <SectionHeader title="Gastos por categoria" />
-          <Card>
-            <ul className="flex flex-col gap-3">
-              {expenseByCategory.slice(0, 8).map(({ category_id, total }) => {
-                const cat = category_id ? catById.get(category_id) : undefined;
-                return (
-                  <li key={category_id ?? "sem"}>
-                    <Link
-                      href={`/financas/lancamentos?mes=${month}&categoria=${category_id ?? "sem"}`}
-                      className="block"
-                    >
-                      <div className="flex justify-between text-sm">
-                        <span>{cat?.name ?? "Sem categoria"}</span>
-                        <span className="tabular-nums text-muted">{formatBRL(total)}</span>
-                      </div>
-                      <div className="mt-1.5 h-2 rounded-full bg-surface-2">
-                        <div
-                          className="h-full rounded-full"
-                          style={{ width: `${Math.max(4, (total / maxCat) * 100)}%`, background: cat?.color ?? "var(--muted)" }}
-                        />
-                      </div>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </Card>
-        </section>
-      )}
-
-      <section>
-        <SectionHeader
-          title="Últimos lançamentos"
-          count={transactions.length}
-          href={`/financas/lancamentos?mes=${month}`}
-          linkLabel="Ver todos"
-        />
-        <Card className="py-2">
-          {transactions.length > 0 ? (
-            <TxList transactions={transactions.slice(0, 6)} accounts={accounts} categories={categories} />
-          ) : (
-            <p className="py-3 text-sm text-muted">Nenhum lançamento neste mês.</p>
-          )}
-        </Card>
-      </section>
-    </div>
+      </div>
+    </>
   );
 }
