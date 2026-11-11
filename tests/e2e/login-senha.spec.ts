@@ -95,6 +95,8 @@ test("redefinir senha: validações, nova senha e login com ela", async ({ page 
   await page.getByRole("button", { name: "Redefinir senha" }).click();
   await expect(page.getByText("As senhas não conferem.")).toBeVisible();
 
+  // useActionState limpa os campos após cada envio: preenche os dois de novo.
+  await page.getByLabel("Nova senha", { exact: true }).fill(NOVA);
   await page.getByLabel("Confirmar nova senha").fill(NOVA);
   await page.getByRole("button", { name: "Redefinir senha" }).click();
   await expect(page).toHaveURL(/\/inicio$/);
@@ -106,6 +108,8 @@ test("redefinir senha: validações, nova senha e login com ela", async ({ page 
   await page.locator("form").getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page.getByText("E-mail ou senha incorretos.")).toBeVisible();
 
+  // Após o erro o formulário foi limpo: e-mail e senha de novo.
+  await page.getByLabel("E-mail").fill(email);
   await page.getByLabel("Senha").fill(NOVA);
   await page.locator("form").getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page).toHaveURL(/\/inicio$/);
