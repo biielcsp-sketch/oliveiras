@@ -87,6 +87,15 @@ test("callback: link inválido volta ao login com mensagem; `next` malicioso nã
   await expect(page).toHaveURL(/\/login\?erro=link$/);
 });
 
+// Regressão: o link de recuperação abria o callback duas vezes; a 2ª troca falhava e o usuário, que já tinha
+// sessão da 1ª, era mandado ao login (e dali ao app) em vez da tela de nova senha.
+test("callback: código já usado com sessão ativa segue para redefinir senha", async ({ page }) => {
+  await signUp(page, uniqueEmail("duplo"));
+  await page.goto("/auth/callback?code=ja-usado&next=/redefinir-senha");
+  await expect(page).toHaveURL(/\/redefinir-senha/);
+  await expect(page.getByRole("heading", { name: "Redefinir senha" })).toBeVisible();
+});
+
 test("redefinir senha: validações, nova senha e login com ela", async ({ page }) => {
   const email = uniqueEmail("nova");
   const NOVA = "OutraSenha#2027";
