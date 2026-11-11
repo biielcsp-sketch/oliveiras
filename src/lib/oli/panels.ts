@@ -7,9 +7,11 @@ import { summarize } from "@/lib/financas/summary";
 import { billStatus, invoiceFor, invoiceTotals, type BillStatus } from "@/lib/financas/planning";
 import { monthLabel } from "@/lib/financas/period";
 import type { Account, Bill, BillPayment, Category, Transaction } from "@/lib/financas/types";
-import { matchByName, type CriarEventoArgs, type CriarLancamentoArgs, type MemoryCategory } from "./tool-args";
+import { matchByName, type CriarConsultaArgs, type CriarEventoArgs, type CriarLancamentoArgs, type MemoryCategory } from "./tool-args";
 import { eventDays, timeLabel, untitled, type AgendaEvent } from "@/lib/agenda/view";
 import { validateEventInput } from "@/lib/agenda/input";
+import { validateAppointmentInput, type AppointmentInput } from "@/lib/saude/input";
+import type { AppointmentKind } from "@/lib/saude/types";
 import { cleanText, DOC_LIMITS, storedExtracted } from "@/lib/financas/documentos/schema";
 import { billForMonth } from "@/lib/financas/documentos/rules";
 
@@ -73,6 +75,17 @@ export type EventoPreview = {
   agenda: { id: string; nome: string };
 };
 
+export type ConsultaPreview = {
+  pessoa: { id: string; nome: string };
+  tipo: AppointmentKind;
+  especialidade: string | null;
+  medico: string | null;
+  local: string | null;
+  /** AAAA-MM-DDTHH:mm (São Paulo). */
+  inicio: string;
+  observacoes: string | null;
+};
+
 export type DocumentoItem = {
   id: string;
   tipo: string;
@@ -99,6 +112,7 @@ export type OliPanel =
   | { id: string; kind: "confirmar_memoria"; data: MemoriaPreview; status: ConfirmStatus; erro?: string }
   | { id: string; kind: "eventos"; data: EventosData }
   | { id: string; kind: "confirmar_evento"; data: EventoPreview; status: ConfirmStatus; erro?: string }
+  | { id: string; kind: "confirmar_consulta"; data: ConsultaPreview; status: ConfirmStatus; erro?: string }
   | { id: string; kind: "documentos"; data: DocumentosData }
   | { id: string; kind: "documento"; data: DocumentoData }
   | { id: string; kind: "aviso"; texto: string };
@@ -322,6 +336,87 @@ export function resolveEvento(
   };
 }
 
+/* ---------- Saúde ---------- */
+
+export type ConsultaMember = { id: string; name: string; user_id: string | null };
+
+/**
+ * Resolve a pessoa da consulta pelo nome. Sem adivinhar: ambíguo/ausente (com mais de um adulto) → erro com opções.
+ * Valida com as mesmas regras do formulário de Saúde (validateAppointmentInput).
+ */
+export function resolveConsulta(
+  args: CriarConsultaArgs,
+  members: ConsultaMember[],
+  me: ConsultaMember | null,
+): { ok: true; preview: ConsultaPreview } | { ok: false; erro: string } {
+  const names = options(members.map((m) => m.name));
+  const q = args.pessoa?.trim() ?? "";
+  let person: ConsultaMember | null = null;
+  if (!q || /^(eu|mim|minha|meu)$/i.test(q)) {
+    const adults = members.filter((m) => m.user_id);
+    if (!q && adults.length > 1) return { ok: false, erro: `Pergunte para quem é a consulta. Opções: ${names}.` };
+    person = me;
+    if (!person) return { ok: false, erro: `Pessoa não encontrada. Opções: ${names}.` };
+  } else {
+    person = matchByName(members, q);
+    if (!person) return { ok: false, erro: `Pessoa não encontrada ou ambígua. Opções: ${names}.` };
+  }
+  const v = validateAppointmentInput(
+    {
+      member_id: person.id,
+      kind: args.tipo,
+      specialty: args.especialidade,
+      doctor: args.medico,
+      place: args.local,
+      starts_at: args.inicio,
+      notes: args.observacoes,
+    },
+    [person.id],
+  );
+  if (!v.ok) return { ok: false, erro: v.erro };
+  return {
+    ok: true,
+    preview: {
+      pessoa: { id: person.id, nome: person.name },
+      tipo: v.value.kind,
+      especialidade: v.value.specialty,
+      medico: v.value.doctor,
+      local: v.value.place,
+      inicio: args.inicio,
+      observacoes: v.value.notes,
+    },
+  };
+}
+
+/**
+ * Revalidação da confirmação (o cliente não é confiável): a pessoa precisa estar em `members` (dependente sem
+ * user_id vale), os campos passam pela validação do formulário e só os campos conhecidos são lidos.
+ * Status forçado a "agendada", return_of nulo e nenhum agenda_event_id: nada disso vem do cliente.
+ */
+export function validateConsultaConfirm(
+  preview: unknown,
+  members: { id: string }[],
+): { ok: true; value: AppointmentInput } | { ok: false; erro: string } {
+  if (!preview || typeof preview !== "object") return { ok: false, erro: "Dados inválidos." };
+  const p = preview as Partial<ConsultaPreview>;
+  const member = members.find((m) => m.id === p.pessoa?.id);
+  if (!member) return { ok: false, erro: "Pessoa não encontrada na família." };
+  const v = validateAppointmentInput(
+    {
+      member_id: member.id,
+      kind: p.tipo,
+      specialty: p.especialidade,
+      doctor: p.medico,
+      place: p.local,
+      starts_at: p.inicio,
+      notes: p.observacoes,
+    },
+    members.map((m) => m.id),
+  );
+  if (!v.ok) return v;
+  return { ok: true, value: { ...v.value, status: "agendada", return_of: null } };
+}
+
 /* ---------- Memórias ---------- */
 
 /** Teto de memórias por família (o prompt usa só as 30 mais recentes; isto limita abuso e injeção em massa). */
@@ -341,7 +436,8 @@ const isPending = (p: OliPanel) =>
   (p.kind === "confirmar_lancamento" ||
     p.kind === "confirmar_esquecer" ||
     p.kind === "confirmar_memoria" ||
-    p.kind === "confirmar_evento") &&
+    p.kind === "confirmar_evento" ||
+    p.kind === "confirmar_consulta") &&
   (p.status === "pendente" || p.status === "salvando");
 
 /** Novo painel no topo; no máximo MAX_PANELS. Confirmações pendentes nunca somem. */

@@ -344,6 +344,49 @@ export function PanelView({
         </Confirm>
       );
     }
+    case "confirmar_consulta": {
+      const d = p.data;
+      return (
+        <Confirm
+          id={p.id}
+          title="Salvar esta consulta?"
+          status={p.status}
+          erro={p.erro}
+          doneText={{ criado: "Consulta salva em Saúde.", cancelado: "Consulta não salva." }}
+          onConfirm={onConfirm}
+          onCancel={onCancel}
+        >
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[15px]">
+            <dt className="text-muted">Pessoa</dt>
+            <dd className="truncate">{d.pessoa.nome}</dd>
+            <dt className="text-muted">Tipo</dt>
+            <dd>{d.tipo === "retorno" ? "Retorno" : "Consulta"}</dd>
+            {d.especialidade && (
+              <>
+                <dt className="text-muted">Especialidade</dt>
+                <dd className="truncate">{d.especialidade}</dd>
+              </>
+            )}
+            {d.medico && (
+              <>
+                <dt className="text-muted">Médico</dt>
+                <dd className="truncate">{d.medico}</dd>
+              </>
+            )}
+            <dt className="text-muted">Quando</dt>
+            <dd className="tabular-nums">
+              {brDate(d.inicio.slice(0, 10))} · {d.inicio.slice(11)}
+            </dd>
+            {d.local && (
+              <>
+                <dt className="text-muted">Local</dt>
+                <dd className="truncate">{d.local}</dd>
+              </>
+            )}
+          </dl>
+        </Confirm>
+      );
+    }
     case "documentos": {
       const d = p.data;
       return (

@@ -1,5 +1,7 @@
 import { getAppContext } from "@/lib/data";
 import { greetingFor } from "@/lib/format";
+import { createClient } from "@/lib/supabase/server";
+import { getRecentOliMessages } from "@/lib/oli/history";
 import { OliHome } from "@/components/oli/oli-home";
 
 export const metadata = { title: "Início" };
@@ -22,6 +24,8 @@ export default async function InicioPage() {
     month: "long",
     timeZone: "America/Sao_Paulo",
   }).format(new Date());
+  const history = await getRecentOliMessages(await createClient(), 40);
+  const initialLog = history.map((m) => ({ id: m.id, role: m.role, text: m.content }));
   const todayLabel = today.charAt(0).toUpperCase() + today.slice(1);
 
   return (
@@ -32,7 +36,7 @@ export default async function InicioPage() {
           {greeting()}, {firstName}.
         </h1>
       </header>
-      <OliHome />
+      <OliHome initialLog={initialLog} />
     </div>
   );
 }
