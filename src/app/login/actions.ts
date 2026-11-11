@@ -1,8 +1,9 @@
 "use server";
 
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { REMEMBER_COOKIE, parseRememberedEmail, rememberCookieOptions } from "@/lib/remember";
 
 export type AuthState = { error?: string; info?: string } | null;
 
@@ -21,7 +22,21 @@ export async function signIn(_: AuthState, form: FormData): Promise<AuthState> {
     if (error.code === "email_not_confirmed") return { error: "Confirme seu e-mail antes de entrar." };
     return { error: "E-mail ou senha incorretos." };
   }
+  // Só depois do login dar certo. O cookie é rótulo de interface (e-mail), nunca credencial.
+  const jar = await cookies();
+  const remembered = parseRememberedEmail(email);
+  if (form.get("remember") === "on" && remembered) {
+    jar.set(REMEMBER_COOKIE, remembered, rememberCookieOptions());
+  } else if (jar.get(REMEMBER_COOKIE)?.value === email) {
+    jar.delete(REMEMBER_COOKIE);
+  }
   redirect("/inicio");
+}
+
+/** "Não sou eu / Esquecer este aparelho". */
+export async function forgetDevice() {
+  (await cookies()).delete(REMEMBER_COOKIE);
+  redirect("/login");
 }
 
 export async function signUp(_: AuthState, form: FormData): Promise<AuthState> {

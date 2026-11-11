@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { safeNextPath } from "@/lib/auth-redirect";
 
-/** Link de confirmação de e-mail: troca o código pela sessão. */
+/** Link de e-mail (confirmação ou redefinição de senha): troca o código pela sessão. */
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl;
   const code = searchParams.get("code");
@@ -9,7 +10,8 @@ export async function GET(request: NextRequest) {
   if (code) {
     const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) return NextResponse.redirect(`${origin}/bem-vindo`);
+    // O destino vem de lista permitida: nunca redireciona para fora do app.
+    if (!error) return NextResponse.redirect(`${origin}${safeNextPath(searchParams.get("next"))}`);
   }
-  return NextResponse.redirect(`${origin}/login`);
+  return NextResponse.redirect(`${origin}/login?erro=link`);
 }
