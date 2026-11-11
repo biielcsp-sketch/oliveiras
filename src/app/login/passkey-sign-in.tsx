@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Fingerprint } from "lucide-react";
-import { Button, FormError } from "@/components/ui";
 import { runPasskeySignIn } from "@/lib/passkey-sign-in";
 import { useWebAuthnSupport } from "@/lib/use-webauthn-support";
 
@@ -48,18 +47,23 @@ export function PasskeySignIn({ prominent = false, autoPrompt = false }: { promi
   return (
     <div className="flex flex-col gap-3">
       {!prominent && (
-        <div className="flex items-center gap-3 text-[13px] text-muted" aria-hidden>
-          <span className="h-px flex-1 bg-line" />
+        <div className="flex items-center gap-3 ls-soft text-[13px]" aria-hidden>
+          <span className="h-px flex-1 bg-white/25" />
           ou
-          <span className="h-px flex-1 bg-line" />
+          <span className="h-px flex-1 bg-white/25" />
         </div>
       )}
-      <Button type="button" variant={prominent ? "primary" : "ghost"} onClick={handleClick} disabled={pending} className={prominent ? "h-14 text-base" : undefined}>
+      <button
+        type="button"
+        onClick={handleClick}
+        disabled={pending}
+        className={`ls-btn ${prominent ? "ls-btn--primary ls-btn--tall text-base" : "ls-btn--glass"} inline-flex items-center justify-center gap-2 transition active:scale-[0.98] disabled:opacity-50`}
+      >
         <Fingerprint size={18} aria-hidden />
         {pending ? "Aguarde…" : "Entrar com digital"}
-      </Button>
+      </button>
       <div role="status" aria-live="polite">
-        <FormError message={error} />
+        {error && <p className="ls-error">{error}</p>}
       </div>
     </div>
   );

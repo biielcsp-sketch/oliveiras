@@ -6,6 +6,8 @@ import { LoginForm } from "./login-form";
 import { OfflineCardsWipe } from "@/components/offline-cards";
 
 export const metadata = { title: "Entrar" };
+// Barra de status/navegador na mesma cor do fundo da tela, nos dois temas.
+export const viewport = { themeColor: "#0b1f2c" };
 
 // Só chaves conhecidas viram mensagem: nada vindo da URL é exibido.
 const NOTICES: Record<string, string> = {
@@ -20,15 +22,17 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const remembered = parseRememberedEmail((await cookies()).get(REMEMBER_COOKIE)?.value);
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-sm flex-col justify-center px-6 py-12">
-      <div className="mb-8 flex flex-col items-center text-center">
+    <main className="login-screen">
+      <div className="mx-auto flex min-h-dvh w-full max-w-sm flex-col px-6 pb-6 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <LoginOli />
-        <h1 className="mt-4 text-2xl font-semibold tracking-tight">Oliveira&apos;s</h1>
-        <p className="mt-1 text-sm text-muted">A vida da família em um só lugar.</p>
+        <div className="mb-4 flex flex-col items-center text-center">
+          <h1 className="text-[22px] font-medium tracking-tight">Oliveira&apos;s</h1>
+          <p className="ls-soft mt-1 text-sm">A vida da família em um só lugar.</p>
+        </div>
+        {/* Sair da conta cai aqui: apaga as carteirinhas offline deste aparelho. */}
+        <OfflineCardsWipe />
+        {remembered ? <RememberedLogin email={remembered} notice={notice} /> : <LoginForm notice={notice} />}
       </div>
-      {/* Sair da conta cai aqui: apaga as carteirinhas offline deste aparelho. */}
-      <OfflineCardsWipe />
-      {remembered ? <RememberedLogin email={remembered} notice={notice} /> : <LoginForm notice={notice} />}
     </main>
   );
 }

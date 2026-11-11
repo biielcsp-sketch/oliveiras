@@ -17,17 +17,17 @@ export function RememberedLogin({ email, notice }: { email: string; notice?: str
   if (usePassword || !supported) return <LoginForm notice={notice} defaultEmail={email} remembered />;
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-4">
       {notice && (
-        <p role="status" className="rounded-2xl bg-surface-2 px-4 py-3 text-sm text-ink">
+        <p role="status" className="ls-notice">
           {notice}
         </p>
       )}
-      <p className="text-center text-base">
+      <p className="text-center text-base text-white">
         Olá, <span className="font-medium">{maskEmail(email)}</span>
       </p>
       <PasskeySignIn prominent autoPrompt />
-      <div className="flex flex-col items-center gap-3 text-sm text-muted">
+      <div className="ls-soft flex flex-col items-center gap-3 text-sm">
         <button type="button" onClick={() => setUsePassword(true)} className="underline underline-offset-4">
           Usar a senha
         </button>
