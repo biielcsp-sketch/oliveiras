@@ -6,7 +6,8 @@ import { getAppContext } from "@/lib/data";
 import { toSpDate } from "@/lib/agenda/dates";
 import { formToObject, isUuid, validateShoppingInput } from "@/lib/casa/input";
 import { ingredientsToAdd } from "@/lib/casa/menu";
-import { fileColumns, removeCasaFile, uploadCasaFile } from "@/lib/casa/storage";
+import { fileColumns, removeCasaFile, uploadCasaFile, uploadPetPhoto } from "@/lib/casa/storage";
+import { petPhotoColumns, petPhotoPlan } from "@/lib/casa/pet-photo";
 import { completeCareWith, foodShoppingName, nextCareDue, PET_CARE_COLS, type CareState } from "@/lib/casa/pet";
 import {
   parseCareExpected,
@@ -60,22 +61,43 @@ async function deleteById(table: string, id: string, notFound: string, cols = "i
 
 export async function savePet(_: PetState, form: FormData): Promise<PetState> {
   const ctx = await getAppContext();
+  const hh = ctx.household.id;
   const parsed = validatePetInput(formToObject(form), today());
   if (!parsed.ok) return { error: parsed.erro };
   const id = String(form.get("id") ?? "");
   if (id && !isUuid(id)) return { error: PET_ERR };
   const db = await createClient();
+
+  let oldPath: string | null = null;
   if (id) {
-    const { data, error } = await db.from("casa_pets").update(parsed.value).eq("household_id", ctx.household.id).eq("id", id).select("id");
-    if (error) return { error: GENERIC };
-    if (!data || data.length === 0) return { error: PET_ERR };
-    refresh();
-    return { ok: true, message: `${parsed.value.name} atualizado.`, id };
+    const { data } = await db.from("casa_pets").select("photo_path").eq("household_id", hh).eq("id", id).maybeSingle();
+    if (!data) return { error: PET_ERR };
+    oldPath = (data.photo_path as string | null) ?? null;
   }
-  const { data, error } = await db.from("casa_pets").insert({ ...parsed.value, household_id: ctx.household.id }).select("id").single();
-  if (error || !data) return { error: GENERIC };
+  // Foto nova só é enviada depois da validação do resto; se o banco recusar, o arquivo recém-enviado é apagado.
+  const up = await uploadPetPhoto(db, hh, form);
+  if (!up.ok) return { error: up.erro };
+  const plan = petPhotoPlan({ hasOld: !!oldPath, hasNew: !!up.uploaded, remove: form.get("remove_photo") === "on" });
+  const values = { ...parsed.value, ...petPhotoColumns(plan.columns, up.uploaded) };
+
+  let savedId = id;
+  let failed: string | null = null;
+  if (id) {
+    const { data, error } = await db.from("casa_pets").update(values).eq("household_id", hh).eq("id", id).select("id");
+    if (error) failed = GENERIC;
+    else if (!data || data.length === 0) failed = PET_ERR;
+  } else {
+    const { data, error } = await db.from("casa_pets").insert({ ...values, household_id: hh }).select("id").single();
+    if (error || !data) failed = GENERIC;
+    else savedId = data.id as string;
+  }
+  if (failed) {
+    await removeCasaFile(db, up.uploaded?.path, "pets");
+    return { error: failed };
+  }
+  if (plan.deleteOld) await removeCasaFile(db, oldPath, "pets");
   refresh();
-  return { ok: true, message: `${parsed.value.name} cadastrado.`, id: data.id as string };
+  return { ok: true, message: `${parsed.value.name} ${id ? "atualizado" : "cadastrado"}.`, id: savedId };
 }
 
 /** Apaga o pet e tudo dele (cascade no banco); os anexos saem do bucket depois. */
@@ -84,14 +106,16 @@ export async function deletePet(id: string): Promise<Result> {
   if (!isUuid(id)) return { ok: false, erro: PET_ERR };
   const db = await createClient();
   const hh = ctx.household.id;
-  const [h, v] = await Promise.all([
+  const [h, v, p] = await Promise.all([
     db.from("casa_pet_health").select("file_path").eq("household_id", hh).eq("pet_id", id).not("file_path", "is", null).limit(1000),
     db.from("casa_pet_vet").select("file_path").eq("household_id", hh).eq("pet_id", id).not("file_path", "is", null).limit(1000),
+    db.from("casa_pets").select("photo_path").eq("household_id", hh).eq("id", id).maybeSingle(),
   ]);
   const { data, error } = await db.from("casa_pets").delete().eq("household_id", hh).eq("id", id).select("id");
   if (error) return { ok: false, erro: "Não foi possível remover." };
   if (!data || data.length === 0) return { ok: false, erro: PET_ERR };
   for (const r of [...(h.data ?? []), ...(v.data ?? [])]) await removeCasaFile(db, r.file_path as string | null, "pets");
+  await removeCasaFile(db, (p.data?.photo_path as string | null | undefined) ?? null, "pets");
   refresh();
   return { ok: true };
 }

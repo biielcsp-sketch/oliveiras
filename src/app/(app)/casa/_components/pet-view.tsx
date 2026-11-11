@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { PawPrint, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { Button, Card, chipClass, EmptyState, Field, Input, Select, Textarea } from "@/components/ui";
 import { Modal } from "@/components/modal";
 import { brDate } from "@/lib/agenda/dates";
@@ -12,6 +12,7 @@ import { PET_SEX_LABEL, PET_SEXES, petAge, SPECIES, SPECIES_LABEL, type Pet, typ
 import { deletePet, savePet } from "../pet-actions";
 import { ConfirmDelete, Feedback, smallBtn, useRunner } from "./shared";
 import { ActionForm } from "./pet-shared";
+import { PetAvatar, usePetPhotoField } from "./pet-photo";
 import { PetHealthSection } from "./pet-health-view";
 import { PetVetSection } from "./pet-vet-view";
 import { PetCareSection, type CareVM } from "./pet-care-view";
@@ -21,9 +22,11 @@ import type { ProviderOption } from "./maintenance-view";
 export type PetData = { pet: Pet; health: PetHealth[]; vet: PetVet[]; care: CareVM[]; weights: PetWeight[]; food: PetFood[] };
 
 function PetForm({ pet, today, onDone }: { pet?: Pet; today: string; onDone: (msg?: string, id?: string) => void }) {
+  const photo = usePetPhotoField(pet);
   return (
-    <ActionForm action={savePet} onDone={onDone} submit={pet ? "Salvar alterações" : "Cadastrar pet"}>
+    <ActionForm action={savePet} onDone={onDone} submit={pet ? "Salvar alterações" : "Cadastrar pet"} prepare={photo.prepare} busy={photo.processing}>
       {pet && <input type="hidden" name="id" value={pet.id} />}
+      {photo.node}
       <Field label="Nome do pet">
         <Input name="name" maxLength={PET_LIMITS.petName} defaultValue={pet?.name} placeholder="Ex.: Moisés" required autoComplete="off" />
       </Field>
@@ -122,9 +125,7 @@ export function PetView({ pets, data, providers, today }: { pets: { id: string; 
         )}
         <Card aria-label={`Pet ${pet.name}`} data-testid="pet">
           <div className="flex items-start gap-4">
-            <span className="grid size-12 shrink-0 place-items-center rounded-full border border-line bg-accent-soft text-primary">
-              <PawPrint size={22} aria-hidden />
-            </span>
+            <PetAvatar petId={pet.id} name={pet.name} version={pet.photo_v} size="lg" />
             <div className="min-w-0">
               <h2 className="text-2xl font-semibold tracking-tight">{pet.name}</h2>
               <p className="text-sm text-muted">{info}</p>
