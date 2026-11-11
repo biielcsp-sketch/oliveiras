@@ -30,6 +30,8 @@ export function OliStage({
   const el = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState(false);
   const [poster, setPoster] = useState(Boolean(placeholderSrc));
+  // Canvas assumiu: o placeholder vira decorativo até sair (o canvas já tem o rótulo do avatar).
+  const [canvasUp, setCanvasUp] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,7 +52,8 @@ export function OliStage({
           if (cancelled) return oli.dispose();
           instance = oli;
           apiRef.current = oli;
-          // O canvas já está por cima: tira o placeholder depois do primeiro quadro.
+          // O canvas fica por cima do placeholder (CSS .oli-stage--compact canvas); este sai depois do primeiro quadro.
+          if (placeholderSrc) setCanvasUp(true);
           if (placeholderSrc) hideTimer = window.setTimeout(() => setPoster(false), 800);
         })
         .catch((e) => {
@@ -85,7 +88,8 @@ export function OliStage({
       {poster && (
         <Image
           src={placeholderSrc ?? "/oli/oli-poster.webp"}
-          alt="Oli, o assistente da família"
+          alt={canvasUp ? "" : "Oli, o assistente da família"}
+          aria-hidden={canvasUp || undefined}
           width={placeholderSrc ? 400 : 780}
           height={placeholderSrc ? 400 : 780}
           unoptimized
