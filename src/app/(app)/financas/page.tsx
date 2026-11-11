@@ -41,7 +41,7 @@ export default async function FinancasPage({ searchParams }: { searchParams: Pro
   const cardIds = new Set(accounts.filter((a) => a.kind === "cartao").map((a) => a.id));
   const { income, expense, result, expenseByCategory } = summarize(transactions, categories, cardIds);
 
-  // Vencimentos do mês (contas a pagar + faturas) e orçamento
+  // Vencimentos do mês (contas fixas + faturas) e orçamento
   const today = todaySP();
   const billingCards = cards.filter((c) => c.closing_day && c.due_day);
   const [bills, payments, cardTxs, budgetRows] = await Promise.all([
@@ -133,7 +133,7 @@ export default async function FinancasPage({ searchParams }: { searchParams: Pro
             <SectionHeader
               title="A pagar neste mês"
               count={dues.length}
-              href={`/financas/contas-a-pagar?mes=${month}`}
+              href={`/financas/contas-fixas?mes=${month}`}
               linkLabel="Ver contas"
             />
             <Card className="py-2">

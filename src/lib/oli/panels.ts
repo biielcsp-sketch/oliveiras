@@ -137,7 +137,7 @@ export function buildSaldos(accounts: Account[]): SaldosData {
   };
 }
 
-/** Contas a pagar do mês (contas cadastradas + faturas), como na tela Contas a pagar. */
+/** Contas fixas do mês (contas cadastradas + faturas), como na tela Contas fixas. */
 export function buildContasAPagar(input: {
   month: string;
   today: string;

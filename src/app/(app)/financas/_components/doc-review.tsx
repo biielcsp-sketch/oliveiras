@@ -149,7 +149,7 @@ function BoletoForm(p: Props) {
       <Field label="Linha digitável">
         <Input name="barcode" inputMode="numeric" maxLength={60} defaultValue={p.doc.linha} />
       </Field>
-      <Field label="Conta a pagar">
+      <Field label="Conta fixa">
         <Select name="bill_choice" value={billChoice} onChange={(e) => setBillChoice(e.target.value)} required>
           <option value="" disabled>Escolha…</option>
           {p.bills.map((b) => (
@@ -202,7 +202,7 @@ function BoletoForm(p: Props) {
       )}
       {paid && <Warning>Esta conta já está paga em {monthBr(month)}.</Warning>}
       <FormError message={state?.error} />
-      <Button disabled={pending}>{pending ? "Salvando…" : "Confirmar conta a pagar"}</Button>
+      <Button disabled={pending}>{pending ? "Salvando…" : "Confirmar conta fixa"}</Button>
     </form>
   );
 }

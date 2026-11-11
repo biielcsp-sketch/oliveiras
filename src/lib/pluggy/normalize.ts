@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { matchCategory, normalizeText, type Rule } from "@/lib/financas/rules";
+import { toBarcode44 } from "@/lib/financas/baixa";
 
 export type PluggyTransaction = {
   id: string;
@@ -9,6 +10,12 @@ export type PluggyTransaction = {
   type: "DEBIT" | "CREDIT" | string;
   status?: string;
   providerId?: string | null;
+  /**
+   * Dados do pagamento. Pela documentação da Pluggy (docs.pluggy.ai, Transaction → Payment Data →
+   * Boleto Metadata), `paymentData.boletoMetadata.digitableLine` / `.barcode` vêm quando o
+   * lançamento é pagamento de boleto, mas só nos conectores diretos (não nos de Open Finance).
+   */
+  paymentData?: { boletoMetadata?: { digitableLine?: string | null; barcode?: string | null } | null } | null;
 };
 
 export type PluggyAccount = {
@@ -57,6 +64,29 @@ export function buildSyncRows(txs: PluggyTransaction[], rules: Rule[]): SyncRow[
       }
       return { date, description, amount, external_id, category_id: matchCategory(description, rules) };
     });
+}
+
+/** Código de barras (44 dígitos, DVs conferidos) do boleto pago neste lançamento, se a Pluggy mandar. */
+export function boletoCodeOf(tx: Pick<PluggyTransaction, "paymentData" | "date">): string | null {
+  const meta = tx.paymentData?.boletoMetadata;
+  if (!meta || typeof tx.date !== "string") return null;
+  const ref = tx.date.slice(0, 10);
+  return toBarcode44(meta.barcode, ref) ?? toBarcode44(meta.digitableLine, ref);
+}
+
+/**
+ * Códigos dos lançamentos, pela mesma chave estável de buildSyncRows (a mesma ordem gera o mesmo
+ * external_id). Só saídas com código válido.
+ */
+export function syncRowCodes(txs: PluggyTransaction[], rows: SyncRow[]): { external_id: string; barcode: string }[] {
+  const valid = txs.filter((t) => Number.isFinite(t.amount) && t.amount !== 0 && /^\d{4}-\d{2}-\d{2}/.test(t.date));
+  const out: { external_id: string; barcode: string }[] = [];
+  valid.forEach((t, i) => {
+    const code = boletoCodeOf(t);
+    const row = rows[i];
+    if (code && row && row.amount < 0) out.push({ external_id: row.external_id, barcode: code });
+  });
+  return out;
 }
 
 export type ExistingRow = { id: string; external_id: string | null; date: string; amount: number; description: string };

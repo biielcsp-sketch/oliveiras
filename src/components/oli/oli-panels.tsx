@@ -147,7 +147,7 @@ export function PanelView({
         <Card>
           <Head
             icon={<CalendarClock size={16} aria-hidden />}
-            title={`Contas de ${d.mes_rotulo}`}
+            title={`Contas fixas de ${d.mes_rotulo}`}
             aside={<span className="text-sm text-muted">Pendente {formatBRL(d.total_pendente)}</span>}
           />
           {d.contas.length === 0 ? (

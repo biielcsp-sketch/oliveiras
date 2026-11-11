@@ -12,8 +12,11 @@ import { checkUpload, MAX_FILE_BYTES } from "@/lib/saude/files";
 import { extractDocument } from "@/lib/financas/documentos/extract";
 import { docsAiAllowedFor } from "@/lib/financas/documentos/access";
 import { cleanText, DOC_LIMITS, reconcile } from "@/lib/financas/documentos/schema";
-import { dailyLimitError, docStoragePath, DOC_BUCKET, isDocPath, sameBillMonthDocs, spDayStartIso, type DocRef } from "@/lib/financas/documentos/rules";
-import { duplicateBlock, readBarcode, validateBoletoForm, validatePayLink } from "@/lib/financas/documentos/input";
+import { dailyLimitError, docStoragePath, DOC_BUCKET, isDocPath, planDocDelete, retry, sameBillMonthDocs, spDayStartIso, type DocRef } from "@/lib/financas/documentos/rules";
+import {
+  boletoEditConflict, duplicateBlock, editSaveError, readBarcode, validateBoletoEdit, validateBoletoForm, validateComprovanteEdit, validatePayLink,
+} from "@/lib/financas/documentos/input";
+import { runBaixaAutomatica } from "@/lib/financas/baixa-data";
 
 export type DocState = { error?: string } | null;
 
@@ -117,7 +120,7 @@ export async function uploadDocument(_: DocState, form: FormData): Promise<DocSt
   redirect(`/financas/documentos/${doc.id}`);
 }
 
-/* ---------- Conferência: boleto → conta a pagar ---------- */
+/* ---------- Conferência: boleto → conta fixa ---------- */
 
 export async function confirmBoleto(_: DocState, form: FormData): Promise<DocState> {
   const { household } = await getAppContext();
@@ -145,7 +148,7 @@ export async function confirmBoleto(_: DocState, form: FormData): Promise<DocSta
   let billId: string | null = null;
   if (val.bill.kind === "existente") {
     const { data: bill } = await db.from("fin_bills").select("id").eq("household_id", household.id).eq("id", val.bill.id).maybeSingle();
-    if (!bill) return { error: "Conta a pagar não encontrada." };
+    if (!bill) return { error: "Conta fixa não encontrada." };
     billId = bill.id;
   }
 
@@ -178,7 +181,7 @@ export async function confirmBoleto(_: DocState, form: FormData): Promise<DocSta
       .insert({ household_id: household.id, name: val.bill.name, amount: val.amount, due_day: val.bill.dueDay, category_id: categoryId, account_id: accountId, active: true })
       .select("id")
       .single();
-    if (error || !bill) return { error: "Não foi possível criar a conta a pagar." };
+    if (error || !bill) return { error: "Não foi possível criar a conta fixa." };
     billId = createdBill = bill.id;
   }
 
@@ -228,8 +231,10 @@ export async function confirmBoleto(_: DocState, form: FormData): Promise<DocSta
     if (createdBill) await db.from("fin_bills").delete().eq("household_id", household.id).eq("id", createdBill);
     return { error: error?.code === "23505" ? CONFLICT : GENERIC };
   }
+  // O pagamento pode ter chegado no extrato antes do boleto: cruza agora (mesma sessão, RLS).
+  await runBaixaAutomatica([val.bill_month]);
   refresh();
-  redirect(`/financas/contas-a-pagar?mes=${val.bill_month}`);
+  redirect(`/financas/contas-fixas?mes=${val.bill_month}`);
 }
 
 /* ---------- Conferência: comprovante → lançamento (e conta paga) ---------- */
@@ -270,7 +275,7 @@ export async function confirmComprovante(_: DocState, form: FormData): Promise<D
   let bill: { id: string; name: string } | null = null;
   if (link.value) {
     const { data } = await db.from("fin_bills").select("id, name").eq("household_id", household.id).eq("id", link.value.billId).maybeSingle();
-    if (!data) return { error: "Conta a pagar não encontrada." };
+    if (!data) return { error: "Conta fixa não encontrada." };
     bill = data;
     const { data: paid } = await db
       .from("fin_bill_payments")
@@ -362,6 +367,112 @@ export async function discardDocument(form: FormData) {
         ? { data: [doc] }
         : await db.from("fin_documents").update({ status: "descartado" }).eq("household_id", household.id).eq("id", doc.id).select("id");
     if (data?.length && isDocPath(doc.file_path)) await db.storage.from(DOC_BUCKET).remove([doc.file_path]);
+  }
+  refresh();
+  redirect("/financas/documentos");
+}
+
+/* ---------- Editar documento confirmado ---------- */
+
+export async function editDocument(_: DocState, form: FormData): Promise<DocState> {
+  const { household } = await getAppContext();
+  const db = await createClient();
+  const doc = await loadDoc(db, household.id, str(form, "id"));
+  if (!doc) return { error: "Documento não encontrado." };
+  if (doc.status !== "confirmado") return { error: "Só documentos confirmados podem ser editados." };
+
+  if (doc.kind === "boleto") {
+    const v = validateBoletoEdit({ billId: str(form, "bill_id"), amount: str(form, "amount"), dueDate: str(form, "due_date"), billMonth: str(form, "bill_month") });
+    if (!v.ok) return { error: v.erro };
+    const val = v.value;
+    const { data: bill } = await db.from("fin_bills").select("id").eq("household_id", household.id).eq("id", val.bill_id).maybeSingle();
+    if (!bill) return { error: "Conta fixa não encontrada." };
+    const others = await relatedDocs(db, household.id, null, bill.id);
+    if (!others) return { error: GENERIC };
+    const conflict = boletoEditConflict(doc.id, bill.id, val.bill_month, others);
+    if (conflict) return { error: conflict };
+    const { data: updated, error } = await db
+      .from("fin_documents")
+      .update({ amount: val.amount, due_date: val.due_date, bill_id: bill.id, bill_month: val.bill_month })
+      .eq("household_id", household.id)
+      .eq("id", doc.id)
+      .eq("status", "confirmado")
+      .eq("kind", "boleto")
+      .select("id");
+    if (error || !updated?.length) return { error: editSaveError(error?.code) };
+    // Valor ou mês mudou: o pagamento pode estar no extrato.
+    await runBaixaAutomatica([val.bill_month]);
+  } else if (doc.kind === "comprovante") {
+    const v = validateComprovanteEdit({ amount: str(form, "amount"), paidOn: str(form, "paid_on"), payee: str(form, "payee") });
+    if (!v.ok) return { error: v.erro };
+    const { data: updated, error } = await db
+      .from("fin_documents")
+      .update(v.value)
+      .eq("household_id", household.id)
+      .eq("id", doc.id)
+      .eq("status", "confirmado")
+      .eq("kind", "comprovante")
+      .select("id");
+    if (error || !updated?.length) return { error: editSaveError(error?.code) };
+  } else {
+    return { error: "Este tipo de documento não tem dados para editar." };
+  }
+  refresh();
+  redirect(`/financas/documentos/${doc.id}`);
+}
+
+/* ---------- Apagar documento (e o arquivo) ---------- */
+
+/**
+ * Apaga o documento e o arquivo do bucket, com a sessão (RLS). O arquivo sai primeiro, com até 3
+ * tentativas e conferência de que sumiu: se não sair, nada é apagado (a linha continua sendo a dona
+ * do arquivo). Modo "tudo": apaga também o lançamento criado por este documento e a baixa ligada a ele.
+ */
+export async function deleteDocument(_: DocState, form: FormData): Promise<DocState> {
+  const { household } = await getAppContext();
+  const db = await createClient();
+  const id = str(form, "id");
+  if (!UUID_RE.test(id)) return { error: "Documento não encontrado." };
+  const { data: doc } = await db
+    .from("fin_documents")
+    .select("id, file_path, transaction_id")
+    .eq("household_id", household.id)
+    .eq("id", id)
+    .maybeSingle();
+  if (!doc) return { error: "Documento não encontrado." };
+  const mode = str(form, "mode") === "tudo" ? "tudo" : "documento";
+
+  let tx: { id: string; source: string } | null = null;
+  let otherDocsWithTx = 0;
+  if (mode === "tudo" && doc.transaction_id) {
+    const [{ data: t }, { count }] = await Promise.all([
+      db.from("fin_transactions").select("id, source").eq("household_id", household.id).eq("id", doc.transaction_id).maybeSingle(),
+      db.from("fin_documents").select("id", { count: "exact", head: true }).eq("household_id", household.id).eq("transaction_id", doc.transaction_id).neq("id", doc.id),
+    ]);
+    tx = t;
+    otherDocsWithTx = count ?? 0;
+  }
+  const plan = planDocDelete({ mode, docTransactionId: doc.transaction_id, tx, otherDocsWithTx });
+
+  if (isDocPath(doc.file_path)) {
+    const bucket = db.storage.from(DOC_BUCKET);
+    const gone = await retry(async () => {
+      const { error } = await bucket.remove([doc.file_path]);
+      if (error) return false;
+      // O Storage não acusa erro quando não apaga (ex.: RLS): confere se sumiu mesmo.
+      // exists() devolve false só para "não existe"; outros erros lançam e o retry tenta de novo.
+      const { data: still } = await bucket.exists(doc.file_path);
+      return still === false;
+    });
+    if (!gone) return { error: "Não consegui apagar o arquivo. Nada foi apagado; tente de novo em instantes." };
+  }
+
+  const { data: removed, error } = await db.from("fin_documents").delete().eq("household_id", household.id).eq("id", doc.id).select("id");
+  if (error || !removed?.length) return { error: "O arquivo foi apagado, mas o registro não. Tente apagar de novo." };
+
+  if (plan.transactionId) {
+    await db.from("fin_bill_payments").delete().eq("household_id", household.id).eq("transaction_id", plan.transactionId);
+    await db.from("fin_transactions").delete().eq("household_id", household.id).eq("id", plan.transactionId).eq("source", "documento");
   }
   refresh();
   redirect("/financas/documentos");

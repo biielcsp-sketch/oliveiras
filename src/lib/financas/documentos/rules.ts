@@ -111,3 +111,36 @@ export function billForMonth(
     due: doc?.due_date ?? dateInMonth(month, bill.due_day),
   };
 }
+
+/* ---------- Apagar documento ---------- */
+
+export type DeleteMode = "documento" | "tudo";
+
+/**
+ * O que apagar junto com o documento. Só no modo "tudo" e só o lançamento que o próprio documento
+ * criou: source 'documento', ligado a este documento e a nenhum outro. Lançamento do Open Finance,
+ * OFX/CSV ou manual nunca é apagado. O pagamento de conta (fin_bill_payments) ligado a esse
+ * lançamento sai junto.
+ */
+export function planDocDelete(input: {
+  mode: DeleteMode;
+  docTransactionId: string | null;
+  tx: { id: string; source: string } | null;
+  otherDocsWithTx: number;
+}): { transactionId: string | null } {
+  const { mode, docTransactionId, tx, otherDocsWithTx } = input;
+  const createdByDoc = Boolean(docTransactionId && tx && tx.id === docTransactionId && tx.source === "documento" && otherDocsWithTx === 0);
+  return { transactionId: mode === "tudo" && createdByDoc ? tx!.id : null };
+}
+
+/** Tenta de novo até `attempts` vezes; true se alguma tentativa deu certo. */
+export async function retry(run: () => Promise<boolean>, attempts = 3) {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      if (await run()) return true;
+    } catch {
+      // tenta de novo
+    }
+  }
+  return false;
+}

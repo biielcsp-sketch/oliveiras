@@ -39,12 +39,12 @@ test("planejamento: orçamento, fatura do cartão, conta paga vinculada ao extra
 
   await test.step("fatura do cartão por período de fechamento", async () => {
     // Fecha 3, vence 10: fatura de nov cobre 03/10–02/11 (2× iFood = 91,80) e já foi paga (+500 em 06/11)
-    await page.goto("/financas/contas-a-pagar?mes=2026-11");
+    await page.goto("/financas/contas-fixas?mes=2026-11");
     const card = page.locator("li").filter({ hasText: "Cartão Teste" });
     await expect(card).toContainText("R$ 91,80");
     await expect(card).toContainText("Paga");
     // Fatura de dez: Uber 23,10. Crédito sem categoria (estorno +10, pagamento +500) não abate.
-    await page.goto("/financas/contas-a-pagar?mes=2026-12");
+    await page.goto("/financas/contas-fixas?mes=2026-12");
     await expect(page.locator("li").filter({ hasText: "Cartão Teste" })).toContainText("R$ 23,10");
   });
 
@@ -79,7 +79,7 @@ test("planejamento: orçamento, fatura do cartão, conta paga vinculada ao extra
     await expect.poll(() => text(page)).toContain("R$ 152,30 / R$ 1.000,00");
   });
 
-  await test.step("conta a pagar marcada como paga com o lançamento do extrato", async () => {
+  await test.step("conta fixa marcada como paga com o lançamento do extrato", async () => {
     await page.goto("/financas/lancamentos/novo");
     await page.getByLabel("Valor (R$)").fill("1.790,00");
     await page.getByLabel("Data", { exact: true }).fill("2026-11-04");
@@ -88,13 +88,13 @@ test("planejamento: orçamento, fatura do cartão, conta paga vinculada ao extra
     await page.getByRole("button", { name: "Lançar" }).click();
     await expect(page).toHaveURL(/lancamentos\?mes=2026-11/);
 
-    await page.goto("/financas/contas-a-pagar/nova");
+    await page.goto("/financas/contas-fixas/nova");
     await page.getByLabel("Nome", { exact: true }).fill("Aluguel");
     await page.getByLabel("Valor esperado (R$)").fill("1.800,00");
     await page.getByLabel("Vence todo dia").fill("5");
-    await page.getByRole("button", { name: "Criar conta a pagar" }).click();
+    await page.getByRole("button", { name: "Criar conta fixa" }).click();
 
-    await page.goto("/financas/contas-a-pagar?mes=2026-11");
+    await page.goto("/financas/contas-fixas?mes=2026-11");
     await page.locator("li").filter({ hasText: "Aluguel" }).getByRole("link", { name: "Marcar paga" }).click();
     await expect(page.getByRole("radio", { name: /ALUGUEL NOV/ })).toBeChecked();
     await page.getByRole("button", { name: "Confirmar pagamento" }).click();

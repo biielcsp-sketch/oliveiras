@@ -4,12 +4,14 @@ import { getAppContext } from "@/lib/data";
 import { todaySP } from "@/lib/financas/today";
 import { getItem, listAccounts, listTransactions, pluggyAllowedFor, pluggyConfigured, PluggyError } from "./client";
 import {
-  bankBalanceToApp, buildSyncRows, consentExpired, itemHealthy, openingToMatchBank, planSync, syncFetchStart, syncWindowStart,
+  bankBalanceToApp, buildSyncRows, consentExpired, itemHealthy, openingToMatchBank, planSync, syncFetchStart, syncRowCodes, syncWindowStart,
 } from "./normalize";
+import { monthsAround } from "@/lib/financas/baixa";
+import { runBaixaAutomatica, type TxCode } from "@/lib/financas/baixa-data";
 
 export type SyncResult =
   | { status: "skipped"; reason: "nao-configurado" | "nao-autorizado" | "sem-conexoes" | "recente" }
-  | { status: "done"; inserted: number; updated: number; removed: number; errors: string[] };
+  | { status: "done"; inserted: number; updated: number; removed: number; errors: string[]; baixas: number };
 
 const STALE_MS = 6 * 60 * 60 * 1000;
 
@@ -37,6 +39,9 @@ export async function syncHousehold({ force }: { force: boolean }): Promise<Sync
   let updated = 0;
   let removed = 0;
   const errors: string[] = [];
+  // Saídas novas ou alteradas: depois da sincronização, cruzam com as contas fixas (baixa automática).
+  const outflowDates: string[] = [];
+  const codes: TxCode[] = [];
 
   for (const item of items) {
     let lastError: string | null = null;
@@ -90,7 +95,9 @@ export async function syncHousehold({ force }: { force: boolean }): Promise<Sync
           .maybeSingle();
         const recentStart = syncWindowStart(acc.sync_from, today);
         const windowStart = syncFetchStart(acc.sync_from, today, oldest?.date ?? null);
-        const rows = buildSyncRows(await listTransactions(r.id, windowStart), rules ?? []);
+        const remoteTxs = await listTransactions(r.id, windowStart);
+        const rows = buildSyncRows(remoteTxs, rules ?? []);
+        for (const c of syncRowCodes(remoteTxs, rows)) codes.push({ ...c, account_id: acc.id });
         const { data: existing } = await supabase
           .from("fin_transactions")
           .select("id, external_id, date, amount, description")
@@ -104,6 +111,7 @@ export async function syncHousehold({ force }: { force: boolean }): Promise<Sync
           rows,
           { allowDeletes, deleteFrom: recentStart },
         );
+        for (const x of [...plan.inserts, ...plan.updates]) if (x.amount < 0) outflowDates.push(x.date);
 
         for (let i = 0; i < plan.inserts.length; i += 500) {
           const { data, error } = await supabase
@@ -155,7 +163,9 @@ export async function syncHousehold({ force }: { force: boolean }): Promise<Sync
       .eq("id", item.id)
       .eq("household_id", household.id);
   }
-  return { status: "done", inserted, updated, removed, errors };
+  // Mesma sessão do usuário (RLS). Falha aqui nunca derruba a sincronização.
+  const baixas = outflowDates.length ? (await runBaixaAutomatica(monthsAround(outflowDates), codes)).applied.length : 0;
+  return { status: "done", inserted, updated, removed, errors, baixas };
 }
 
 type Db = Awaited<ReturnType<typeof createClient>>;
