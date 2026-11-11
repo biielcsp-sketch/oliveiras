@@ -23,6 +23,7 @@ import {
 } from "@/lib/saude/input";
 import { checkUpload, isStoragePath, storagePath, UUID_RE, type StorageDir } from "@/lib/saude/files";
 import { removeAppointmentFromAgenda, syncAppointmentToAgenda } from "@/lib/saude/agenda-sync";
+import { insertAppointment, storeAgendaId } from "@/lib/saude/appointment-save";
 import { APPOINTMENT_COLS, type AppointmentStatus, type HealthAppointment } from "@/lib/saude/types";
 
 export type SaudeState = { ok?: boolean; error?: string; message?: string } | null;
@@ -271,12 +272,6 @@ async function loadAppointment(db: Db, householdId: string, id: string) {
   return (data as HealthAppointment | null) ?? null;
 }
 
-/** Grava o resultado da sincronização com a Agenda (best-effort, nunca derruba a consulta). */
-async function storeAgendaId(db: Db, householdId: string, a: HealthAppointment, eventId: string | null) {
-  if (eventId === a.agenda_event_id) return;
-  await db.from("health_appointments").update({ agenda_event_id: eventId }).eq("household_id", householdId).eq("id", a.id);
-}
-
 export async function saveAppointment(_: SaudeState, form: FormData): Promise<SaudeState> {
   const ctx = await getAppContext();
   const parsed = validateAppointmentInput(appointmentInputFromForm(form), ctx.members.map((m) => m.id));
@@ -292,7 +287,7 @@ export async function saveAppointment(_: SaudeState, form: FormData): Promise<Sa
     if (!origin || origin.kind !== "consulta" || origin.member_id !== value.member_id) return { error: "Escolha uma consulta da mesma pessoa." };
   }
 
-  let saved: HealthAppointment | null;
+  let saved: HealthAppointment;
   if (id) {
     const before = await loadAppointment(db, ctx.household.id, id);
     if (!before) return { error: "Consulta não encontrada." };
@@ -300,17 +295,14 @@ export async function saveAppointment(_: SaudeState, form: FormData): Promise<Sa
     if (error) return { error: GENERIC };
     saved = { ...before, ...value };
   } else {
-    const { data, error } = await db
-      .from("health_appointments")
-      .insert({ ...value, household_id: ctx.household.id })
-      .select(APPOINTMENT_COLS)
-      .single();
-    if (error) return { error: GENERIC };
-    saved = data as HealthAppointment;
+    const r = await insertAppointment(db, ctx, value);
+    if (!r.ok) return { error: GENERIC };
+    refresh();
+    return { ok: true, message: "Consulta salva." };
   }
   await storeAgendaId(db, ctx.household.id, saved, await syncAppointmentToAgenda(ctx, saved));
   refresh();
-  return { ok: true, message: id ? "Consulta atualizada." : "Consulta salva." };
+  return { ok: true, message: "Consulta atualizada." };
 }
 
 export async function setAppointmentStatus(id: string, status: AppointmentStatus): Promise<{ ok: boolean; erro?: string }> {

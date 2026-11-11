@@ -2,7 +2,8 @@ import "server-only";
 import { GoogleGenAI, Modality } from "@google/genai";
 import { createClient } from "@/lib/supabase/server";
 import { OLI_API_VERSION, OLI_DEFAULT_MODEL, OLI_DEFAULT_VOICE, oliAllowedFor } from "@/lib/oli/access";
-import { buildSystemInstruction, MAX_PROMPT_MEMORIES, OLI_TOOLS } from "@/lib/oli/prompt";
+import { buildSystemInstruction, MAX_PROMPT_HISTORY, MAX_PROMPT_MEMORIES, OLI_TOOLS } from "@/lib/oli/prompt";
+import { getRecentOliMessages } from "@/lib/oli/history";
 import { todaySP } from "@/lib/financas/today";
 
 /**
@@ -42,6 +43,9 @@ export async function POST(request: Request) {
     .order("created_at", { ascending: false })
     .limit(MAX_PROMPT_MEMORIES);
 
+  // Conversa recente só desta pessoa (RLS); falha na leitura não derruba o token.
+  const history = await getRecentOliMessages(supabase, MAX_PROMPT_HISTORY);
+
   const model = process.env.GEMINI_LIVE_MODEL || OLI_DEFAULT_MODEL;
   const voice = process.env.GEMINI_LIVE_VOICE || OLI_DEFAULT_VOICE;
 
@@ -58,7 +62,7 @@ export async function POST(request: Request) {
           config: {
             sessionResumption: {},
             responseModalities: [Modality.AUDIO],
-            systemInstruction: buildSystemInstruction(memories ?? [], todaySP()),
+            systemInstruction: buildSystemInstruction(memories ?? [], todaySP(), history),
             tools: OLI_TOOLS,
             speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
             inputAudioTranscription: {},

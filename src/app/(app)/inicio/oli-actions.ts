@@ -10,6 +10,8 @@ import { getConfirmedBillDocs } from "@/lib/financas/documentos/data";
 import { todaySP } from "@/lib/financas/today";
 import { validateManualTransaction, UUID_RE } from "@/lib/financas/transaction-input";
 import { validateEventInput } from "@/lib/agenda/input";
+import type { AgendaSyncState } from "@/lib/saude/agenda-state";
+import { insertAppointment } from "@/lib/saude/appointment-save";
 import { getEventsBetween, loadAccounts, writableCalendarsOf, agendaEnabled, createEvent } from "@/lib/google/agenda";
 import {
   isToolName,
@@ -23,6 +25,7 @@ import {
   parseUltimosArgs,
   parseDocumentosArgs,
   parseLerDocumentoArgs,
+  parseCriarConsultaArgs,
   matchByName,
   type OliToolName,
 } from "@/lib/oli/tool-args";
@@ -37,6 +40,9 @@ import {
   type EventoPreview,
   type EventosData,
   resolveEvento,
+  resolveConsulta,
+  validateConsultaConfirm,
+  type ConsultaPreview,
   type LancamentoPreview,
   type LancamentosData,
   memoryLimitError,
@@ -68,6 +74,7 @@ export type OliToolResult =
   | { ok: true; tool: "criar_evento"; data: EventoPreview }
   | { ok: true; tool: "documentos_recentes"; data: DocumentosData }
   | { ok: true; tool: "ler_documento"; data: DocumentoData }
+  | { ok: true; tool: "criar_consulta"; data: ConsultaPreview }
   | { ok: false; erro: string };
 
 const err = (erro: string): OliToolResult => ({ ok: false, erro });
@@ -194,6 +201,15 @@ async function dispatch(name: OliToolName, args: unknown): Promise<OliToolResult
       const { household } = await getAppContext();
       if (!agendaEnabled(household.id)) return err("A Agenda não está liberada para esta família.");
       const r = resolveEvento(a.value, await writableCalendars());
+      if (!r.ok) return err(r.erro);
+      return { ok: true, tool: name, data: r.preview };
+    }
+    case "criar_consulta": {
+      // Só prepara: grava em Saúde (e espelha na Agenda) em confirmOliConsulta, depois do toque do usuário.
+      const a = parseCriarConsultaArgs(args);
+      if (!a.ok) return err(a.erro);
+      const ctx = await getAppContext();
+      const r = resolveConsulta(a.value, ctx.members, ctx.me);
       if (!r.ok) return err(r.erro);
       return { ok: true, tool: name, data: r.preview };
     }
@@ -347,4 +363,24 @@ export async function confirmOliEvento(preview: EventoPreview): Promise<ConfirmR
   if (!r.ok) return { ok: false, erro: r.erro };
   revalidatePath("/agenda");
   return { ok: true };
+}
+
+export type ConsultaConfirmResult = { ok: true; agenda: AgendaSyncState } | { ok: false; erro: string };
+
+/**
+ * Grava a consulta em Saúde depois do toque em Confirmar. Revalida tudo no servidor (o cliente não é confiável):
+ * a pessoa precisa ser da família e os campos passam pela mesma validação do formulário de Saúde.
+ * A Agenda é espelhada por insertAppointment (best-effort); `agenda` diz se sincronizou.
+ */
+export async function confirmOliConsulta(preview: ConsultaPreview): Promise<ConsultaConfirmResult> {
+  const ctx = await getAppContext();
+  if (!preview || typeof preview !== "object") return { ok: false, erro: "Dados inválidos." };
+  const v = validateConsultaConfirm(preview, ctx.members);
+  if (!v.ok) return { ok: false, erro: v.erro };
+  const supabase = await createClient();
+  const r = await insertAppointment(supabase, ctx, v.value);
+  if (!r.ok) return { ok: false, erro: "Não foi possível salvar a consulta." };
+  revalidatePath("/saude", "layout");
+  revalidatePath("/agenda");
+  return { ok: true, agenda: r.agenda };
 }

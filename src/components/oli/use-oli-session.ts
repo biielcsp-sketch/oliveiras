@@ -11,6 +11,7 @@ import {
   OUT_RATE,
   rms,
 } from "@/lib/oli/audio-utils";
+import { saveOliMessages } from "@/app/(app)/inicio/oli-history-actions";
 import type { OliState } from "./oli3d";
 
 /**
@@ -21,7 +22,7 @@ import type { OliState } from "./oli3d";
  * - Sessões longas: guarda o handle de sessionResumption e reconecta no goAway/queda.
  */
 
-export type LogEntry = { id: number; role: "user" | "model" | "sys"; text: string };
+export type LogEntry = { id: number | string; role: "user" | "model" | "sys"; text: string };
 export type StatusTone = "" | "ok" | "err";
 export type ToolCall = { id?: string; name?: string; args?: Record<string, unknown> };
 export type ToolHandler = (call: ToolCall) => Promise<Record<string, unknown>>;
@@ -43,12 +44,14 @@ export function useOliSession(opts: {
   onTool: ToolHandler;
   onFrame?: (state: OliState, level: number) => void;
   onEnd?: () => void;
+  /** Histórico salvo da pessoa (cronológico), para a aba "Ver conversa" já abrir preenchida. */
+  initialLog?: LogEntry[];
 }) {
   const [state, setState] = useState<OliState>("idle");
   const [active, setActive] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatusState] = useState<{ text: string; tone: StatusTone }>({ text: IDLE_STATUS, tone: "" });
-  const [log, setLog] = useState<LogEntry[]>([]);
+  const [log, setLog] = useState<LogEntry[]>(() => opts.initialLog ?? []);
 
   const optsRef = useRef(opts);
   useEffect(() => {
@@ -77,7 +80,9 @@ export function useOliSession(opts: {
     reconnects: 0,
     generation: 0, // muda a cada conexão: callbacks de sessões antigas são ignorados
     userStopped: true,
-    openBubble: { user: null as number | null, model: null as number | null },
+    openBubble: { user: null as number | string | null, model: null as number | string | null },
+    // Texto do turno em andamento, acumulado e enviado ao servidor uma vez só (turnComplete/encerramento).
+    turnText: { user: "", model: "" },
     nextId: 1,
     raf: 0,
   });
@@ -90,9 +95,28 @@ export function useOliSession(opts: {
     return id;
   }, []);
 
+  /** Grava no servidor o turno concluído. Fire-and-forget: erro é silencioso e nunca trava o áudio. */
+  // Limite conhecido: no teardown/desmonte a server action pode ser abortada pelo navegador (melhor esforço).
+  // Por isso a fala do usuário já é gravada quando a transcrição dele termina (começo da resposta).
+  const flushTurn = useCallback((only?: "user") => {
+    const s = r.current;
+    const batch: { role: "user" | "model"; text: string }[] = [];
+    if (s.turnText.user.trim()) batch.push({ role: "user", text: s.turnText.user });
+    s.turnText.user = "";
+    if (!only) {
+      if (s.turnText.model.trim()) batch.push({ role: "model", text: s.turnText.model });
+      s.turnText.model = "";
+    }
+    if (batch.length === 0) return;
+    try {
+      void saveOliMessages(batch).catch(() => {});
+    } catch {}
+  }, []);
+
   const appendLog = useCallback(
     (role: "user" | "model", text: string) => {
       const s = r.current;
+      s.turnText[role] += text;
       const open = s.openBubble[role];
       if (open === null) {
         s.openBubble[role] = pushLog(role, text);
@@ -159,12 +183,13 @@ export function useOliSession(opts: {
       s.handle = null;
       s.reconnects = 0;
       s.openBubble = { user: null, model: null };
+      flushTurn();
       setActive(false);
       setBusy(false);
       setStatusState(message ?? { text: IDLE_STATUS, tone: "" });
       optsRef.current.onEnd?.();
     },
-    [stopPlayback],
+    [flushTurn, stopPlayback],
   );
 
   /* ---------- conexão (com retomada) ---------- */
@@ -255,6 +280,8 @@ export function useOliSession(opts: {
           stopPlayback();
           s.awaiting = false;
         }
+        // A resposta começou: a transcrição do usuário está completa.
+        if (sc.outputTranscription?.text || sc.modelTurn?.parts?.length) flushTurn("user");
         for (const p of sc.modelTurn?.parts ?? []) if (p.inlineData?.data) enqueue(p.inlineData.data);
         if (sc.inputTranscription?.text) {
           appendLog("user", sc.inputTranscription.text);
@@ -264,10 +291,12 @@ export function useOliSession(opts: {
         if (sc.outputTranscription?.text) appendLog("model", sc.outputTranscription.text);
         if (sc.turnComplete) {
           s.openBubble = { user: null, model: null };
+          flushTurn();
           s.awaiting = false;
         }
       }
       if (m.toolCall?.functionCalls?.length) {
+        flushTurn("user");
         s.awaiting = true;
         s.awaitingAt = performance.now();
         const functionResponses = await Promise.all(
@@ -287,7 +316,7 @@ export function useOliSession(opts: {
         } catch {}
       }
     },
-    [appendLog, enqueue, reconnect, stopPlayback],
+    [appendLog, enqueue, flushTurn, reconnect, stopPlayback],
   );
 
   useEffect(() => {
@@ -367,6 +396,8 @@ export function useOliSession(opts: {
         if (!ok || !r.current.session) return;
       }
       s.openBubble = { user: null, model: null };
+      flushTurn(); // fala anterior ainda aberta vai antes da digitada
+      s.turnText.user = text;
       pushLog("user", text);
       s.awaiting = true;
       s.awaitingAt = performance.now();
@@ -377,7 +408,7 @@ export function useOliSession(opts: {
         setStatus("Não consegui enviar.", "err");
       }
     },
-    [pushLog, setStatus, start],
+    [flushTurn, pushLog, setStatus, start],
   );
 
   /* ---------- laço: estado e nível para o avatar ---------- */
@@ -414,5 +445,13 @@ export function useOliSession(opts: {
   // Sai da tela: encerra a sessão (libera microfone e conexão).
   useEffect(() => () => teardown(), [teardown]);
 
-  return { state, active, busy, status, log, start, stop, sendText, pushLog };
+  /** "Limpar conversa": zera o log local e o turno ainda não enviado. */
+  const clearLog = useCallback(() => {
+    const s = r.current;
+    s.turnText = { user: "", model: "" };
+    s.openBubble = { user: null, model: null };
+    setLog([]);
+  }, []);
+
+  return { state, active, busy, status, log, start, stop, sendText, pushLog, clearLog };
 }

@@ -5,21 +5,23 @@ import clsx from "clsx";
 import { ChevronDown, Mic, SendHorizontal, Square } from "lucide-react";
 import { Button, Input } from "@/components/ui";
 import { clearPanels, pushPanel, type OliPanel } from "@/lib/oli/panels";
-import { confirmOliEsquecer, confirmOliEvento, confirmOliLancamento, confirmOliMemoria, runOliTool } from "@/app/(app)/inicio/oli-actions";
+import { clearOliHistory } from "@/app/(app)/inicio/oli-history-actions";
+import { confirmOliConsulta, confirmOliEsquecer, confirmOliEvento, confirmOliLancamento, confirmOliMemoria, runOliTool } from "@/app/(app)/inicio/oli-actions";
 import type { Oli3D, OliState } from "./oli3d";
 import { OliStage } from "./oli-stage";
 import { OliPanels } from "./oli-panels";
-import { useOliSession, type ToolCall } from "./use-oli-session";
+import { useOliSession, type LogEntry, type ToolCall } from "./use-oli-session";
 
 const LABELS: Record<OliState, string> = { idle: "Repouso", listen: "Ouvindo", think: "Pensando", speak: "Falando" };
 
 type Pending = { resolve: (out: Record<string, unknown>) => void };
 
-export function OliHome() {
+export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
   const avatar = useRef<Oli3D | null>(null);
   const [panels, setPanels] = useState<OliPanel[]>([]);
   const [text, setText] = useState("");
   const [showLog, setShowLog] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
   const pending = useRef(new Map<string, Pending>());
   const seq = useRef(0);
   const panelsRef = useRef<OliPanel[]>([]);
@@ -77,6 +79,11 @@ export function OliHome() {
             pending.current.set(id, { resolve });
             add({ id, kind: "confirmar_evento", data: res.data, status: "pendente" });
           });
+        case "criar_consulta":
+          return new Promise((resolve) => {
+            pending.current.set(id, { resolve });
+            add({ id, kind: "confirmar_consulta", data: res.data, status: "pendente" });
+          });
         case "criar_lancamento":
         case "esquecer_memoria":
         case "salvar_memoria":
@@ -106,6 +113,22 @@ export function OliHome() {
       const p = panelsRef.current.find((x) => x.id === id);
       if (!p || !("status" in p) || p.status !== "pendente") return;
       patch(id, { status: "salvando" });
+      if (p.kind === "confirmar_consulta") {
+        const c = await confirmOliConsulta(p.data);
+        if (c.ok) {
+          patch(id, { status: "criado" });
+          settle(id, {
+            status: "criado",
+            gravado_em: "Saúde",
+            agenda: c.agenda,
+            aviso: c.agenda === "falhou" ? "Consulta gravada em Saúde, mas não foi possível colocar na Agenda agora." : undefined,
+          });
+        } else {
+          patch(id, { status: "erro", erro: c.erro });
+          settle(id, { status: "erro", erro: c.erro });
+        }
+        return;
+      }
       const r =
         p.kind === "confirmar_lancamento"
           ? await confirmOliLancamento(p.data)
@@ -148,7 +171,17 @@ export function OliHome() {
     avatar.current?.setLevel(level);
   }, []);
 
-  const oli = useOliSession({ onTool, onFrame, onEnd });
+  const oli = useOliSession({ onTool, onFrame, onEnd, initialLog });
+
+  const clearHistory = async () => {
+    if (!confirmClear) {
+      setConfirmClear(true);
+      return;
+    }
+    setConfirmClear(false);
+    const r = await clearOliHistory().catch(() => ({ ok: false }));
+    if (r.ok) oli.clearLog();
+  };
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -237,6 +270,16 @@ export function OliHome() {
                   {e.text}
                 </p>
               ))
+            )}
+            {oli.log.length > 0 && (
+              <button
+                type="button"
+                onClick={() => void clearHistory()}
+                onBlur={() => setConfirmClear(false)}
+                className="mt-1 min-h-11 self-center rounded-full px-3 text-[14px] font-medium text-danger"
+              >
+                {confirmClear ? "Toque de novo para apagar" : "Limpar conversa"}
+              </button>
             )}
           </div>
         )}

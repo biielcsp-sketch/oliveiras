@@ -5,6 +5,8 @@
 import { MAX_AMOUNT, UUID_RE, validDate } from "@/lib/financas/transaction-input";
 import { addDays, diffDays, isDate, normalizeLocal } from "@/lib/agenda/dates";
 import { EVENT_LIMITS } from "@/lib/agenda/input";
+import { KINDS, LIMITS as SAUDE_LIMITS } from "@/lib/saude/input";
+import type { AppointmentKind } from "@/lib/saude/types";
 
 export const OLI_TOOL_NAMES = [
   "resumo_do_mes",
@@ -19,6 +21,7 @@ export const OLI_TOOL_NAMES = [
   "criar_evento",
   "documentos_recentes",
   "ler_documento",
+  "criar_consulta",
 ] as const;
 export type OliToolName = (typeof OLI_TOOL_NAMES)[number];
 
@@ -251,4 +254,50 @@ export function parseCriarEventoArgs(args: unknown): Result<CriarEventoArgs> {
   const agenda = optText(a.agenda, EVENT_LIMITS.title, "Agenda");
   if (!agenda.ok) return agenda;
   return ok({ titulo: titulo.value, dia_inteiro: diaInteiro, inicio, fim, local: local.value, agenda: agenda.value });
+}
+
+/* ---------- Saúde ---------- */
+
+export type CriarConsultaArgs = {
+  /** Nome do membro; vazio ou "eu" = o usuário logado. */
+  pessoa?: string;
+  tipo: AppointmentKind;
+  especialidade?: string;
+  medico?: string;
+  local?: string;
+  /** AAAA-MM-DDTHH:mm (São Paulo). */
+  inicio: string;
+  observacoes?: string;
+};
+
+/** criar_consulta: limites iguais aos do formulário de Saúde; a validação completa roda em validateAppointmentInput. */
+export function parseCriarConsultaArgs(args: unknown): Result<CriarConsultaArgs> {
+  const a = obj(args);
+  const pessoa = optText(a.pessoa, LIMITS.name, "Pessoa");
+  if (!pessoa.ok) return pessoa;
+  const tipoRaw = optText(a.tipo, 20, "Tipo");
+  if (!tipoRaw.ok) return tipoRaw;
+  const tipo = (tipoRaw.value ? normalizeName(tipoRaw.value) : "consulta") as AppointmentKind;
+  if (!KINDS.includes(tipo)) return fail("Tipo inválido. Use consulta ou retorno.");
+  const especialidade = optText(a.especialidade, SAUDE_LIMITS.specialty, "Especialidade");
+  if (!especialidade.ok) return especialidade;
+  const medico = optText(a.medico, SAUDE_LIMITS.doctor, "Médico");
+  if (!medico.ok) return medico;
+  const local = optText(a.local, SAUDE_LIMITS.place, "Local");
+  if (!local.ok) return local;
+  const rawInicio = reqText(a.inicio, 25, "Início");
+  if (!rawInicio.ok) return rawInicio;
+  const inicio = normalizeLocal(rawInicio.value);
+  if (!inicio) return fail("Início inválido. Use AAAA-MM-DDTHH:mm.");
+  const observacoes = optText(a.observacoes, SAUDE_LIMITS.apptNotes, "Observações");
+  if (!observacoes.ok) return observacoes;
+  return ok({
+    pessoa: pessoa.value,
+    tipo,
+    especialidade: especialidade.value,
+    medico: medico.value,
+    local: local.value,
+    inicio,
+    observacoes: observacoes.value,
+  });
 }
