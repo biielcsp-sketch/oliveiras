@@ -12,8 +12,8 @@ export function safeNextPath(next: string | null | undefined): string {
 /**
  * Destino quando a troca do código falha no /auth/callback. O navegador pode abrir o link duas vezes
  * ao mesmo tempo: a 1ª troca cria a sessão e a 2ª falha (código já usado). No fluxo de redefinição,
- * seguimos para a página, que decide pela sessão (sem ela, ela mesma volta ao login com aviso).
+ * seguimos para a página, que decide pela sessão (sem ela, volta ao login com o aviso de link inválido ou expirado).
  */
 export function callbackFailurePath(next: string | null | undefined): string {
-  return typeof next === "string" && ALLOWED_NEXT.has(next) ? next : "/login?erro=link";
+  return typeof next === "string" && ALLOWED_NEXT.has(next) ? `${next}?erro=link` : "/login?erro=link";
 }

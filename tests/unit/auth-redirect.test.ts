@@ -32,7 +32,7 @@ describe("safeNextPath", () => {
 // código falhava e mandava ao login (ou direto ao /inicio, já com a sessão da 1ª).
 describe("callbackFailurePath", () => {
   it("no fluxo de redefinição segue para /redefinir-senha, que decide pela sessão", () => {
-    expect(callbackFailurePath("/redefinir-senha")).toBe("/redefinir-senha");
+    expect(callbackFailurePath("/redefinir-senha")).toBe("/redefinir-senha?erro=link");
   });
 
   it.each([null, undefined, "", "/inicio", "//evil.example", "https://evil.example"])(
