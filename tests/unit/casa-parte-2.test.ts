@@ -6,7 +6,8 @@ import { ingredientsToAdd, mondayOf, parseWeek, planWeekCopy, weekDays } from "@
 import { homeBillCounts, homeBillsForMonth, homeStatus } from "@/lib/casa/contas";
 import { CASA_TABS } from "@/lib/casa/nav";
 import { activeRouteIndex } from "@/lib/arc-nav";
-import { billReturnPath } from "@/lib/financas/routes";
+import { billDeleteResult } from "@/lib/financas/bill-delete";
+import { billDeletePath, billReturnPath, casaContasPath, flowOrigin, flowReturnPath } from "@/lib/financas/routes";
 
 const HH = "11111111-1111-4111-8111-111111111111";
 const ID = "22222222-2222-4222-8222-222222222222";
@@ -179,6 +180,39 @@ describe("contas da casa (regras das Finanças)", () => {
     expect(billReturnPath("casa")).toBe("/casa/contas");
     expect(billReturnPath("https://exemplo.com")).toBe("/financas/contas-fixas");
     expect(billReturnPath(null)).toBe("/financas/contas-fixas");
+  });
+  it("origem do fluxo de documentos/exclusão: lista fechada, sem open redirect", () => {
+    expect(flowOrigin("casa")).toBe("casa");
+    for (const v of ["https://exemplo.com", "//evil.com", "/casa/contas", "CASA", "", null, undefined, 1]) expect(flowOrigin(v)).toBeNull();
+    expect(flowReturnPath("casa", "/financas/contas-fixas?mes=2026-12", "2026-12")).toBe("/casa/contas?mes=2026-12");
+    expect(flowReturnPath("casa", "/financas/documentos")).toBe("/casa/contas");
+    expect(flowReturnPath("casa", "/financas/documentos", "2026-13")).toBe("/casa/contas");
+    expect(flowReturnPath("//evil.com", "/financas/documentos", "2026-12")).toBe("/financas/documentos");
+    expect(flowReturnPath(null, "/financas/contas-fixas?mes=2026-12", "2026-12")).toBe("/financas/contas-fixas?mes=2026-12");
+    expect(casaContasPath("2026-12&x=1")).toBe("/casa/contas");
+    // guardar/descartar da Casa mantêm o mês escolhido (só AAAA-MM válido)
+    expect(flowReturnPath("casa", "/financas/documentos", "2027-01")).toBe("/casa/contas?mes=2027-01");
+    expect(flowReturnPath("casa", "/financas/documentos", "2027-1")).toBe("/casa/contas");
+    expect(flowReturnPath("casa", "/financas/documentos", "")).toBe("/casa/contas");
+    expect(flowReturnPath(null, "/financas/documentos", "2027-01")).toBe("/financas/documentos");
+  });
+  it("resultado da exclusão da conta fixa: erro ou nada apagado nunca vira sucesso", () => {
+    expect(billDeleteResult({ error: { code: "42501" }, data: null })).toEqual({
+      ok: false,
+      error: "Não foi possível excluir a conta. Nada foi apagado; tente de novo.",
+    });
+    for (const data of [null, undefined, []]) {
+      const r = billDeleteResult({ error: null, data });
+      expect(r.ok).toBe(false);
+      expect(!r.ok && r.error).toMatch(/^A conta não foi encontrada/);
+    }
+    expect(billDeleteResult({ error: null, data: [{ id: "x" }] })).toEqual({ ok: true });
+  });
+  it("tela de exclusão da conta fixa: destino montado só com valores validados", () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    expect(billDeletePath(id)).toBe(`/financas/contas-fixas/${id}/excluir`);
+    expect(billDeletePath(id, "casa", "2026-12")).toBe(`/financas/contas-fixas/${id}/excluir?voltar=casa&mes=2026-12`);
+    expect(billDeletePath(id, "http://x", "abc")).toBe(`/financas/contas-fixas/${id}/excluir`);
   });
 });
 

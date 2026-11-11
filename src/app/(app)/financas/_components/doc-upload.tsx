@@ -13,7 +13,19 @@ const fileInputClass =
  * "Ler PDF ou foto": envia boleto/comprovante para leitura. Nada é gravado como conta ou
  * lançamento aqui: a próxima tela mostra o que foi lido para o usuário conferir.
  */
-export function DocUpload({ pending: pendingCount, showListLink = true }: { pending?: number; showListLink?: boolean }) {
+export function DocUpload({
+  pending: pendingCount,
+  showListLink = true,
+  origem,
+  mes,
+}: {
+  pending?: number;
+  showListLink?: boolean;
+  /** "casa": enviado por Casa > Contas; a conferência cria conta da casa e volta para lá. */
+  origem?: "casa";
+  /** Mês (AAAA-MM) da tela de origem, para voltar nele. */
+  mes?: string;
+}) {
   const [state, action, busy] = useActionState<DocState, FormData>(uploadDocument, null);
   const cameraForm = useRef<HTMLFormElement>(null);
 
@@ -31,6 +43,8 @@ export function DocUpload({ pending: pendingCount, showListLink = true }: { pend
       </div>
       <p className="text-[13px] text-muted">Boleto ou comprovante. Você confere tudo antes de salvar.</p>
       <form action={action} className="flex flex-col gap-3">
+        {origem === "casa" && <input type="hidden" name="origem" value="casa" />}
+        {origem === "casa" && mes && <input type="hidden" name="mes" value={mes} />}
         <label className="flex flex-col gap-1.5">
           <span className="text-[13px] font-medium text-muted">Arquivo (PDF ou JPG, até 5 MB)</span>
           <input name="file" type="file" accept="application/pdf,image/jpeg,.pdf,.jpg,.jpeg" required className={fileInputClass} />
@@ -39,6 +53,8 @@ export function DocUpload({ pending: pendingCount, showListLink = true }: { pend
       </form>
       {/* Celular: abre a câmera direto e envia assim que a foto é tirada. */}
       <form action={action} ref={cameraForm} className="sm:hidden">
+        {origem === "casa" && <input type="hidden" name="origem" value="casa" />}
+        {origem === "casa" && mes && <input type="hidden" name="mes" value={mes} />}
         <label className="inline-flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-full border border-line text-[15px] font-medium">
           <Camera size={16} aria-hidden /> Tirar foto
           <input

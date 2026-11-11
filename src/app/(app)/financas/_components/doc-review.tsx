@@ -31,6 +31,9 @@ type Props = {
   dupBoleto: string[];
   dupComprovante: string[];
   boletoLink: { billId: string; month: string } | null;
+  /** "casa": veio de Casa > Contas (conta nova já é da casa; ao terminar volta para a Casa). */
+  origem?: "casa" | null;
+  mes?: string;
 };
 
 const KINDS: { key: DocKind; label: string }[] = [
@@ -46,10 +49,12 @@ function Warning({ children }: { children: React.ReactNode }) {
   return <div role="alert" className="rounded-2xl bg-warning-soft px-4 py-3 text-sm text-warning">{children}</div>;
 }
 
-function DiscardButton({ id }: { id: string }) {
+function DiscardButton({ id, origem, mes }: { id: string; origem?: "casa" | null; mes?: string }) {
   return (
     <form action={discardDocument}>
       <input type="hidden" name="id" value={id} />
+      {origem === "casa" && <input type="hidden" name="origem" value="casa" />}
+      {origem === "casa" && mes && <input type="hidden" name="mes" value={mes} />}
       <Button variant="danger" className="w-full">Descartar este documento</Button>
     </form>
   );
@@ -103,11 +108,13 @@ export function DocReview(p: Props) {
           <p className="text-sm text-muted">Não é boleto nem comprovante? Guarde o arquivo ou descarte.</p>
           <form action={keepDocument}>
             <input type="hidden" name="id" value={p.doc.id} />
+            {p.origem === "casa" && <input type="hidden" name="origem" value="casa" />}
+            {p.origem === "casa" && p.mes && <input type="hidden" name="mes" value={p.mes} />}
             <Button className="w-full">Guardar documento</Button>
           </form>
         </div>
       )}
-      <DiscardButton id={p.doc.id} />
+      <DiscardButton id={p.doc.id} origem={p.origem} mes={p.mes} />
     </div>
   );
 }
@@ -125,6 +132,7 @@ function BoletoForm(p: Props) {
   return (
     <form action={action} className="flex flex-col gap-4">
       <input type="hidden" name="id" value={p.doc.id} />
+      {p.origem === "casa" && <input type="hidden" name="origem" value="casa" />}
       <Field label="Beneficiário">
         <Input name="payee" maxLength={120} defaultValue={p.doc.payee ?? ""} />
       </Field>
@@ -218,6 +226,7 @@ function ComprovanteForm(p: Props) {
   return (
     <form action={action} className="flex flex-col gap-4">
       <input type="hidden" name="id" value={p.doc.id} />
+      {p.origem === "casa" && <input type="hidden" name="origem" value="casa" />}
       <Field label="Favorecido">
         <Input name="payee" maxLength={120} defaultValue={p.doc.payee ?? ""} />
       </Field>

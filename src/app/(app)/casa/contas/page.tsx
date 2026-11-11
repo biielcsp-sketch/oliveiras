@@ -3,13 +3,15 @@ import clsx from "clsx";
 import { Plus } from "lucide-react";
 import { Card, EmptyState, LinkButton } from "@/components/ui";
 import { getBillPayments, getBills } from "@/lib/financas/planning-data";
-import { getConfirmedBillDocs } from "@/lib/financas/documentos/data";
+import { countPendingDocuments, getConfirmedBillDocs } from "@/lib/financas/documentos/data";
 import { getBaixaSuggestions } from "@/lib/financas/baixa-data";
 import { formatBRL } from "@/lib/financas/money";
 import { parseMonth, shortDate } from "@/lib/financas/period";
 import { todaySP } from "@/lib/financas/today";
 import { HOME_STATUS_LABEL, homeBillsForMonth, type HomeBillStatus } from "@/lib/casa/contas";
+import { billDeletePath } from "@/lib/financas/routes";
 import { MonthSwitcher } from "../../financas/_components/month-switcher";
+import { DocUpload } from "../../financas/_components/doc-upload";
 
 export const metadata = { title: "Contas · Casa" };
 
@@ -23,7 +25,13 @@ const statusCls: Record<HomeBillStatus, string> = {
 export default async function Page({ searchParams }: { searchParams: Promise<{ mes?: string }> }) {
   const month = parseMonth((await searchParams).mes);
   const today = todaySP();
-  const [bills, payments, docs, suggestions] = await Promise.all([getBills(), getBillPayments(month), getConfirmedBillDocs(month), getBaixaSuggestions(month)]);
+  const [bills, payments, docs, suggestions, pendingDocs] = await Promise.all([
+    getBills(),
+    getBillPayments(month),
+    getConfirmedBillDocs(month),
+    getBaixaSuggestions(month),
+    countPendingDocuments(),
+  ]);
   const rows = homeBillsForMonth({ bills, payments, docs, suggestionBillIds: suggestions.map((s) => s.bill_id), month, today });
   const total = rows.reduce((s, r) => s + Math.round(r.amount * 100), 0) / 100;
   const financas = `/financas/contas-fixas?mes=${month}`;
@@ -36,6 +44,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ m
           <Plus size={16} aria-hidden /> Nova conta da casa
         </LinkButton>
       </div>
+      <DocUpload pending={pendingDocs} origem="casa" mes={month} />
       {rows.length === 0 ? (
         <EmptyState title="Nenhuma conta da casa neste mês.">
           Marque “Conta da casa” numa conta fixa das Finanças (aluguel, condomínio, luz, água, gás, internet).
@@ -82,6 +91,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ m
                         Marcar paga
                       </Link>
                     )}
+                    <Link href={billDeletePath(r.id, "casa", month)} aria-label={`Excluir ${r.name}`} className="inline-flex min-h-11 items-center text-[12px] font-medium text-danger">
+                      Excluir
+                    </Link>
                   </span>
                 </div>
               </li>

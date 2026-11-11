@@ -9,6 +9,7 @@ import { formatBRL } from "@/lib/financas/money";
 import { shiftMonth } from "@/lib/financas/period";
 import { todaySP } from "@/lib/financas/today";
 import { UUID_RE } from "@/lib/financas/transaction-input";
+import { flowOrigin } from "@/lib/financas/routes";
 import { getDocument, getRelatedDocs } from "@/lib/financas/documentos/data";
 import { toLinhaDigitavel } from "@/lib/financas/documentos/boleto";
 import { reconcile, storedExtracted } from "@/lib/financas/documentos/schema";
@@ -20,8 +21,11 @@ export const metadata = { title: "Conferir documento" };
 
 const br = (iso: string | null) => (iso ? iso.split("-").reverse().join("/") : "—");
 
-export default async function ConferirDocumentoPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ConferirDocumentoPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ origem?: string; mes?: string }> }) {
   const { id } = await params;
+  const sp = await searchParams;
+  const origem = flowOrigin(sp.origem);
+  const mes = sp.mes && /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.mes) ? sp.mes : undefined;
   if (!UUID_RE.test(id)) notFound();
   const { household } = await getAppContext();
   const doc = await getDocument(id);
@@ -129,6 +133,8 @@ export default async function ConferirDocumentoPage({ params }: { params: Promis
         dupBoleto={dupBoleto}
         dupComprovante={dupComprovante}
         boletoLink={boletoLink ? { billId: boletoLink.bill_id!, month: boletoLink.bill_month! } : null}
+        origem={origem}
+        mes={mes}
       />
       <Link href={`/financas/documentos/${doc.id}/apagar`} className="mt-4 block text-center text-sm text-danger underline">
         Apagar documento
