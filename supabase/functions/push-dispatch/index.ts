@@ -1,14 +1,14 @@
-// Edge Function: envia notificações push da Saúde (medicamentos e vacinas).
+// Edge Function: envia notificações push da Saúde (medicamentos e vacinas) e do Pet da Casa (próxima dose).
 // Chamada a cada minuto pelo pg_cron com o header x-dispatch-secret. verify_jwt = false.
 // A chave service_role só existe aqui (env automática do Edge Function): nunca retornar nem logar.
 // Nunca logar/retornar endpoints, chaves, nomes ou conteúdo de aviso.
 import { createClient } from "npm:@supabase/supabase-js@2";
 import webpush from "npm:web-push@3";
-import { computeDueNotices, isAllowedPushEndpoint, type MedicationRow, type VaccineRow } from "./due.ts";
+import { computeDueNotices, isAllowedPushEndpoint, type MedicationRow, type PetHealthRow, type VaccineRow } from "./due.ts";
 
 const MAX_NOTICES = 200;
 const LOG_RETENTION_DAYS = 7;
-const TTL_SECONDS = { medicamento: 3600, vacina: 6 * 3600 } as const;
+const TTL_SECONDS = { medicamento: 3600, vacina: 6 * 3600, pet: 6 * 3600 } as const;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -66,7 +66,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const now = new Date();
   const counters = { avisos: 0, enviados: 0, falhas: 0, removidas: 0 };
 
-  const [meds, vacs] = await Promise.all([
+  const [meds, vacs, pets] = await Promise.all([
     supabase
       .from("health_medications")
       .select("id, household_id, name, dosage, active, started_on, ended_on, reminder_times, members(name)")
@@ -75,8 +75,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
       .from("health_vaccines")
       .select("id, household_id, name, dose_label, next_dose_on, members(name)")
       .not("next_dose_on", "is", null),
+    supabase
+      .from("casa_pet_health")
+      // Sem filtro de next_due_on: a dose mais recente (às vezes sem próxima data) silencia as antigas.
+      .select("id, household_id, pet_id, kind, name, dose, applied_on, next_due_on, created_at, casa_pets(name)"),
   ]);
-  if (meds.error || vacs.error) {
+  if (meds.error || vacs.error || pets.error) {
     genericError("consulta");
     return json({ error: "query_failed" }, 500);
   }
@@ -107,7 +111,20 @@ Deno.serve(async (req: Request): Promise<Response> => {
     member_name: memberName(r.members),
   }));
 
-  const due = computeDueNotices(now, medications, vaccines).slice(0, MAX_NOTICES);
+  const petHealth: PetHealthRow[] = (pets.data ?? []).map((r) => ({
+    id: r.id,
+    household_id: r.household_id,
+    pet_id: r.pet_id,
+    kind: r.kind,
+    name: r.name,
+    dose: r.dose ?? null,
+    applied_on: r.applied_on ?? null,
+    next_due_on: r.next_due_on ?? null,
+    created_at: r.created_at,
+    pet_name: memberName(r.casa_pets),
+  }));
+
+  const due = computeDueNotices(now, medications, vaccines, petHealth).slice(0, MAX_NOTICES);
 
   for (const notice of due) {
     // Idempotência: só quem conseguir inserir a key envia.

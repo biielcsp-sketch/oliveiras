@@ -1,4 +1,4 @@
-// Lógica pura (sem Deno, sem rede) dos avisos push da Saúde.
+// Lógica pura (sem Deno, sem rede) dos avisos push da Saúde e do Pet da Casa.
 // Importada pelo Edge Function (index.ts) e pelo vitest (tests/unit/push-dispatch.test.ts).
 
 export const TIME_ZONE = "America/Sao_Paulo";
@@ -27,9 +27,22 @@ export type VaccineRow = {
   member_name: string | null;
 };
 
+export type PetHealthRow = {
+  id: string;
+  household_id: string;
+  pet_id: string;
+  kind: string;
+  name: string;
+  dose: string | null;
+  applied_on: string | null;
+  next_due_on: string | null;
+  created_at: string;
+  pet_name: string | null;
+};
+
 export type DueNotice = {
   key: string;
-  kind: "medicamento" | "vacina";
+  kind: "medicamento" | "vacina" | "pet";
   householdId: string;
   title: string;
   body: string;
@@ -84,10 +97,56 @@ function isoDay(value: string | null): string | null {
   return value ? value.slice(0, 10) : null;
 }
 
+// Map (não objeto): um `kind` inesperado nunca casa com propriedades herdadas como "constructor".
+const PET_KIND_LABEL = new Map<string, string>([
+  ["vacina", "vacina"],
+  ["vermifugo", "vermífugo"],
+  ["antipulgas", "antipulgas"],
+  ["remedio", "remédio"],
+]);
+
+/** Grupo da dose do pet: pet + tipo + nome sem acento/maiúscula/espaços extras (mesma regra de src/lib/casa/pet.ts). */
+function petGroupKey(r: PetHealthRow): string {
+  const name = r.name.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/\s+/g, " ").trim();
+  return `${r.pet_id}|${r.kind}|${name}`;
+}
+
+/** Mais recente primeiro: applied_on desc (nulos por último), depois created_at desc, depois id. */
+function petRecency(a: PetHealthRow, b: PetHealthRow): number {
+  const aa = isoDay(a.applied_on);
+  const ba = isoDay(b.applied_on);
+  if (aa !== ba) {
+    if (!aa) return 1;
+    if (!ba) return -1;
+    return ba.localeCompare(aa);
+  }
+  return b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id);
+}
+
+/** Só o registro mais recente de cada grupo vale para avisos (dose nova silencia a antiga). */
+export function latestPetHealth(rows: PetHealthRow[]): PetHealthRow[] {
+  const best = new Map<string, PetHealthRow>();
+  for (const r of rows) {
+    const k = petGroupKey(r);
+    const cur = best.get(k);
+    if (!cur || petRecency(r, cur) < 0) best.set(k, r);
+  }
+  return rows.filter((r) => best.get(petGroupKey(r)) === r);
+}
+
+/** "hoje" ou "amanha" se a data cair hoje ou amanhã (dia de SP); senão null. */
+function dueWhen(next: string | null, today: string): "hoje" | "amanha" | null {
+  if (!next) return null;
+  if (next === today) return "hoje";
+  if (next === addDays(today, 1)) return "amanha";
+  return null;
+}
+
 export function computeDueNotices(
   now: Date,
   medications: MedicationRow[],
   vaccines: VaccineRow[],
+  petHealth: PetHealthRow[] = [],
 ): DueNotice[] {
   const slots = windowSlots(now);
   const notices: DueNotice[] = [];
@@ -139,6 +198,25 @@ export function computeDueNotices(
         body: `Vacina ${vac.name.trim()}${dose ? ` - ${dose}` : ""}${who ? ` de ${who}` : ""}: ${when === "hoje" ? "hoje" : "amanhã"}`,
         url: "/saude/vacinas",
         tag: `vac:${vac.id}:${when}`,
+      });
+    }
+
+    // Pet (vacina, vermífugo, antipulgas, remédio): mesmo horário e mesmas regras das vacinas da família.
+    for (const item of latestPetHealth(petHealth)) {
+      const when = dueWhen(isoDay(item.next_due_on), today);
+      if (!when) continue;
+      const label = PET_KIND_LABEL.get(item.kind);
+      if (!label) continue;
+      const dose = item.dose?.trim();
+      const pet = item.pet_name?.trim() || "Pet";
+      notices.push({
+        key: `pet:${item.id}:${today}:${when}`,
+        kind: "pet",
+        householdId: item.household_id,
+        title: "Pet",
+        body: `${pet}: ${label} ${item.name.trim()}${dose ? ` - ${dose}` : ""}: ${when === "hoje" ? "hoje" : "amanhã"}`,
+        url: "/casa/pet",
+        tag: `pet:${item.id}:${when}`,
       });
     }
   }

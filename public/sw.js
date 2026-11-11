@@ -68,7 +68,7 @@ self.addEventListener("fetch", (event) => {
 // Payload ausente ou inválido vira um aviso genérico (o navegador exige mostrar algo a cada push).
 const GENERIC_TITLE = "Oliveira's: você tem um aviso";
 // Lista fechada de destinos: qualquer outra coisa abre /inicio.
-const NOTIFICATION_PATHS = ["/saude/medicamentos", "/saude/vacinas"];
+const NOTIFICATION_PATHS = ["/saude/medicamentos", "/saude/vacinas", "/casa/pet"];
 
 function cut(v, max) {
   return typeof v === "string" ? v.slice(0, max) : "";

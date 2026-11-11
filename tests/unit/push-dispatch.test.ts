@@ -3,6 +3,7 @@ import {
   computeDueNotices,
   isAllowedPushEndpoint,
   type MedicationRow,
+  type PetHealthRow,
   type VaccineRow,
 } from "../../supabase/functions/push-dispatch/due";
 
@@ -171,6 +172,96 @@ describe("vacina", () => {
   it("omite dose e pessoa ausentes", () => {
     const [n] = computeDueNotices(sp("2026-11-10", "09:00"), [], [vac({ dose_label: null, member_name: null })]);
     expect(n.body).toBe("Vacina Gripe: hoje");
+  });
+});
+
+const petItem = (over: Partial<PetHealthRow> = {}): PetHealthRow => ({
+  id: "p1",
+  household_id: "h1",
+  pet_id: "pet1",
+  kind: "vacina",
+  name: "V10",
+  dose: "Reforço",
+  applied_on: "2025-11-10",
+  next_due_on: "2026-11-10",
+  created_at: "2025-11-10T12:00:00Z",
+  pet_name: "Moisés",
+  ...over,
+});
+
+describe("pet (próxima dose da aba Pet)", () => {
+  it("avisa 'hoje' às 09:00 de São Paulo, com chave, título, texto e url estáveis", () => {
+    const [n] = computeDueNotices(sp("2026-11-10", "09:00"), [], [], [petItem()]);
+    expect(n).toEqual({
+      key: "pet:p1:2026-11-10:hoje",
+      kind: "pet",
+      householdId: "h1",
+      title: "Pet",
+      body: "Moisés: vacina V10 - Reforço: hoje",
+      url: "/casa/pet",
+      tag: "pet:p1:hoje",
+    });
+  });
+
+  it("avisa 'amanhã' na véspera, com chave distinta, e não em outros dias", () => {
+    const [n] = computeDueNotices(sp("2026-11-09", "09:00"), [], [], [petItem()]);
+    expect(n.key).toBe("pet:p1:2026-11-09:amanha");
+    expect(n.body).toBe("Moisés: vacina V10 - Reforço: amanhã");
+    expect(computeDueNotices(sp("2026-11-08", "09:00"), [], [], [petItem()])).toHaveLength(0);
+    expect(computeDueNotices(sp("2026-11-11", "09:00"), [], [], [petItem()])).toHaveLength(0);
+    expect(computeDueNotices(sp("2026-11-10", "09:00"), [], [], [petItem({ next_due_on: null })])).toHaveLength(0);
+  });
+
+  it("janela de 5 min em torno das 09:00, mesma chave em execuções diferentes (idempotência)", () => {
+    const a = computeDueNotices(sp("2026-11-10", "09:00"), [], [], [petItem()]);
+    const b = computeDueNotices(sp("2026-11-10", "09:04", 59), [], [], [petItem()]);
+    expect(a[0].key).toBe(b[0].key);
+    expect(computeDueNotices(sp("2026-11-10", "09:05"), [], [], [petItem()])).toHaveLength(0);
+    expect(computeDueNotices(sp("2026-11-10", "08:59"), [], [], [petItem()])).toHaveLength(0);
+  });
+
+  it("usa o fuso de São Paulo: 09:00 SP = 12:00 UTC; 'amanhã' vira o ano", () => {
+    expect(computeDueNotices(new Date("2026-11-10T12:00:00Z"), [], [], [petItem()])).toHaveLength(1);
+    expect(computeDueNotices(new Date("2026-11-10T09:00:00Z"), [], [], [petItem()])).toHaveLength(0);
+    const [n] = computeDueNotices(sp("2026-12-31", "09:00"), [], [], [petItem({ next_due_on: "2027-01-01" })]);
+    expect(n.key).toBe("pet:p1:2026-12-31:amanha");
+  });
+
+  it("rótulo de cada tipo; sem dose omite; sem nome do pet usa 'Pet'; tipo desconhecido é ignorado", () => {
+    const at = sp("2026-11-10", "09:00");
+    const body = (over: Partial<PetHealthRow>) => computeDueNotices(at, [], [], [petItem(over)])[0]?.body;
+    expect(body({ kind: "vermifugo", name: "Drontal", dose: null })).toBe("Moisés: vermífugo Drontal: hoje");
+    expect(body({ kind: "antipulgas", name: "Bravecto", dose: "1 comprimido" })).toBe("Moisés: antipulgas Bravecto - 1 comprimido: hoje");
+    expect(body({ kind: "remedio", name: "Apoquel" })).toBe("Moisés: remédio Apoquel - Reforço: hoje");
+    expect(body({ pet_name: null })).toBe("Pet: vacina V10 - Reforço: hoje");
+    expect(computeDueNotices(at, [], [], [petItem({ kind: "constructor" }), petItem({ kind: "outro" })])).toHaveLength(0);
+  });
+
+  it("só o registro mais recente de cada (pet, tipo, nome sem acento/maiúscula) avisa", () => {
+    const at = sp("2026-11-10", "09:00");
+    const old = petItem({ id: "old", name: "Antirrábica" });
+    // Dose nova já aplicada (próxima daqui a 1 ano): a antiga não avisa mais.
+    const fresh = petItem({ id: "new", name: " ANTIRRABICA ", applied_on: "2026-11-08", next_due_on: "2027-11-08", created_at: "2026-11-08T12:00:00Z" });
+    expect(computeDueNotices(at, [], [], [old, fresh])).toHaveLength(0);
+    // Dose nova sem próxima data também silencia a antiga.
+    expect(computeDueNotices(at, [], [], [old, { ...fresh, next_due_on: null }])).toHaveLength(0);
+    // Sem data de aplicação vai para o fim: a antiga com aplicação continua valendo.
+    expect(computeDueNotices(at, [], [], [old, { ...fresh, applied_on: null }]).map((n) => n.key)).toEqual(["pet:old:2026-11-10:hoje"]);
+    // Mesma aplicação: vale a criada por último.
+    const twin = petItem({ id: "twin", created_at: "2025-11-11T12:00:00Z", next_due_on: "2026-11-11" });
+    expect(computeDueNotices(at, [], [], [petItem(), twin]).map((n) => n.key)).toEqual(["pet:twin:2026-11-10:amanha"]);
+    // Outro pet, outro tipo ou outro nome são grupos diferentes.
+    const others = [petItem({ id: "x", pet_id: "pet2" }), petItem({ id: "y", kind: "remedio" }), petItem({ id: "z", name: "V8" })];
+    expect(computeDueNotices(at, [], [], [petItem(), ...others])).toHaveLength(4);
+  });
+
+  it("não mexe nos avisos da Saúde e não vaza notas", () => {
+    const row = { ...petItem(), notes: "SEGREDO-PET" } as PetHealthRow;
+    const all = computeDueNotices(sp("2026-11-10", "09:00"), [], [vac()], [row]);
+    expect(all.map((n) => n.kind)).toEqual(["vacina", "pet"]);
+    expect(JSON.stringify(all)).not.toContain("SEGREDO-PET");
+    // Sem o 4º argumento continua igual ao de antes.
+    expect(computeDueNotices(sp("2026-11-10", "09:00"), [], [vac()])).toHaveLength(1);
   });
 });
 

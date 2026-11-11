@@ -103,13 +103,14 @@ describe("estado da tela de avisos", () => {
 
 describe("destino do clique na notificação", () => {
   const O = "https://app.test";
-  it("só aceita as duas páginas da lista, na mesma origem", () => {
+  it("só aceita as páginas da lista, na mesma origem", () => {
+    expect(notificationTarget("/casa/pet", O)).toBe("/casa/pet");
     expect(notificationTarget("/saude/medicamentos", O)).toBe("/saude/medicamentos");
     expect(notificationTarget("/saude/vacinas", O)).toBe("/saude/vacinas");
     expect(notificationTarget("https://app.test/saude/vacinas", O)).toBe("/saude/vacinas");
     expect(notificationTarget("/saude/vacinas?x=1#y", O)).toBe("/saude/vacinas");
   });
-  it.each(["https://evil.test/saude/vacinas", "//evil.test/saude/vacinas", "/saude", "/saude/vacinas/x", "/familia", "javascript:alert(1)", "", null, 5, undefined, {}])("%s vai para /inicio", (u) => {
+  it.each(["https://evil.test/saude/vacinas", "//evil.test/saude/vacinas", "/saude", "/saude/vacinas/x", "/casa/pet/arquivo/saude/x", "/casa", "https://evil.test/casa/pet", "/familia", "javascript:alert(1)", "", null, 5, undefined, {}])("%s vai para /inicio", (u) => {
     expect(notificationTarget(u, O)).toBe("/inicio");
   });
 });
@@ -185,6 +186,7 @@ describe("service worker: push e notificationclick (sw.js executado)", () => {
     for (const [raw, expected] of [
       ["/saude/vacinas", "https://app.test/saude/vacinas"],
       ["/saude/medicamentos", "https://app.test/saude/medicamentos"],
+      ["/casa/pet", "https://app.test/casa/pet"],
       ["https://evil.test/x", "https://app.test/inicio"],
       ["/familia", "https://app.test/inicio"],
       [undefined, "https://app.test/inicio"],
@@ -216,7 +218,7 @@ describe("service worker: strings (nada de cache novo; carteirinhas intactas)", 
     expect(sw).toContain('self.addEventListener("push"');
     expect(sw).toContain('self.addEventListener("notificationclick"');
     expect(sw).toContain('icon: "/icons/icon-192.png"');
-    expect(sw).toContain('const NOTIFICATION_PATHS = ["/saude/medicamentos", "/saude/vacinas"]');
+    expect(sw).toContain('const NOTIFICATION_PATHS = ["/saude/medicamentos", "/saude/vacinas", "/casa/pet"]');
   });
   it("o trecho de push não mexe em cache e a regra do activate segue igual", () => {
     const push = sw.slice(sw.indexOf("Avisos por notificação push"));
