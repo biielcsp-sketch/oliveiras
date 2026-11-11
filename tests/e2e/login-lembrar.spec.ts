@@ -32,7 +32,8 @@ test("lembrar: cookie HttpOnly só com a caixa marcada; sair mostra a tela do us
   await expect(page).toHaveURL(/\/(inicio|bem-vindo)$/);
   const cookie = await rememberedCookie(page);
   expect(cookie?.httpOnly).toBe(true);
-  expect(cookie?.value).toBe(email);
+  // O Next codifica o valor na URL (@ vira %40); o servidor decodifica ao ler.
+  expect(decodeURIComponent(cookie?.value ?? "")).toBe(email);
   expect(cookie?.sameSite).toBe("Lax");
 
   // Conta nova cai em /bem-vindo: cria a família para chegar em /familia, onde fica o "Sair".
