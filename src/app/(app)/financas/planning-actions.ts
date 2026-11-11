@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getAppContext } from "@/lib/data";
 import { parseBRL } from "@/lib/financas/money";
 import { dismissPair, runBaixaAutomatica } from "@/lib/financas/baixa-data";
+import { billReturnPath } from "@/lib/financas/routes";
 
 export type PlanState = { error?: string; ok?: boolean } | null;
 
@@ -21,6 +22,8 @@ const validDate = (v: string) => ISO_DATE.test(v) && new Date(`${v}T12:00:00Z`).
 function refresh() {
   revalidatePath("/financas", "layout");
   revalidatePath("/inicio");
+  // Contas da casa (is_home) aparecem também em /casa e /casa/contas.
+  revalidatePath("/casa", "layout");
 }
 
 /* ---------- Orçamento ---------- */
@@ -84,6 +87,7 @@ export async function saveBill(_: PlanState, form: FormData): Promise<PlanState>
     category_id: uuid(str(form, "category_id")),
     account_id: uuid(str(form, "account_id")),
     active: form.get("inactive") !== "on",
+    is_home: form.get("is_home") === "on",
   };
   const supabase = await createClient();
   const id = uuid(str(form, "id"));
@@ -92,7 +96,7 @@ export async function saveBill(_: PlanState, form: FormData): Promise<PlanState>
     : await supabase.from("fin_bills").insert({ ...data, household_id: household.id });
   if (error) return { error: "Não foi possível salvar a conta." };
   refresh();
-  redirect("/financas/contas-fixas");
+  redirect(billReturnPath(str(form, "voltar")));
 }
 
 export async function deleteBill(form: FormData) {

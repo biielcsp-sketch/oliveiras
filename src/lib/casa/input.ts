@@ -4,15 +4,13 @@
  */
 import { isDate } from "@/lib/agenda/dates";
 import { parseBRL } from "@/lib/financas/money";
-import { FREQUENCIES, INTERVAL_UNITS, type Frequency, type IntervalUnit } from "./types";
+import { DOC_KINDS, FREQUENCIES, INTERVAL_UNITS, MEALS, type DocKind, type Frequency, type IntervalUnit, type Meal } from "./types";
 
 export const LIMITS = {
   name: 120,
   unit: 20,
   category: 40,
-  location: 60,
   shoppingNotes: 300,
-  pantryNotes: 300,
   choreNotes: 500,
   maintNotes: 500,
   provider: 120,
@@ -21,6 +19,19 @@ export const LIMITS = {
   /** numeric(10,2): bem abaixo do limite da coluna. */
   quantityMax: 99999,
   costMax: 9_999_999,
+  docTitle: 120,
+  docProduct: 120,
+  docStore: 120,
+  docNotes: 1000,
+  mealTitle: 120,
+  ingredient: 80,
+  ingredients: 30,
+  mealNotes: 300,
+  providerName: 120,
+  providerService: 80,
+  providerPhone: 30,
+  providerEmail: 120,
+  providerNotes: 500,
 } as const;
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -74,61 +85,6 @@ export function validateShoppingInput(raw: Record<string, unknown>): Ok<Shopping
   const q = parseQuantity(raw.quantity);
   if (q === "x" || (q !== null && (q <= 0 || q > LIMITS.quantityMax))) return fail("Quantidade inválida.");
   return { ok: true, value: { name, quantity: q, unit: orNull(unit), category: orNull(category), notes: orNull(notes) } };
-}
-
-/* ---------- Despensa ---------- */
-
-export type PantryInput = {
-  name: string;
-  quantity: number;
-  min_quantity: number;
-  unit: string | null;
-  category: string | null;
-  location: string | null;
-  expires_on: string | null;
-  notes: string | null;
-};
-
-export function validatePantryInput(raw: Record<string, unknown>): Ok<PantryInput> | Fail {
-  const name = oneLine(raw.name);
-  if (!name) return fail("Informe o item.");
-  const unit = oneLine(raw.unit);
-  const category = oneLine(raw.category);
-  const location = oneLine(raw.location);
-  const notes = clean(raw.notes);
-  const expires = clean(raw.expires_on);
-  const err =
-    tooLong("Item", name, LIMITS.name) ??
-    tooLong("Unidade", unit, LIMITS.unit) ??
-    tooLong("Categoria", category, LIMITS.category) ??
-    tooLong("Local", location, LIMITS.location) ??
-    tooLong("Observações", notes, LIMITS.pantryNotes);
-  if (err) return err;
-  const q = parseQuantity(raw.quantity);
-  if (q === "x" || (q !== null && q > LIMITS.quantityMax)) return fail("Quantidade inválida.");
-  const min = parseQuantity(raw.min_quantity);
-  if (min === "x" || (min !== null && min > LIMITS.quantityMax)) return fail("Mínimo inválido.");
-  if (expires && !isDate(expires)) return fail("Validade inválida.");
-  return {
-    ok: true,
-    value: {
-      name,
-      quantity: q ?? 0,
-      min_quantity: min ?? 0,
-      unit: orNull(unit),
-      category: orNull(category),
-      location: orNull(location),
-      expires_on: orNull(expires),
-      notes: orNull(notes),
-    },
-  };
-}
-
-/** Quantidade comprada para repor na despensa: > 0. */
-export function validateRestockQuantity(v: unknown): Ok<number> | Fail {
-  const q = parseQuantity(typeof v === "number" ? String(v) : v);
-  if (q === null || q === "x" || q <= 0 || q > LIMITS.quantityMax) return fail("Quantidade inválida.");
-  return { ok: true, value: q };
 }
 
 /* ---------- Tarefas domésticas ---------- */
@@ -190,6 +146,8 @@ export type MaintenanceInput = {
   interval_unit: IntervalUnit;
   last_done_on: string | null;
   provider: string | null;
+  /** Só o formato (uuid) é checado aqui; a action confere se o prestador é da família. */
+  provider_id: string | null;
 };
 
 export function validateMaintenanceInput(raw: Record<string, unknown>, today: string): Ok<MaintenanceInput> | Fail {
@@ -206,7 +164,12 @@ export function validateMaintenanceInput(raw: Record<string, unknown>, today: st
   const last = clean(raw.last_done_on);
   if (last && !isDate(last)) return fail("Data da última vez inválida.");
   if (last && last > today) return fail("A última vez não pode ser no futuro.");
-  return { ok: true, value: { name, notes: orNull(notes), interval_value: +v, interval_unit: unit, last_done_on: orNull(last), provider: orNull(provider) } };
+  const providerId = clean(raw.provider_id);
+  if (providerId && !UUID_RE.test(providerId)) return fail("Escolha um prestador da lista.");
+  return {
+    ok: true,
+    value: { name, notes: orNull(notes), interval_value: +v, interval_unit: unit, last_done_on: orNull(last), provider: orNull(provider), provider_id: orNull(providerId.toLowerCase()) },
+  };
 }
 
 export type MaintenanceDoneInput = { done_on: string; cost: number | null; notes: string | null };
@@ -227,4 +190,122 @@ export function validateMaintenanceDone(raw: Record<string, unknown>, today: str
   const err = tooLong("Observações", notes, LIMITS.maintNotes);
   if (err) return err;
   return { ok: true, value: { done_on: date, cost, notes: orNull(notes) } };
+}
+
+/* ---------- Documentos e garantias ---------- */
+
+export type DocumentInput = {
+  kind: DocKind;
+  title: string;
+  product: string | null;
+  store: string | null;
+  purchase_date: string | null;
+  warranty_until: string | null;
+  amount: number | null;
+  notes: string | null;
+};
+
+export function validateDocumentInput(raw: Record<string, unknown>): Ok<DocumentInput> | Fail {
+  const kind = clean(raw.kind) as DocKind;
+  if (!DOC_KINDS.includes(kind)) return fail("Escolha o tipo do documento.");
+  const title = oneLine(raw.title);
+  if (!title) return fail("Informe o título.");
+  const product = oneLine(raw.product);
+  const store = oneLine(raw.store);
+  const notes = clean(raw.notes);
+  const err =
+    tooLong("Título", title, LIMITS.docTitle) ??
+    tooLong("Produto", product, LIMITS.docProduct) ??
+    tooLong("Loja", store, LIMITS.docStore) ??
+    tooLong("Observações", notes, LIMITS.docNotes);
+  if (err) return err;
+  const purchase = clean(raw.purchase_date);
+  const until = clean(raw.warranty_until);
+  if (purchase && !isDate(purchase)) return fail("Data da compra inválida.");
+  if (until && !isDate(until)) return fail("Data da garantia inválida.");
+  if (purchase && until && until < purchase) return fail("A garantia não pode terminar antes da compra.");
+  const amountRaw = clean(raw.amount);
+  let amount: number | null = null;
+  if (amountRaw) {
+    const a = parseBRL(amountRaw);
+    if (a === null || a < 0 || a > LIMITS.costMax) return fail("Valor inválido.");
+    amount = a;
+  }
+  return {
+    ok: true,
+    value: { kind, title, product: orNull(product), store: orNull(store), purchase_date: orNull(purchase), warranty_until: orNull(until), amount, notes: orNull(notes) },
+  };
+}
+
+/* ---------- Cardápio ---------- */
+
+/** Chave de comparação de nomes: sem acento, minúsculas e espaços simples ("Feijão " = "feijao"). */
+export const nameKey = (s: string) =>
+  s
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+
+/** Ingredientes: um por linha; vazios saem, repetidos (sem acento/maiúscula) ficam uma vez. */
+export function parseIngredients(v: unknown): Ok<string[]> | Fail {
+  const lines = clean(v)
+    .split("\n")
+    .map((l) => l.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const l of lines) {
+    if (l.length > LIMITS.ingredient) return fail(`Ingrediente muito longo (máximo ${LIMITS.ingredient}).`);
+    const k = nameKey(l);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(l);
+  }
+  if (out.length > LIMITS.ingredients) return fail(`No máximo ${LIMITS.ingredients} ingredientes.`);
+  return { ok: true, value: out };
+}
+
+export type MealInput = { day: string; meal: Meal; title: string; ingredients: string[]; notes: string | null };
+
+export function validateMealInput(raw: Record<string, unknown>): Ok<MealInput> | Fail {
+  const day = clean(raw.day);
+  if (!isDate(day)) return fail("Dia inválido.");
+  const meal = clean(raw.meal) as Meal;
+  if (!MEALS.includes(meal)) return fail("Refeição inválida.");
+  const title = oneLine(raw.title);
+  if (!title) return fail("Informe o prato.");
+  const notes = clean(raw.notes);
+  const err = tooLong("Prato", title, LIMITS.mealTitle) ?? tooLong("Observações", notes, LIMITS.mealNotes);
+  if (err) return err;
+  const ing = parseIngredients(raw.ingredients);
+  if (!ing.ok) return ing;
+  return { ok: true, value: { day, meal, title, ingredients: ing.value, notes: orNull(notes) } };
+}
+
+/* ---------- Prestadores ---------- */
+
+export type ProviderInput = { name: string; service: string | null; phone: string | null; email: string | null; notes: string | null };
+
+const PHONE_RE = /^[0-9 +()-]+$/;
+const EMAIL_RE = /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+$/;
+
+export function validateProviderInput(raw: Record<string, unknown>): Ok<ProviderInput> | Fail {
+  const name = oneLine(raw.name);
+  if (!name) return fail("Informe o nome.");
+  const service = oneLine(raw.service);
+  const phone = oneLine(raw.phone);
+  const email = clean(raw.email);
+  const notes = clean(raw.notes);
+  const err =
+    tooLong("Nome", name, LIMITS.providerName) ??
+    tooLong("Serviço", service, LIMITS.providerService) ??
+    tooLong("Telefone", phone, LIMITS.providerPhone) ??
+    tooLong("E-mail", email, LIMITS.providerEmail) ??
+    tooLong("Observações", notes, LIMITS.providerNotes);
+  if (err) return err;
+  if (phone && !PHONE_RE.test(phone)) return fail("Telefone só com números, espaços, +, - e parênteses.");
+  if (email && !EMAIL_RE.test(email)) return fail("E-mail inválido.");
+  return { ok: true, value: { name, service: orNull(service), phone: orNull(phone), email: orNull(email), notes: orNull(notes) } };
 }

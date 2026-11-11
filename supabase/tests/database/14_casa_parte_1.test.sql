@@ -1,7 +1,7 @@
--- Casa parte 1: compras, despensa, tarefas (rodízio), manutenções — isolamento
+-- Casa parte 1: compras, tarefas (rodízio), manutenções — isolamento
 -- por família, FKs compostas, trigger do rodízio, checks, updated_at e anon.
 begin;
-select plan(132);
+select plan(108);
 
 insert into auth.users (id, email, aud, role) values
   ('00000000-0000-0000-0000-0000000000c1', 'ca@teste.invalid', 'authenticated', 'authenticated'),
@@ -31,20 +31,15 @@ set local role authenticated;
 
 -- B cria registros próprios (para testar FKs compostas cruzadas) ----------------
 select pg_temp.as_user('00000000-0000-0000-0000-0000000000c2');
-insert into public.casa_pantry_items (household_id, name) values (current_setting('t.hb')::uuid, 'Arroz B');
 insert into public.casa_chores (household_id, name, frequency) values (current_setting('t.hb')::uuid, 'Lixo B', 'diaria');
 insert into public.casa_maintenance (household_id, name, interval_value, interval_unit) values (current_setting('t.hb')::uuid, 'Filtro B', 6, 'meses');
-select set_config('t.pt_b', (select id::text from public.casa_pantry_items), true);
 select set_config('t.ch_b', (select id::text from public.casa_chores), true);
 select set_config('t.mt_b', (select id::text from public.casa_maintenance), true);
 
 -- A: cria e lê -------------------------------------------------------------------
 select pg_temp.as_user('00000000-0000-0000-0000-0000000000c1');
-select lives_ok(format($$ insert into public.casa_pantry_items (household_id, name, quantity, min_quantity, unit, location) values (%L, 'Arroz', 2, 1, 'kg', 'despensa') $$,
-  current_setting('t.ha')), 'A cria item da despensa');
-select set_config('t.pt_a', (select id::text from public.casa_pantry_items), true);
-select lives_ok(format($$ insert into public.casa_shopping_items (household_id, name, quantity, unit, pantry_item_id) values (%L, 'Arroz', 1, 'kg', %L) $$,
-  current_setting('t.ha'), current_setting('t.pt_a')), 'A cria item de compra ligado à despensa');
+select lives_ok(format($$ insert into public.casa_shopping_items (household_id, name, quantity, unit) values (%L, 'Arroz', 1, 'kg') $$,
+  current_setting('t.ha')), 'A cria item de compra');
 select set_config('t.sh_a', (select id::text from public.casa_shopping_items), true);
 select lives_ok(format($$ insert into public.casa_chores (household_id, name, frequency, weekdays, rotation, next_index) values (%L, 'Louça', 'semanal', '{1,3,5}', array[%L, %L]::uuid[], 1) $$,
   current_setting('t.ha'), current_setting('t.ma'), current_setting('t.mc')), 'A cria tarefa semanal com rodízio');
@@ -67,30 +62,25 @@ select is((select active from public.casa_chores), true, 'tarefa nasce ativa');
 
 -- Cônjuge lê e altera (compartilhado) -------------------------------------------
 select pg_temp.as_user('00000000-0000-0000-0000-0000000000c3');
-select is((select count(*)::int from public.casa_pantry_items), 1, 'cônjuge lê despensa');
 select is((select count(*)::int from public.casa_shopping_items), 1, 'cônjuge lê compras');
 select is((select count(*)::int from public.casa_chores), 1, 'cônjuge lê tarefas');
 select is((select count(*)::int from public.casa_chore_log), 1, 'cônjuge lê histórico de tarefas');
 select is((select count(*)::int from public.casa_maintenance), 1, 'cônjuge lê manutenções');
 select is((select count(*)::int from public.casa_maintenance_log), 1, 'cônjuge lê histórico de manutenções');
-select lives_ok(format($$ update public.casa_pantry_items set quantity = 3 where id = %L $$, current_setting('t.pt_a')), 'cônjuge altera despensa');
 select lives_ok(format($$ update public.casa_shopping_items set done = true, done_at = now() where id = %L $$, current_setting('t.sh_a')), 'cônjuge marca compra');
 select lives_ok(format($$ update public.casa_chores set next_index = 0, next_due_on = '2026-11-11' where id = %L $$, current_setting('t.ch_a')), 'cônjuge avança rodízio');
 select lives_ok(format($$ update public.casa_chore_log set done_on = '2026-11-08' where id = %L $$, current_setting('t.cl_a')), 'cônjuge altera histórico de tarefa');
 select lives_ok(format($$ update public.casa_maintenance set last_done_on = '2026-11-01', next_due_on = '2027-05-01' where id = %L $$, current_setting('t.mt_a')), 'cônjuge altera manutenção');
 select lives_ok(format($$ update public.casa_maintenance_log set cost = 200 where id = %L $$, current_setting('t.ml_a')), 'cônjuge altera histórico de manutenção');
-select is((select quantity from public.casa_pantry_items), 3.00::numeric, 'alteração persistiu');
 
 -- B: não lê, não insere, não altera, não apaga --------------------------------
 select pg_temp.as_user('00000000-0000-0000-0000-0000000000c2');
-select is((select count(*)::int from public.casa_pantry_items where household_id = current_setting('t.ha')::uuid), 0, 'B não lê despensa de A');
 select is((select count(*)::int from public.casa_shopping_items), 0, 'B não lê compras de A');
 select is((select count(*)::int from public.casa_chores where household_id = current_setting('t.ha')::uuid), 0, 'B não lê tarefas de A');
 select is((select count(*)::int from public.casa_chore_log), 0, 'B não lê histórico de tarefas de A');
 select is((select count(*)::int from public.casa_maintenance where household_id = current_setting('t.ha')::uuid), 0, 'B não lê manutenções de A');
 select is((select count(*)::int from public.casa_maintenance_log), 0, 'B não lê histórico de manutenções de A');
 
-select throws_ok(format($$ insert into public.casa_pantry_items (household_id, name) values (%L, 'X') $$, current_setting('t.ha')), '42501', null, 'B não insere despensa em A');
 select throws_ok(format($$ insert into public.casa_shopping_items (household_id, name) values (%L, 'X') $$, current_setting('t.ha')), '42501', null, 'B não insere compra em A');
 select throws_ok(format($$ insert into public.casa_chores (household_id, name, frequency) values (%L, 'X', 'diaria') $$, current_setting('t.ha')), '42501', null, 'B não insere tarefa em A');
 select throws_ok(format($$ insert into public.casa_chore_log (household_id, chore_id, done_on) values (%L, %L, '2026-11-01') $$,
@@ -99,7 +89,6 @@ select throws_ok(format($$ insert into public.casa_maintenance (household_id, na
 select throws_ok(format($$ insert into public.casa_maintenance_log (household_id, maintenance_id, done_on) values (%L, %L, '2026-11-01') $$,
   current_setting('t.ha'), current_setting('t.mt_a')), '42501', null, 'B não insere histórico de manutenção em A');
 
-select is_empty(format($$ update public.casa_pantry_items set name = 'hack' where id = %L returning 1 $$, current_setting('t.pt_a')), 'B não altera despensa de A');
 select is_empty(format($$ update public.casa_shopping_items set name = 'hack' where id = %L returning 1 $$, current_setting('t.sh_a')), 'B não altera compra de A');
 select is_empty(format($$ update public.casa_chores set name = 'hack' where id = %L returning 1 $$, current_setting('t.ch_a')), 'B não altera tarefa de A');
 select is_empty(format($$ update public.casa_chore_log set done_on = '2000-01-01' where id = %L returning 1 $$, current_setting('t.cl_a')), 'B não altera histórico de tarefa de A');
@@ -107,7 +96,6 @@ select is_empty(format($$ update public.casa_maintenance set name = 'hack' where
 select is_empty(format($$ update public.casa_maintenance_log set cost = 0 where id = %L returning 1 $$, current_setting('t.ml_a')), 'B não altera histórico de manutenção de A');
 select is_empty(format($$ update public.casa_chores set household_id = %L where id = %L returning 1 $$, current_setting('t.hb'), current_setting('t.ch_a')), 'B não move tarefa de A para B');
 
-select is_empty(format($$ delete from public.casa_pantry_items where id = %L returning 1 $$, current_setting('t.pt_a')), 'B não apaga despensa de A');
 select is_empty(format($$ delete from public.casa_shopping_items where id = %L returning 1 $$, current_setting('t.sh_a')), 'B não apaga compra de A');
 select is_empty(format($$ delete from public.casa_chores where id = %L returning 1 $$, current_setting('t.ch_a')), 'B não apaga tarefa de A');
 select is_empty(format($$ delete from public.casa_chore_log where id = %L returning 1 $$, current_setting('t.cl_a')), 'B não apaga histórico de tarefa de A');
@@ -116,8 +104,6 @@ select is_empty(format($$ delete from public.casa_maintenance_log where id = %L 
 
 -- FKs compostas barram ids de outra família --------------------------------------
 select pg_temp.as_user('00000000-0000-0000-0000-0000000000c1');
-select throws_ok(format($$ insert into public.casa_shopping_items (household_id, name, pantry_item_id) values (%L, 'X', %L) $$,
-  current_setting('t.ha'), current_setting('t.pt_b')), '23503', null, 'FK composta: compra com pantry_item_id de B');
 select throws_ok(format($$ insert into public.casa_chore_log (household_id, chore_id, done_on) values (%L, %L, '2026-11-01') $$,
   current_setting('t.ha'), current_setting('t.ch_b')), '23503', null, 'FK composta: histórico com chore_id de B');
 select throws_ok(format($$ insert into public.casa_chore_log (household_id, chore_id, member_id, done_on) values (%L, %L, %L, '2026-11-01') $$,
@@ -170,13 +156,6 @@ select throws_ok(format($$ update public.casa_maintenance set notes = repeat('x'
 select throws_ok(format($$ update public.casa_maintenance_log set cost = -1 where id = %L $$, current_setting('t.ml_a')), '23514', null, 'histórico: custo negativo');
 select throws_ok(format($$ update public.casa_maintenance_log set notes = repeat('x', 501) where id = %L $$, current_setting('t.ml_a')), '23514', null, 'histórico: notes acima de 500');
 
-select throws_ok(format($$ update public.casa_pantry_items set quantity = -1 where id = %L $$, current_setting('t.pt_a')), '23514', null, 'despensa: quantidade negativa');
-select throws_ok(format($$ update public.casa_pantry_items set min_quantity = -0.01 where id = %L $$, current_setting('t.pt_a')), '23514', null, 'despensa: mínimo negativo');
-select throws_ok(format($$ update public.casa_pantry_items set name = '' where id = %L $$, current_setting('t.pt_a')), '23514', null, 'despensa: nome vazio');
-select throws_ok(format($$ update public.casa_pantry_items set unit = repeat('x', 21) where id = %L $$, current_setting('t.pt_a')), '23514', null, 'despensa: unit acima de 20');
-select throws_ok(format($$ update public.casa_pantry_items set category = repeat('x', 41) where id = %L $$, current_setting('t.pt_a')), '23514', null, 'despensa: category acima de 40');
-select throws_ok(format($$ update public.casa_pantry_items set location = repeat('x', 61) where id = %L $$, current_setting('t.pt_a')), '23514', null, 'despensa: location acima de 60');
-select throws_ok(format($$ update public.casa_pantry_items set notes = repeat('x', 301) where id = %L $$, current_setting('t.pt_a')), '23514', null, 'despensa: notes acima de 300');
 select throws_ok(format($$ update public.casa_shopping_items set quantity = 0 where id = %L $$, current_setting('t.sh_a')), '23514', null, 'compra: quantidade 0');
 select lives_ok(format($$ update public.casa_shopping_items set quantity = null where id = %L $$, current_setting('t.sh_a')), 'compra: quantidade nula aceita');
 select throws_ok(format($$ update public.casa_shopping_items set name = repeat('x', 121) where id = %L $$, current_setting('t.sh_a')), '23514', null, 'compra: nome acima de 120');
@@ -184,14 +163,10 @@ select throws_ok(format($$ update public.casa_shopping_items set unit = repeat('
 select throws_ok(format($$ update public.casa_shopping_items set category = repeat('x', 41) where id = %L $$, current_setting('t.sh_a')), '23514', null, 'compra: category acima de 40');
 select throws_ok(format($$ update public.casa_shopping_items set notes = repeat('x', 301) where id = %L $$, current_setting('t.sh_a')), '23514', null, 'compra: notes acima de 300');
 
--- Índice único: item da despensa pendente só uma vez na lista ---------------------
-select throws_ok(format($$ insert into public.casa_shopping_items (household_id, name, pantry_item_id) values (%L, 'Arroz 2', %L), (%L, 'Arroz 3', %L) $$,
-  current_setting('t.ha'), current_setting('t.pt_a'), current_setting('t.ha'), current_setting('t.pt_a')), '23505', null, 'dois pendentes com o mesmo pantry_item_id recusados');
-select lives_ok(format($$ insert into public.casa_shopping_items (household_id, name, pantry_item_id) values (%L, 'Arroz de novo', %L) $$,
-  current_setting('t.ha'), current_setting('t.pt_a')), 'um feito + um pendente com o mesmo pantry_item_id aceito');
-select throws_ok(format($$ update public.casa_shopping_items set done = false where id = %L $$, current_setting('t.sh_a')), '23505', null, 'desmarcar o feito com outro pendente igual é recusado');
+-- Despensa removida na 0017 (casa_pantry_items, pantry_item_id e o índice único
+-- parcial não existem mais): itens com o mesmo nome continuam permitidos.
 select lives_ok(format($$ insert into public.casa_shopping_items (household_id, name) values (%L, 'Pão'), (%L, 'Pão') $$,
-  current_setting('t.ha'), current_setting('t.ha')), 'itens sem pantry_item_id não são afetados');
+  current_setting('t.ha'), current_setting('t.ha')), 'itens repetidos na lista são aceitos');
 
 -- Member apagado que continua no rodízio ----------------------------------------
 reset role;
@@ -218,24 +193,19 @@ select lives_ok(format($$ update public.casa_chores set rotation = array[%L, %L]
 
 -- trigger updated_at -----------------------------------------------------------
 reset role;
-update public.casa_pantry_items set updated_at = '2000-01-01' where id = current_setting('t.pt_a')::uuid;
 update public.casa_shopping_items set updated_at = '2000-01-01' where id = current_setting('t.sh_a')::uuid;
 update public.casa_chores set updated_at = '2000-01-01' where id = current_setting('t.ch_a')::uuid;
 update public.casa_maintenance set updated_at = '2000-01-01' where id = current_setting('t.mt_a')::uuid;
 set local role authenticated;
 select pg_temp.as_user('00000000-0000-0000-0000-0000000000c1');
-update public.casa_pantry_items set notes = 'Z' where id = current_setting('t.pt_a')::uuid;
 update public.casa_shopping_items set notes = 'Z' where id = current_setting('t.sh_a')::uuid;
 update public.casa_chores set notes = 'Z' where id = current_setting('t.ch_a')::uuid;
 update public.casa_maintenance set notes = 'Z' where id = current_setting('t.mt_a')::uuid;
-select ok((select updated_at > '2000-01-01' from public.casa_pantry_items where id = current_setting('t.pt_a')::uuid), 'trigger atualiza updated_at (despensa)');
 select ok((select updated_at > '2000-01-01' from public.casa_shopping_items where id = current_setting('t.sh_a')::uuid), 'trigger atualiza updated_at (compras)');
 select ok((select updated_at > '2000-01-01' from public.casa_chores where id = current_setting('t.ch_a')::uuid), 'trigger atualiza updated_at (tarefas)');
 select ok((select updated_at > '2000-01-01' from public.casa_maintenance where id = current_setting('t.mt_a')::uuid), 'trigger atualiza updated_at (manutenções)');
 
 -- apagar (membro) e efeitos das FKs ------------------------------------------------
-select lives_ok(format($$ delete from public.casa_pantry_items where id = %L $$, current_setting('t.pt_a')), 'A apaga item da despensa');
-select is((select pantry_item_id from public.casa_shopping_items where id = current_setting('t.sh_a')::uuid), null::uuid, 'compra fica sem pantry_item_id (set null)');
 select lives_ok(format($$ delete from public.casa_shopping_items where id = %L $$, current_setting('t.sh_a')), 'A apaga compra');
 select lives_ok(format($$ delete from public.casa_chores where id = %L $$, current_setting('t.ch_a')), 'A apaga tarefa');
 select is((select count(*)::int from public.casa_chore_log), 0, 'histórico da tarefa apagado em cascata');
@@ -245,7 +215,6 @@ select lives_ok(format($$ delete from public.casa_maintenance where id = %L $$, 
 -- anon ----------------------------------------------------------------------------
 reset role;
 set local role anon;
-select throws_ok($$ select count(*) from public.casa_pantry_items $$, '42501', null, 'anon não lê despensa');
 select throws_ok($$ select count(*) from public.casa_shopping_items $$, '42501', null, 'anon não lê compras');
 select throws_ok($$ select count(*) from public.casa_chores $$, '42501', null, 'anon não lê tarefas');
 select throws_ok($$ select count(*) from public.casa_chore_log $$, '42501', null, 'anon não lê histórico de tarefas');
@@ -255,7 +224,7 @@ reset role;
 select ok(not has_table_privilege('anon', 'public.' || t, 'select,insert,update,delete')
   and not has_table_privilege('authenticated', 'public.' || t, 'truncate,references,trigger'),
   'grants corretos em ' || t)
-from unnest(array['casa_pantry_items','casa_shopping_items','casa_chores','casa_chore_log',
+from unnest(array['casa_shopping_items','casa_chores','casa_chore_log',
   'casa_maintenance','casa_maintenance_log']) as t;
 select ok(not has_function_privilege('authenticated', 'public.casa_touch()', 'execute')
   and not has_function_privilege('anon', 'public.casa_chores_check()', 'execute'),

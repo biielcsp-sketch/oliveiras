@@ -1,11 +1,16 @@
 import Link from "next/link";
-import { ListChecks, Package, ShoppingCart, Wrench, type LucideIcon } from "lucide-react";
+import { FileText, ListChecks, Phone, Receipt, ShoppingCart, UtensilsCrossed, Wrench, type LucideIcon } from "lucide-react";
 import { getAppContext } from "@/lib/data";
 import { createClient } from "@/lib/supabase/server";
 import { toSpDate } from "@/lib/agenda/dates";
 import { Card } from "@/components/ui";
-import { num } from "@/lib/casa/types";
-import { choreBuckets, expiryStatus, isLow, maintenanceStatus } from "@/lib/casa/view";
+import { choreBuckets, maintenanceStatus } from "@/lib/casa/view";
+import { homeBillCounts, homeBillsForMonth } from "@/lib/casa/contas";
+import { warrantyAlerts } from "@/lib/casa/docs";
+import { MEALS, MEAL_LABEL, type Meal } from "@/lib/casa/types";
+import { getBillPayments, getBills } from "@/lib/financas/planning-data";
+import { getConfirmedBillDocs } from "@/lib/financas/documentos/data";
+import { currentMonth } from "@/lib/financas/period";
 
 export const metadata = { title: "Casa" };
 
@@ -31,26 +36,32 @@ function Tile({ href, icon: Icon, title, lines, testId }: { href: string; icon: 
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** Resumo da Casa: lista de compras, despensa, tarefas de hoje/atrasadas e manutenções vencidas. */
+/** Resumo da Casa: compras, tarefas, manutenções, contas da casa do mês, garantias, cardápio de hoje e prestadores. */
 export default async function Page() {
   const ctx = await getAppContext();
   const db = await createClient();
   const hh = ctx.household.id;
   const today = toSpDate(new Date());
-  const [shopping, pantry, chores, maint] = await Promise.all([
+  const month = currentMonth();
+  const [shopping, chores, maint, bills, payments, billDocs, docs, meals, providers] = await Promise.all([
     db.from("casa_shopping_items").select("id", { count: "exact", head: true }).eq("household_id", hh).eq("done", false),
-    db.from("casa_pantry_items").select("quantity, min_quantity, expires_on").eq("household_id", hh).limit(1000),
     db.from("casa_chores").select("active, next_due_on").eq("household_id", hh).eq("active", true).limit(500),
     db.from("casa_maintenance").select("next_due_on").eq("household_id", hh).eq("active", true).limit(500),
+    getBills(),
+    getBillPayments(month),
+    getConfirmedBillDocs(month),
+    db.from("casa_documents").select("warranty_until").eq("household_id", hh).not("warranty_until", "is", null).limit(1000),
+    db.from("casa_meal_plan").select("meal, title").eq("household_id", hh).eq("day", today).limit(10),
+    db.from("casa_providers").select("id", { count: "exact", head: true }).eq("household_id", hh),
   ]);
 
-  const pantryRows = (pantry.data ?? []).map((p) => ({ quantity: num(p.quantity) ?? 0, min_quantity: num(p.min_quantity) ?? 0, expires_on: p.expires_on as string | null }));
-  const low = pantryRows.filter(isLow).length;
-  const expiring = pantryRows.filter((p) => expiryStatus(p.expires_on, today)).length;
   const b = choreBuckets((chores.data ?? []) as { active: boolean; next_due_on: string | null }[], today);
   const mStatus = (maint.data ?? []).map((m) => maintenanceStatus(m.next_due_on as string | null, today));
   const overdueM = mStatus.filter((s) => s === "vencida").length;
   const soonM = mStatus.filter((s) => s === "em-breve").length;
+  const billCounts = homeBillCounts(homeBillsForMonth({ bills, payments, docs: billDocs, month, today }));
+  const w = warrantyAlerts((docs.data ?? []) as { warranty_until: string | null }[], today);
+  const todayMeals = ((meals.data ?? []) as { meal: Meal; title: string }[]).sort((a, b) => MEALS.indexOf(a.meal) - MEALS.indexOf(b.meal));
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
@@ -60,13 +71,6 @@ export default async function Page() {
         title="Lista de compras"
         testId="resumo-compras"
         lines={[shopping.count ? plural(shopping.count, "item para comprar", "itens para comprar") : "Nada para comprar."]}
-      />
-      <Tile
-        href="/casa/despensa"
-        icon={Package}
-        title="Despensa"
-        testId="resumo-despensa"
-        lines={low || expiring ? [plural(low, "item acabando", "itens acabando"), plural(expiring, "item vencendo", "itens vencendo")] : ["Tudo em dia."]}
       />
       <Tile
         href="/casa/tarefas"
@@ -81,6 +85,42 @@ export default async function Page() {
         title="Manutenção"
         testId="resumo-manutencao"
         lines={[plural(overdueM, "vencida", "vencidas"), plural(soonM, "nos próximos 15 dias", "nos próximos 15 dias")]}
+      />
+      <Tile
+        href="/casa/contas"
+        icon={Receipt}
+        title="Contas da casa"
+        testId="resumo-contas"
+        lines={
+          billCounts.open || billCounts.late
+            ? [plural(billCounts.open, "em aberto", "em aberto"), plural(billCounts.late, "atrasada", "atrasadas")]
+            : ["Nenhuma conta em aberto no mês."]
+        }
+      />
+      <Tile
+        href="/casa/documentos"
+        icon={FileText}
+        title="Documentos"
+        testId="resumo-documentos"
+        lines={
+          w.soon.length || w.expired.length
+            ? [plural(w.soon.length, "garantia vencendo", "garantias vencendo"), plural(w.expired.length, "garantia vencida", "garantias vencidas")]
+            : ["Nenhuma garantia vencendo."]
+        }
+      />
+      <Tile
+        href="/casa/cardapio"
+        icon={UtensilsCrossed}
+        title="Cardápio"
+        testId="resumo-cardapio"
+        lines={todayMeals.length ? todayMeals.map((m) => `${MEAL_LABEL[m.meal]}: ${m.title}`) : ["Nada planejado para hoje."]}
+      />
+      <Tile
+        href="/casa/prestadores"
+        icon={Phone}
+        title="Prestadores"
+        testId="resumo-prestadores"
+        lines={[providers.count ? plural(providers.count, "contato", "contatos") : "Nenhum contato ainda."]}
       />
     </div>
   );

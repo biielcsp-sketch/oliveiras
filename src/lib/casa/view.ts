@@ -1,50 +1,8 @@
 /** Regras de exibição da Casa (funções puras, testadas em tests/unit/casa.test.ts). Datas "AAAA-MM-DD" de São Paulo. */
 import { diffDays } from "@/lib/agenda/dates";
 
-export const EXPIRING_DAYS = 7;
 export const MAINTENANCE_SOON_DAYS = 15;
 export const NO_CATEGORY = "Sem categoria";
-
-/** "Acabando": quantidade no mínimo ou abaixo. */
-export const isLow = (p: { quantity: number; min_quantity: number }) => p.quantity <= p.min_quantity;
-
-/** Validade: "vencido" (antes de hoje), "vencendo" (hoje até 7 dias) ou null. */
-export function expiryStatus(expiresOn: string | null, today: string): "vencido" | "vencendo" | null {
-  if (!expiresOn) return null;
-  const days = diffDays(today, expiresOn);
-  if (days < 0) return "vencido";
-  if (days <= EXPIRING_DAYS) return "vencendo";
-  return null;
-}
-
-/**
- * Adicionar à lista de compras quando o item da despensa fica no mínimo ou abaixo.
- * Não adiciona se já houver item pendente ligado a ele, nem quando a quantidade está subindo (reposição).
- * `before` null = item novo.
- */
-export function shouldAutoAdd(o: { before: number | null; after: number; min: number; hasPending: boolean }) {
-  if (o.hasPending) return false;
-  if (o.after > o.min) return false;
-  if (o.before !== null && o.after > o.before) return false;
-  return true;
-}
-
-/**
- * Resultado do insert automático na lista. 23505 = o índice único parcial (casa_shopping_pantry_pending_uq)
- * barrou um segundo item pendente ligado ao mesmo item da despensa (ex.: dois celulares ao mesmo tempo): já está na lista.
- */
-export function autoAddOutcome(errorCode: string | null | undefined): "added" | "already" | "failed" {
-  if (!errorCode) return "added";
-  return errorCode === "23505" ? "already" : "failed";
-}
-
-/**
- * Erro ao marcar/desmarcar. 23505 ao desmarcar: já existe outro item pendente ligado ao mesmo item da despensa
- * (índice único parcial). Escolha: não desmarca e avisa; o comprado continua em "Comprados" (nada é apagado).
- */
-export function toggleErrorMessage(errorCode: string | null | undefined) {
-  return errorCode === "23505" ? "Este item já está na lista." : "Não foi possível atualizar.";
-}
 
 /** Itens pendentes agrupados por categoria (ordem alfabética, "Sem categoria" por último) e os comprados à parte. */
 export function groupShopping<T extends { category: string | null; done: boolean; name: string }>(items: T[]) {
