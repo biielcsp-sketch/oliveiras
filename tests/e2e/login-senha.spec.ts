@@ -112,5 +112,6 @@ test("redefinir senha: validações, nova senha e login com ela", async ({ page 
   await page.getByLabel("E-mail").fill(email);
   await page.getByLabel("Senha").fill(NOVA);
   await page.locator("form").getByRole("button", { name: "Entrar", exact: true }).click();
-  await expect(page).toHaveURL(/\/inicio$/);
+  // Conta recém-criada ainda não tem família: o Início leva ao /bem-vindo. Qualquer um dos dois prova que entrou.
+  await expect(page).toHaveURL(/\/(inicio|bem-vindo)$/);
 });
