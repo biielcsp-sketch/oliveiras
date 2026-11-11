@@ -6,7 +6,7 @@ import { Button, Card, EmptyState, Field, FormError, Input, Textarea } from "@/c
 import { Modal } from "@/components/modal";
 import { LIMITS } from "@/lib/casa/input";
 import { groupShopping, qtyLabel } from "@/lib/casa/view";
-import { clearDoneShopping, deleteShoppingItem, restockPantry, saveShoppingItem, toggleShoppingItem, type CasaState, type ToggleResult } from "../actions";
+import { clearDoneShopping, deleteShoppingItem, saveShoppingItem, toggleShoppingItem, type CasaState } from "../actions";
 import { ConfirmDelete, Feedback, smallBtn, useOnSaved, useRunner } from "./shared";
 
 export type ShoppingVM = {
@@ -17,10 +17,7 @@ export type ShoppingVM = {
   category: string | null;
   notes: string | null;
   done: boolean;
-  fromPantry: boolean;
 };
-
-type Restock = NonNullable<ToggleResult["restock"]>;
 
 function DetailFields({ item, categories }: { item?: ShoppingVM; categories: string[] }) {
   return (
@@ -112,39 +109,8 @@ function EditForm({ item, categories, onDone }: { item: ShoppingVM; categories: 
   );
 }
 
-function RestockCard({ r, onClose, run, pending }: { r: Restock; onClose: () => void; run: ReturnType<typeof useRunner>["run"]; pending: boolean }) {
-  const [qty, setQty] = useState(String(r.quantity).replace(".", ","));
-  return (
-    <Card tone="hero" role="group" aria-label={`Repor ${r.name} na despensa`}>
-      <p className="font-medium">Repor “{r.name}” na despensa?</p>
-      <div className="mt-3 flex flex-wrap items-end gap-2">
-        <label className="flex flex-col gap-1">
-          <span className="text-[13px]">Quantidade comprada{r.unit ? ` (${r.unit})` : ""}</span>
-          <Input value={qty} onChange={(e) => setQty(e.target.value)} inputMode="decimal" className="w-32" aria-label="Quantidade comprada" />
-        </label>
-        <Button
-          type="button"
-          variant="ghost"
-          className="h-12 px-4"
-          disabled={pending}
-          onClick={async () => {
-            const res = await run(() => restockPantry(r.shoppingItemId, qty), `${r.name} reposto na despensa.`);
-            if (res.ok) onClose();
-          }}
-        >
-          Repor na despensa
-        </Button>
-        <Button type="button" variant="ghost" className="h-12 px-4" onClick={onClose}>
-          Agora não
-        </Button>
-      </div>
-    </Card>
-  );
-}
-
 export function ShoppingView({ items, categories }: { items: ShoppingVM[]; categories: string[] }) {
   const [editing, setEditing] = useState<ShoppingVM | null>(null);
-  const [restock, setRestock] = useState<Restock | null>(null);
   const { notice, setNotice, error, pending, run } = useRunner();
   // Marcação otimista por item: vale só enquanto o servidor ainda mostra o valor de antes do clique (`from`).
   const [optimistic, setOptimistic] = useState<Record<string, { from: boolean; to: boolean }>>({});
@@ -158,8 +124,7 @@ export function ShoppingView({ items, categories }: { items: ShoppingVM[]; categ
     const from = items.find((i) => i.id === x.id)?.done ?? x.done;
     setOptimistic((o) => ({ ...o, [x.id]: { from, to: !x.done } }));
     const r = await run(() => toggleShoppingItem(x.id, !x.done));
-    if (r.ok) setRestock(r.restock ?? null);
-    else
+    if (!r.ok)
       setOptimistic((o) => {
         const next = { ...o };
         delete next[x.id];
@@ -184,7 +149,6 @@ export function ShoppingView({ items, categories }: { items: ShoppingVM[]; categ
             {qty && <span className="font-normal text-muted"> · {qty}</span>}
           </p>
           {x.notes && <p className="whitespace-pre-wrap text-sm text-muted">{x.notes}</p>}
-          {x.fromPantry && !x.done && <p className="text-xs text-muted">Da despensa</p>}
         </div>
         <Button type="button" variant="ghost" className={smallBtn} aria-label={`Editar ${x.name}`} onClick={() => setEditing(x)}>
           Editar
@@ -198,7 +162,6 @@ export function ShoppingView({ items, categories }: { items: ShoppingVM[]; categ
     <div className="flex flex-col gap-6">
       <QuickAdd categories={categories} onSaved={(m) => setNotice(m ?? null)} />
       <Feedback notice={notice} error={error} />
-      {restock && <RestockCard r={restock} onClose={() => setRestock(null)} run={run} pending={pending} />}
       {items.length === 0 && <EmptyState title="A lista está vazia.">Adicione o que precisa comprar; os dois celulares veem a mesma lista.</EmptyState>}
       {groups.map((g) => (
         <section key={g.category} aria-label={g.category}>

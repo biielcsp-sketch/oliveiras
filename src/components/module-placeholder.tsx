@@ -7,7 +7,6 @@ import {
   FileText,
   HeartHandshake,
   ListChecks,
-  Package,
   Phone,
   Receipt,
   ShoppingCart,
@@ -27,7 +26,6 @@ type Planned = { key: string; label: string; detail: string; icon: LucideIcon };
 const PLANNED: Record<"casa" | "ministerio", Planned[]> = {
   casa: [
     { key: "compras", label: "Compras", detail: "Lista de compras", icon: ShoppingCart },
-    { key: "despensa", label: "Despensa", detail: "Despensa e estoque", icon: Package },
     { key: "tarefas", label: "Tarefas", detail: "Tarefas domésticas com rodízio", icon: ListChecks },
     { key: "manutencao", label: "Manutenção", detail: "Manutenção recorrente", icon: Wrench },
     { key: "contas", label: "Contas fixas", detail: "Contas fixas da casa", icon: Receipt },

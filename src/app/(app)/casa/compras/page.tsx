@@ -18,7 +18,6 @@ export default async function Page() {
     category: x.category,
     notes: x.notes,
     done: x.done,
-    fromPantry: !!x.pantry_item_id,
   }));
   const categories = [...new Set(rows.map((x) => x.category).filter((c): c is string => !!c))].sort((a, b) => a.localeCompare(b, "pt-BR"));
   return <ShoppingView items={items} categories={categories} />;

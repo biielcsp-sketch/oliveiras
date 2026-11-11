@@ -19,13 +19,13 @@ async function createFamily(page: Page, tag: string, dependent?: string) {
 const status = (page: Page, text: string | RegExp) => page.getByRole("status").filter({ hasText: text });
 
 test("Casa sem login redireciona para /login", async ({ page }) => {
-  for (const path of ["/casa", "/casa/compras", "/casa/despensa", "/casa/tarefas", "/casa/manutencao"]) {
+  for (const path of ["/casa", "/casa/compras", "/casa/tarefas", "/casa/manutencao"]) {
     await page.goto(path);
     await expect(page).toHaveURL(/\/login$/);
   }
 });
 
-test("Casa: compras, despensa, tarefas com rodízio e manutenção (isolada de outra família)", async ({ browser }) => {
+test("Casa: compras, tarefas com rodízio e manutenção (isolada de outra família)", async ({ browser }) => {
   test.setTimeout(240_000);
   const ctxA = await browser.newContext();
   const a = await ctxA.newPage();
@@ -81,110 +81,27 @@ test("Casa: compras, despensa, tarefas com rodízio e manutenção (isolada de o
     await expect(a.getByTestId("item-compra")).toHaveCount(0);
   });
 
-  await test.step("despensa: baixar até o mínimo põe na lista uma vez só; repor soma", async () => {
-    await a.goto("/casa/despensa");
-    await a.getByRole("button", { name: "Novo item" }).click();
-    const d = a.getByRole("dialog", { name: "Novo item da despensa" });
-    await d.getByLabel("Item", { exact: true }).fill("Café");
-    await d.getByLabel("Quantidade", { exact: true }).fill("2");
-    await d.getByLabel("Mínimo").fill("1");
-    await d.getByLabel("Unidade").fill("pacote");
-    await d.getByLabel("Validade").fill(addDays(today, 3));
-    await d.getByRole("button", { name: "Salvar item" }).click();
-    await expect(status(a, "Item salvo na despensa.")).toBeVisible();
-    const cafe = a.getByTestId("item-despensa").filter({ hasText: "Café" });
-    await expect(cafe).toContainText("Vence em 3 dias");
-    await expect(cafe).not.toContainText("Acabando");
-
-    await cafe.getByRole("button", { name: "Diminuir Café" }).click();
-    await expect(status(a, "Café está acabando: foi para a lista de compras.")).toBeVisible();
-    await expect(cafe.getByLabel("Quantidade de Café")).toHaveText("1");
-    await expect(cafe).toContainText("Acabando");
-    await cafe.getByRole("button", { name: "Diminuir Café" }).click();
-    await expect(cafe.getByLabel("Quantidade de Café")).toHaveText("0");
-    await expect(cafe).toContainText("Acabou");
-
+  await test.step("lista: dois aparelhos marcam o mesmo item ao mesmo tempo (sem erro e sem duplicar)", async () => {
     await a.goto("/casa/compras");
-    await expect(a.getByRole("checkbox", { name: "Café" })).toHaveCount(1); // sem duplicar
-    await expect(a.getByTestId("item-compra").filter({ hasText: "Café" })).toContainText("Da despensa");
-
+    const add = a.getByRole("form", { name: "Adicionar à lista" });
+    await add.getByLabel("Item", { exact: true }).fill("Café");
+    await add.getByRole("button", { name: "Adicionar" }).click();
+    await expect(status(a, "Café adicionado à lista.")).toBeVisible();
     await a.goto("/casa");
     await expect(a.getByTestId("resumo-compras")).toContainText("1 item para comprar");
-    await expect(a.getByTestId("resumo-despensa")).toContainText("1 item acabando");
-    await expect(a.getByTestId("resumo-despensa")).toContainText("1 item vencendo");
 
-    // Dois aparelhos marcam "Café" ao mesmo tempo: só um recebe a sugestão de repor.
     const a2 = await ctxA.newPage();
     await Promise.all([a.goto("/casa/compras"), a2.goto("/casa/compras")]);
     await Promise.all([a.getByRole("checkbox", { name: "Café" }).click(), a2.getByRole("checkbox", { name: "Café" }).click()]);
-    const offer = (p: Page) => p.getByRole("group", { name: "Repor Café na despensa" });
     await expect(a.getByRole("region", { name: "Comprados" })).toContainText("Café");
     await expect(a2.getByRole("region", { name: "Comprados" })).toContainText("Café");
-    await expect.poll(async () => (await offer(a).count()) + (await offer(a2).count())).toBe(1);
-    const owner = (await offer(a).count()) ? a : a2;
-    const other = owner === a ? a2 : a;
-    // O outro aparelho desmarca e marca de novo: agora os dois têm a sugestão de repor do mesmo item.
-    const otherBought = other.getByRole("region", { name: "Comprados" }).getByRole("checkbox", { name: "Café" });
-    await otherBought.click();
-    await expect(other.getByRole("region", { name: "Comprados" })).toHaveCount(0);
-    await other.getByRole("checkbox", { name: "Café" }).click();
-    await expect(offer(other)).toBeVisible();
-    await offer(owner).getByLabel("Quantidade comprada").fill("3");
-    await offer(other).getByLabel("Quantidade comprada").fill("3");
-    // Os dois tocam em "Repor" juntos: soma uma vez só.
-    await Promise.all([
-      offer(owner).getByRole("button", { name: "Repor na despensa" }).click(),
-      offer(other).getByRole("button", { name: "Repor na despensa" }).click(),
-    ]);
-    const okCount = async () => (await status(a, "Café reposto na despensa.").count()) + (await status(a2, "Café reposto na despensa.").count());
-    await expect.poll(okCount).toBe(1);
-    await expect.poll(async () => (await a.getByText("Este item já foi reposto.").count()) + (await a2.getByText("Este item já foi reposto.").count())).toBe(1);
+    await expect(a.getByText(/Não foi possível|não encontrado/)).toHaveCount(0);
+    await expect(a2.getByText(/Não foi possível|não encontrado/)).toHaveCount(0);
     await a2.close();
-    await a.goto("/casa/despensa");
-    await expect(a.getByTestId("item-despensa").filter({ hasText: "Café" }).getByLabel("Quantidade de Café")).toHaveText("3");
-
-    // Comprado e reposto sai da lista; baixa até o mínimo de novo → novo Café pendente.
-    await a.goto("/casa/compras");
+    await a.reload();
+    await expect(a.getByRole("checkbox", { name: "Café" })).toHaveCount(1);
     await a.getByRole("button", { name: "Limpar comprados" }).click();
     await expect(a.getByRole("checkbox", { name: "Café" })).toHaveCount(0);
-    await a.goto("/casa/despensa");
-    const cafe3 = a.getByTestId("item-despensa").filter({ hasText: "Café" });
-    await cafe3.getByRole("button", { name: "Diminuir Café" }).click();
-    await expect(cafe3.getByLabel("Quantidade de Café")).toHaveText("2");
-    await cafe3.getByRole("button", { name: "Diminuir Café" }).click();
-    await expect(status(a, "Café está acabando: foi para a lista de compras.")).toBeVisible();
-
-    // Marca comprado sem repor (continua ligado), baixa de novo → outro pendente; desmarcar o comprado não duplica.
-    await a.goto("/casa/compras");
-    await a.getByRole("checkbox", { name: "Café" }).check();
-    await offer(a).getByRole("button", { name: "Agora não" }).click();
-    await a.goto("/casa/despensa");
-    await cafe3.getByRole("button", { name: "Diminuir Café" }).click();
-    await expect(status(a, "Café está acabando: foi para a lista de compras.")).toBeVisible();
-    await a.goto("/casa/compras");
-    const bought = a.getByRole("region", { name: "Comprados" }).getByRole("checkbox", { name: "Café" });
-    await bought.click();
-    await expect(a.getByText("Este item já está na lista.")).toBeVisible();
-    await expect(bought).toBeChecked();
-    await expect(a.getByRole("checkbox", { name: "Café", checked: false })).toHaveCount(1);
-  });
-
-  await test.step("despensa: editar com a quantidade alterada em outro aparelho avisa e não grava", async () => {
-    await a.goto("/casa/despensa");
-    const cafe = a.getByTestId("item-despensa").filter({ hasText: "Café" });
-    await cafe.getByRole("button", { name: "Editar" }).click();
-    const d = a.getByRole("dialog", { name: "Editar item" });
-    const other = await ctxA.newPage();
-    await other.goto("/casa/despensa");
-    await other.getByRole("button", { name: "Aumentar Café" }).click();
-    await expect(other.getByLabel("Quantidade de Café")).toHaveText("1");
-    await other.close();
-    await d.getByLabel("Item", { exact: true }).fill("Café torrado");
-    await d.getByRole("button", { name: "Salvar alterações" }).click();
-    await expect(d.getByText("A quantidade mudou em outro aparelho.", { exact: false })).toBeVisible();
-    await d.getByRole("button", { name: "Fechar" }).click();
-    await expect(cafe.getByLabel("Quantidade de Café")).toHaveText("1");
-    await expect(a.getByText("Café torrado")).toHaveCount(0);
   });
 
   await test.step("tarefa com rodízio de 2 pessoas: Feita alterna o responsável; pular a vez", async () => {
@@ -260,7 +177,7 @@ test("Casa: compras, despensa, tarefas com rodízio e manutenção (isolada de o
     await d.getByLabel("Unidade").selectOption("meses");
     const last = addDays(today, -200);
     await d.getByLabel("Última vez feita").fill(last);
-    await d.getByLabel("Prestador").fill("Loja do Filtro");
+    await d.getByLabel("Prestador (texto livre)").fill("Loja do Filtro");
     await d.getByRole("button", { name: "Salvar manutenção" }).click();
     await expect(status(a, "Manutenção salva.")).toBeVisible();
     const card = a.getByTestId("manutencao").filter({ hasText: "Filtro de água" });
@@ -297,8 +214,6 @@ test("Casa: compras, despensa, tarefas com rodízio e manutenção (isolada de o
     await expect(b.getByTestId("resumo-tarefas")).toContainText("0 tarefas para hoje");
     await b.goto("/casa/compras");
     await expect(b.getByText("A lista está vazia.")).toBeVisible();
-    await b.goto("/casa/despensa");
-    await expect(b.getByText("A despensa está vazia.")).toBeVisible();
     await b.goto("/casa/tarefas");
     await expect(b.getByText("Nenhuma tarefa ainda.")).toBeVisible();
     await b.goto("/casa/manutencao");

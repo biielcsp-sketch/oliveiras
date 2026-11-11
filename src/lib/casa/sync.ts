@@ -7,80 +7,20 @@ import { advanceRotation, completeChore as completeCalc, type ChoreSchedule } fr
 
 type Fail = { ok: false; erro: string };
 
-/* ---------- Quantidade da despensa (+/−, repor) ---------- */
+/* ---------- Lista de compras: marcar comprado ---------- */
 
-export type QtyRow = { quantity: number; min_quantity: number };
-export type QtyRepo<R extends QtyRow> = {
-  read(): Promise<R | null>;
-  /** Grava `next` só se a quantidade ainda for `expected`. null = ninguém casou (mudou no meio); "error" = falha. */
-  writeIf(expected: number, next: number): Promise<R | null | "error">;
-};
-
-export const MAX_QTY_ATTEMPTS = 3;
-
-/** Soma `delta` (nunca abaixo de 0) com controle otimista: relê e tenta de novo se outro aparelho gravou no meio. */
-export async function changeQuantityWith<R extends QtyRow>(repo: QtyRepo<R>, delta: number, max: number): Promise<{ ok: true; row: R; before: number } | Fail> {
-  for (let i = 0; i < MAX_QTY_ATTEMPTS; i++) {
-    const cur = await repo.read();
-    if (!cur) return { ok: false, erro: "Item não encontrado." };
-    const before = Number(cur.quantity);
-    const after = Math.max(0, Math.round((before + delta) * 100) / 100);
-    if (after > max) return { ok: false, erro: "Quantidade inválida." };
-    if (after === before) return { ok: true, row: cur, before };
-    const w = await repo.writeIf(before, after);
-    if (w === "error") return { ok: false, erro: "Não foi possível atualizar." };
-    if (w) return { ok: true, row: w, before };
-  }
-  return { ok: false, erro: "O item mudou em outro aparelho. Tente de novo." };
-}
-
-/* ---------- Lista de compras: marcar comprado e repor ---------- */
-
-export type ToggleRow = { name: string; quantity: number | null; unit: string | null; pantry_item_id: string | null };
 export type ToggleRepo = {
-  /** Muda `done` só se ainda estiver no valor oposto. null = nada mudou; { code } = erro do banco. */
-  updateIf(done: boolean): Promise<ToggleRow | null | { code?: string }>;
+  /** Muda `done` só se ainda estiver no valor oposto. true = esta chamada mudou; false = nada mudou; { code } = erro do banco. */
+  updateIf(done: boolean): Promise<boolean | { code?: string }>;
   exists(): Promise<boolean>;
 };
 
-/**
- * Marca/desmarca uma vez só: se o outro aparelho já marcou, `changed` = false (sem sugestão de repor duplicada).
- * `row` só vem quando esta chamada mudou a linha.
- */
-export async function toggleOnce(repo: ToggleRepo, done: boolean, errorMessage: (code?: string) => string): Promise<{ ok: true; changed: boolean; row?: ToggleRow } | Fail> {
+/** Marca/desmarca uma vez só: se o outro aparelho já marcou, `changed` = false (sem erro na tela). */
+export async function toggleOnce(repo: ToggleRepo, done: boolean): Promise<{ ok: true; changed: boolean } | Fail> {
   const r = await repo.updateIf(done);
-  if (r && "code" in r) return { ok: false, erro: errorMessage(r.code) };
-  if (r) return { ok: true, changed: true, row: r as ToggleRow };
+  if (typeof r === "object") return { ok: false, erro: "Não foi possível atualizar." };
+  if (r) return { ok: true, changed: true };
   return (await repo.exists()) ? { ok: true, changed: false } : { ok: false, erro: "Item não encontrado." };
-}
-
-export type RestockRepo = {
-  /** Item da lista: precisa estar comprado e ainda ligado à despensa. */
-  readItem(): Promise<{ done: boolean; pantry_item_id: string | null } | null>;
-  /** Desliga o item da despensa só se ainda estiver ligado a `pantryId`. true = esta chamada desligou. */
-  unlinkIf(pantryId: string): Promise<boolean | "error">;
-  relink(pantryId: string): Promise<void>;
-  add(pantryId: string, qty: number): Promise<{ ok: boolean; erro?: string }>;
-};
-
-/**
- * Repor na despensa uma vez por item da lista: quem desligar o vínculo primeiro soma; o segundo não soma de novo.
- * Se a soma falhar, o vínculo volta (dá para tentar outra vez).
- */
-export async function restockOnce(repo: RestockRepo, qty: number): Promise<{ ok: true } | Fail> {
-  const item = await repo.readItem();
-  if (!item) return { ok: false, erro: "Item não encontrado." };
-  if (!item.done || !item.pantry_item_id) return { ok: false, erro: "Este item já foi reposto." };
-  const pantryId = item.pantry_item_id;
-  const unlinked = await repo.unlinkIf(pantryId);
-  if (unlinked === "error") return { ok: false, erro: "Não foi possível repor." };
-  if (!unlinked) return { ok: false, erro: "Este item já foi reposto." };
-  const r = await repo.add(pantryId, qty);
-  if (!r.ok) {
-    await repo.relink(pantryId);
-    return { ok: false, erro: r.erro ?? "Não foi possível repor." };
-  }
-  return { ok: true };
 }
 
 /* ---------- Tarefas: Feita e pular a vez ---------- */

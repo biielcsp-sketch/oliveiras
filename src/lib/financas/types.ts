@@ -55,6 +55,8 @@ export type Bill = {
   category_id: string | null;
   account_id: string | null;
   active: boolean;
+  /** Conta fixa "da casa" (0017): aparece também em Casa > Contas. */
+  is_home?: boolean;
 };
 export type BillPayment = {
   id: string;

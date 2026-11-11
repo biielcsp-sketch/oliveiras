@@ -6,8 +6,6 @@ import {
   validateChoreInput,
   validateMaintenanceDone,
   validateMaintenanceInput,
-  validatePantryInput,
-  validateRestockQuantity,
   validateShoppingInput,
 } from "@/lib/casa/input";
 import {
@@ -22,7 +20,7 @@ import {
   nextMaintenanceDue,
   weekdayOf,
 } from "@/lib/casa/schedule";
-import { autoAddOutcome, choreBuckets, toggleErrorMessage, expiryStatus, frequencyLabel, groupShopping, intervalLabel, isLow, maintenanceStatus, qtyLabel, shouldAutoAdd, sortMaintenance } from "@/lib/casa/view";
+import { choreBuckets, frequencyLabel, groupShopping, intervalLabel, maintenanceStatus, qtyLabel, sortMaintenance } from "@/lib/casa/view";
 
 const A = "11111111-1111-4111-8111-111111111111";
 const B = "22222222-2222-4222-8222-222222222222";
@@ -56,21 +54,6 @@ describe("validateShoppingInput", () => {
     expect(validateShoppingInput({ name: "Leite", unit: "x".repeat(21) }).ok).toBe(false);
     expect(validateShoppingInput({ name: "Leite", category: "x".repeat(41) }).ok).toBe(false);
     expect(validateShoppingInput({ name: "Leite", notes: "x".repeat(301) }).ok).toBe(false);
-  });
-});
-
-describe("validatePantryInput", () => {
-  it("quantidade e mínimo padrão 0; validade em data real", () => {
-    expect(validatePantryInput({ name: "Arroz" })).toMatchObject({ ok: true, value: { quantity: 0, min_quantity: 0, expires_on: null } });
-    expect(validatePantryInput({ name: "Arroz", quantity: "3", min_quantity: "1", expires_on: "2026-02-30" })).toEqual({ ok: false, erro: "Validade inválida." });
-    expect(validatePantryInput({ name: "Arroz", quantity: "-1" }).ok).toBe(false);
-    expect(validatePantryInput({ name: "Arroz", location: "x".repeat(61) }).ok).toBe(false);
-  });
-  it("reposição exige quantidade positiva", () => {
-    expect(validateRestockQuantity("2")).toEqual({ ok: true, value: 2 });
-    expect(validateRestockQuantity(1.5)).toEqual({ ok: true, value: 1.5 });
-    expect(validateRestockQuantity("0").ok).toBe(false);
-    expect(validateRestockQuantity("").ok).toBe(false);
   });
 });
 
@@ -221,42 +204,6 @@ describe("manutenção", () => {
     expect(validateMaintenanceDone({ done_on: "2026-11-11" }, today).ok).toBe(false);
     expect(validateMaintenanceDone({ cost: "-5" }, today).ok).toBe(false);
     expect(validateMaintenanceDone({ cost: "abc" }, today).ok).toBe(false);
-  });
-});
-
-describe("despensa: acabando, vencendo e lista automática", () => {
-  it("acabando = quantidade <= mínimo", () => {
-    expect(isLow({ quantity: 1, min_quantity: 1 })).toBe(true);
-    expect(isLow({ quantity: 2, min_quantity: 1 })).toBe(false);
-    expect(isLow({ quantity: 0, min_quantity: 0 })).toBe(true);
-  });
-  it("vencendo = validade em até 7 dias; vencido = antes de hoje", () => {
-    expect(expiryStatus("2026-11-09", "2026-11-10")).toBe("vencido");
-    expect(expiryStatus("2026-11-10", "2026-11-10")).toBe("vencendo");
-    expect(expiryStatus("2026-11-17", "2026-11-10")).toBe("vencendo");
-    expect(expiryStatus("2026-11-18", "2026-11-10")).toBeNull();
-    expect(expiryStatus(null, "2026-11-10")).toBeNull();
-  });
-  it("adiciona ao cair para o mínimo, sem duplicar e nunca ao repor", () => {
-    expect(shouldAutoAdd({ before: 2, after: 1, min: 1, hasPending: false })).toBe(true);
-    expect(shouldAutoAdd({ before: 2, after: 1, min: 1, hasPending: true })).toBe(false);
-    expect(shouldAutoAdd({ before: 3, after: 2, min: 1, hasPending: false })).toBe(false);
-    expect(shouldAutoAdd({ before: 0, after: 1, min: 1, hasPending: false })).toBe(false); // subindo
-    expect(shouldAutoAdd({ before: null, after: 0, min: 1, hasPending: false })).toBe(true); // novo já acabando
-    expect(shouldAutoAdd({ before: 2, after: 2, min: 2, hasPending: false })).toBe(true); // mínimo aumentou na edição
-  });
-});
-
-describe("auto-adicionar: índice único parcial", () => {
-  it("23505 = já está na lista (sucesso silencioso); outros erros falham", () => {
-    expect(autoAddOutcome(null)).toBe("added");
-    expect(autoAddOutcome(undefined)).toBe("added");
-    expect(autoAddOutcome("23505")).toBe("already");
-    expect(autoAddOutcome("42501")).toBe("failed");
-  });
-  it("desmarcar com outro pendente igual (23505): avisa e não desmarca", () => {
-    expect(toggleErrorMessage("23505")).toBe("Este item já está na lista.");
-    expect(toggleErrorMessage(undefined)).toBe("Não foi possível atualizar.");
   });
 });
 

@@ -19,10 +19,10 @@ export async function getBills(): Promise<Bill[]> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("fin_bills")
-    .select("id, name, amount, due_day, category_id, account_id, active")
+    .select("id, name, amount, due_day, category_id, account_id, active, is_home")
     .eq("household_id", household.id)
     .order("due_day");
-  return (data ?? []).map((b) => ({ ...b, amount: num(b.amount) }));
+  return (data ?? []).map((b) => ({ ...b, amount: num(b.amount), is_home: b.is_home === true }));
 }
 
 export async function getBillPayments(month: string): Promise<BillPayment[]> {

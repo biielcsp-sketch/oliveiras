@@ -10,8 +10,10 @@ import { formatBRL } from "@/lib/financas/money";
 import { LIMITS } from "@/lib/casa/input";
 import { intervalLabel, maintenanceStatus, sortMaintenance } from "@/lib/casa/view";
 import type { IntervalUnit } from "@/lib/casa/types";
+import type { ProviderContact } from "@/lib/casa/contacts";
 import { deleteMaintenance, markMaintenanceDone, saveMaintenance, type CasaState } from "../actions";
 import { ConfirmDelete, Feedback, smallBtn, useOnSaved, useRunner } from "./shared";
+import { ContactButtons } from "./contact-buttons";
 
 export type MaintenanceVM = {
   id: string;
@@ -22,10 +24,14 @@ export type MaintenanceVM = {
   last_done_on: string | null;
   next_due_on: string | null;
   provider: string | null;
+  provider_id: string | null;
+  contact: ProviderContact | null;
   history: { id: string; done_on: string; cost: number | null; notes: string | null }[];
 };
 
-function MaintenanceForm({ item, today, onDone }: { item?: MaintenanceVM; today: string; onDone: (msg?: string) => void }) {
+export type ProviderOption = { id: string; name: string; service: string | null };
+
+function MaintenanceForm({ item, providers, today, onDone }: { item?: MaintenanceVM; providers: ProviderOption[]; today: string; onDone: (msg?: string) => void }) {
   const [state, action, pending] = useActionState<CasaState, FormData>(saveMaintenance, null);
   useOnSaved(state, onDone);
   return (
@@ -57,7 +63,19 @@ function MaintenanceForm({ item, today, onDone }: { item?: MaintenanceVM; today:
       <Field label="Última vez feita">
         <Input name="last_done_on" type="date" max={today} defaultValue={item?.last_done_on ?? ""} />
       </Field>
-      <Field label="Prestador">
+      {providers.length > 0 && (
+        <Field label="Prestador cadastrado">
+          <Select name="provider_id" defaultValue={item?.provider_id ?? ""}>
+            <option value="">Nenhum</option>
+            {providers.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.service ? `${p.name} (${p.service})` : p.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      )}
+      <Field label="Prestador (texto livre)">
         <Input name="provider" maxLength={LIMITS.provider} defaultValue={item?.provider ?? ""} placeholder="Ex.: João Refrigeração" autoComplete="off" />
       </Field>
       <Field label="Observações">
@@ -102,7 +120,7 @@ const statusTag = {
   "em-breve": { label: "Em breve", cls: "bg-warning-soft text-warning" },
 } as const;
 
-export function MaintenanceView({ items, today }: { items: MaintenanceVM[]; today: string }) {
+export function MaintenanceView({ items, providers, today }: { items: MaintenanceVM[]; providers: ProviderOption[]; today: string }) {
   const [modal, setModal] = useState<{ kind: "edit"; item?: MaintenanceVM } | { kind: "done"; item: MaintenanceVM } | null>(null);
   const { notice, setNotice, error, pending, run } = useRunner();
   const [quick, setQuick] = useState(false);
@@ -138,7 +156,16 @@ export function MaintenanceView({ items, today }: { items: MaintenanceVM[]; toda
           {intervalLabel(x.interval_value, x.interval_unit)}
           {x.last_done_on ? ` · última vez ${brDate(x.last_done_on)}` : ""}
         </p>
-        {x.provider && <p className="text-sm text-muted">Prestador: {x.provider}</p>}
+        {x.contact && (
+          <div className="mt-1 flex flex-wrap items-center gap-2" data-testid="contato-prestador">
+            <p className="text-sm">
+              Prestador: {x.contact.name}
+              {x.contact.phone ? ` · ${x.contact.phone}` : ""}
+            </p>
+            <ContactButtons name={x.contact.name} tel={x.contact.tel} whatsapp={x.contact.whatsapp} />
+          </div>
+        )}
+        {x.provider && (!x.contact || x.provider !== x.contact.name) && <p className="text-sm text-muted">Prestador: {x.provider}</p>}
         {x.notes && <p className="mt-2 whitespace-pre-wrap text-sm">{x.notes}</p>}
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button type="button" className={smallBtn} disabled={pending || quick} onClick={() => doneToday(x)}>
@@ -204,6 +231,7 @@ export function MaintenanceView({ items, today }: { items: MaintenanceVM[]; toda
         ) : (
           <MaintenanceForm
             item={modal?.item}
+            providers={providers}
             today={today}
             onDone={(m) => {
               setNotice(m ?? "Manutenção salva.");

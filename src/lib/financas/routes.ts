@@ -15,3 +15,6 @@ export function legacyContasPath(rest: string[] | undefined, search: string) {
   const query = search && search !== "?" ? (search.startsWith("?") ? search : `?${search}`) : "";
   return `${path}${query}`;
 }
+
+/** Para onde voltar depois de salvar a conta fixa: só destinos fixos (nunca um caminho vindo do formulário). */
+export const billReturnPath = (voltar: unknown) => (voltar === "casa" ? "/casa/contas" : CONTAS_FIXAS);
