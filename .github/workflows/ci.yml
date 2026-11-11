@@ -83,10 +83,18 @@ jobs:
           echo "SUPABASE_TEST_SERVICE_ROLE_KEY=$(jq -r .SERVICE_ROLE_KEY /tmp/sb.json)" >> "$GITHUB_ENV"
       - run: npm run build
 
-      - name: Playwright (E2E)
+      - name: Navegador do Playwright (com repetição se o espelho do apt falhar)
         run: |
-          npx playwright install --with-deps chromium
-          npm run test:e2e
+          # O apt do runner às vezes não resolve o espelho do Ubuntu; repete em vez de derrubar o CI.
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "15";\nAcquire::https::Timeout "15";\n' | sudo tee /etc/apt/apt.conf.d/99-ci-retry >/dev/null
+          for tentativa in 1 2 3; do
+            if npx playwright install --with-deps chromium; then exit 0; fi
+            echo "Instalação do navegador falhou (tentativa $tentativa/3); aguardando para repetir."
+            sleep $((tentativa * 20))
+          done
+          exit 1
+      - name: Playwright (E2E)
+        run: npm run test:e2e
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
