@@ -27,7 +27,7 @@ export function LoginOli() {
 
   return (
     <div className="mx-auto h-[200px] w-[200px] overflow-hidden rounded-[32px]">
-      <OliStage apiRef={avatar} followPointer className="oli-stage--compact" />
+      <OliStage apiRef={avatar} followPointer placeholderSrc="/oli/oli-login.webp" className="oli-stage--compact" />
     </div>
   );
 }

@@ -35,7 +35,7 @@ test("login: palco do Oli presente (3D, imagem estática sem GPU ou aviso)", asy
   await expect(
     stage
       .locator("canvas")
-      .or(stage.locator('img[src="/oli/oli-poster.webp"]'))
+      .or(stage.locator('img[src="/oli/oli-login.webp"]'))
       .or(stage.getByText("Não foi possível carregar o Oli em 3D")),
   ).toBeVisible({ timeout: 15_000 });
   const box = await stage.boundingBox();
