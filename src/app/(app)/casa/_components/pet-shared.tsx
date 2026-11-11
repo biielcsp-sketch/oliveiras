@@ -14,28 +14,35 @@ export function ActionForm({
   submit,
   children,
   label,
+  prepare,
+  busy,
 }: {
   action: (s: PetState, f: FormData) => Promise<PetState>;
   onDone: (msg?: string, id?: string) => void;
   submit: string;
   children: ReactNode;
   label?: string;
+  /** Ajusta o FormData antes de enviar (ex.: foto já reduzida no navegador). */
+  prepare?: (data: FormData) => void | Promise<void>;
+  /** Enquanto true (ex.: foto sendo preparada), o botão fica desabilitado. */
+  busy?: boolean;
 }) {
   const [state, run, pending] = useActionState<PetState, FormData>(action, null);
   useOnSaved(state, (msg) => onDone(msg, state?.id));
   return (
     <form
       aria-label={label}
-      onSubmit={(e) => {
+      onSubmit={async (e) => {
         e.preventDefault();
         const data = new FormData(e.currentTarget);
+        await prepare?.(data); // espera a foto terminar de ser preparada (Enter/duplo toque)
         startTransition(() => run(data));
       }}
       className="flex flex-col gap-4"
     >
       {children}
       <FormError message={state?.error} />
-      <Button disabled={pending}>{pending ? "Salvando…" : submit}</Button>
+      <Button disabled={pending || busy}>{pending ? "Salvando…" : submit}</Button>
     </form>
   );
 }

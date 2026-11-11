@@ -23,7 +23,7 @@ export const PET_VET_KINDS: PetVetKind[] = ["consulta", "exame", "receita", "out
 export const PET_VET_LABEL: Record<PetVetKind, string> = { consulta: "Consulta", exame: "Exame", receita: "Receita", outro: "Outro" };
 export const PET_CARE_UNITS: PetCareUnit[] = ["dias", "semanas", "meses"];
 
-export type Pet = { id: string; name: string; species: Species; breed: string | null; sex: PetSex | null; birth_date: string | null; notes: string | null };
+export type Pet = { id: string; name: string; species: Species; breed: string | null; sex: PetSex | null; birth_date: string | null; notes: string | null; photo_v: string | null };
 
 export type PetHealth = {
   id: string;
@@ -70,7 +70,8 @@ export type PetCareLog = { id: string; care_id: string; done_on: string; cost: n
 export type PetWeight = { id: string; pet_id: string; measured_on: string; weight_kg: number };
 export type PetFood = { id: string; pet_id: string; brand: string; bag_kg: number; daily_grams: number | null; started_on: string; active: boolean; notes: string | null };
 
-export const PET_COLS = "id, name, species, breed, sex, birth_date, notes";
+/** photo_path só é lido no servidor: a página troca por `photo_v` (uuid do arquivo) antes de ir ao navegador. */
+export const PET_COLS = "id, name, species, breed, sex, birth_date, notes, photo_path";
 export const PET_HEALTH_COLS = "id, pet_id, kind, name, dose, applied_on, next_due_on, notes, file_mime, file_size, created_at";
 export const PET_VET_COLS = "id, pet_id, kind, happened_on, clinic, vet, reason, notes, cost, file_mime, file_size";
 export const PET_CARE_COLS = "id, pet_id, name, interval_value, interval_unit, last_done_on, next_due_on, provider_id, active, notes";

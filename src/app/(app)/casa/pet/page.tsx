@@ -21,6 +21,7 @@ import {
   type PetVet,
   type PetWeight,
 } from "@/lib/casa/pet";
+import { petPhotoVersion } from "@/lib/casa/pet-photo";
 import { PetView, type PetData } from "../_components/pet-view";
 
 export const metadata = { title: "Pet · Casa" };
@@ -39,7 +40,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
     db.from("casa_pets").select(PET_COLS).eq("household_id", hh).limit(50),
     db.from("casa_providers").select(PROVIDER_COLS).eq("household_id", hh).order("name").limit(500),
   ]);
-  const pets = sortPets((petRows ?? []) as Pet[]);
+  // photo_path (caminho no bucket) não vai ao navegador: só o uuid do arquivo, como versão da URL da foto.
+  const pets = sortPets(((petRows ?? []) as (Omit<Pet, "photo_v"> & { photo_path: string | null })[]).map(({ photo_path, ...p }) => ({ ...p, photo_v: petPhotoVersion(photo_path) })));
   const providers = (provs ?? []) as Provider[];
   const pet = pickPet(pets, requested);
   if (!pet) return <PetView pets={[]} data={null} providers={[]} today={today} />;
