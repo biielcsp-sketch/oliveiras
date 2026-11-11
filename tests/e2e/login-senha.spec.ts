@@ -82,15 +82,15 @@ test("redefinir senha: validações, nova senha e login com ela", async ({ page 
   await signUp(page, email);
 
   await page.goto("/redefinir-senha");
-  await page.getByLabel("Nova senha").fill("curta");
+  await page.getByLabel("Nova senha", { exact: true }).fill("curta");
   await page.getByLabel("Confirmar nova senha").fill("curta");
   // minLength do navegador barra antes do servidor; remove para testar a validação do servidor.
-  await page.getByLabel("Nova senha").evaluate((el: HTMLInputElement) => el.removeAttribute("minlength"));
+  await page.getByLabel("Nova senha", { exact: true }).evaluate((el: HTMLInputElement) => el.removeAttribute("minlength"));
   await page.getByLabel("Confirmar nova senha").evaluate((el: HTMLInputElement) => el.removeAttribute("minlength"));
   await page.getByRole("button", { name: "Redefinir senha" }).click();
   await expect(page.getByText("A senha precisa ter pelo menos 8 caracteres.")).toBeVisible();
 
-  await page.getByLabel("Nova senha").fill(NOVA);
+  await page.getByLabel("Nova senha", { exact: true }).fill(NOVA);
   await page.getByLabel("Confirmar nova senha").fill(NOVA + "x");
   await page.getByRole("button", { name: "Redefinir senha" }).click();
   await expect(page.getByText("As senhas não conferem.")).toBeVisible();
