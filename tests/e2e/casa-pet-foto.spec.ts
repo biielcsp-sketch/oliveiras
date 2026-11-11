@@ -178,6 +178,8 @@ test("Pet: foto de perfil (cadastrar, trocar, remover, apagar) e outra família 
     await d.getByLabel("Foto", { exact: true }).setInputFiles(file("outra.png", png(64, 64, [0, 160, 80])));
     await d.getByRole("button", { name: "Salvar alterações" }).click();
     await expect(status(a, "Moisés atualizado.")).toBeVisible();
+    // Mesmo motivo do passo de remover: o aviso "atualizado" anterior ainda está na tela, então espera a foto nova chegar ao banco.
+    await expect.poll(async () => (await photoOf("Moisés")).photo_path).not.toBeNull();
     thirdPath = (await photoOf("Moisés")).photo_path as string;
     urlA = (await a.getByTestId("pet").getByRole("img", { name: "Moisés" }).getAttribute("src"))!;
     expect(await stored(thirdPath)).toBe(true);
@@ -197,7 +199,7 @@ test("Pet: foto de perfil (cadastrar, trocar, remover, apagar) e outra família 
     await a.getByTestId("pet").getByRole("button", { name: "Apagar" }).click();
     await a.getByRole("group", { name: "Confirmar exclusão" }).getByRole("button", { name: "Apagar" }).click();
     await expect(status(a, "Moisés foi apagado.")).toBeVisible();
-    expect(await stored(thirdPath)).toBe(false);
+    await expect.poll(() => stored(thirdPath)).toBe(false);
   });
 
   expect(problems.filter((p) => /Content Security Policy|Refused to/.test(p))).toEqual([]);
