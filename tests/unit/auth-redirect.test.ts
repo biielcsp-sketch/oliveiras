@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_AFTER_AUTH, safeNextPath } from "@/lib/auth-redirect";
+import { DEFAULT_AFTER_AUTH, callbackFailurePath, safeNextPath } from "@/lib/auth-redirect";
 
 describe("safeNextPath", () => {
   it("aceita só /redefinir-senha", () => {
@@ -26,4 +26,19 @@ describe("safeNextPath", () => {
   ])("rejeita %j e cai no destino padrão", (v) => {
     expect(safeNextPath(v)).toBe(DEFAULT_AFTER_AUTH);
   });
+});
+
+// Regressão: o navegador abriu o link de recuperação duas vezes ao mesmo tempo; a 2ª troca do
+// código falhava e mandava ao login (ou direto ao /inicio, já com a sessão da 1ª).
+describe("callbackFailurePath", () => {
+  it("no fluxo de redefinição segue para /redefinir-senha, que decide pela sessão", () => {
+    expect(callbackFailurePath("/redefinir-senha")).toBe("/redefinir-senha");
+  });
+
+  it.each([null, undefined, "", "/inicio", "//evil.example", "https://evil.example"])(
+    "para %j volta ao login com aviso de link",
+    (v) => {
+      expect(callbackFailurePath(v)).toBe("/login?erro=link");
+    },
+  );
 });
