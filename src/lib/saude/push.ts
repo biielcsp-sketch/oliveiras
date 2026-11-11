@@ -74,7 +74,7 @@ export function pushUiState(i: {
 }
 
 /** Mesma regra do notificationclick em public/sw.js (lá é copiada à mão; um teste roda o SW de verdade). */
-export const NOTIFICATION_PATHS = ["/saude/medicamentos", "/saude/vacinas"] as const;
+export const NOTIFICATION_PATHS = ["/saude/medicamentos", "/saude/vacinas", "/casa/pet"] as const;
 export function notificationTarget(raw: unknown, origin: string): string {
   try {
     if (typeof raw !== "string") return "/inicio";

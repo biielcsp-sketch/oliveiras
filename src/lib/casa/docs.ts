@@ -10,6 +10,14 @@ export const CASA_DOC_PATH_RE = new RegExp(`^${UUID}/docs/${UUID}\\.(pdf|jpg)$`,
 export const casaDocPath = (householdId: string, id: string, ext: "pdf" | "jpg") => `${householdId}/docs/${id}.${ext}`;
 export const isCasaDocPath = (v: unknown): v is string => typeof v === "string" && CASA_DOC_PATH_RE.test(v);
 
+/** Pastas do bucket `casa`: docs/ (documentos e garantias) e pets/ (comprovantes e anexos do Pet). */
+export type CasaFileDir = "docs" | "pets";
+export const CASA_PET_PATH_RE = new RegExp(`^${UUID}/pets/${UUID}\\.(pdf|jpg)$`, "i");
+export const casaFilePath = (householdId: string, dir: CasaFileDir, id: string, ext: "pdf" | "jpg") => `${householdId}/${dir}/${id}.${ext}`;
+export const isCasaPetPath = (v: unknown): v is string => typeof v === "string" && CASA_PET_PATH_RE.test(v);
+/** Caminho válido de uma das pastas (usado ao apagar: nunca remove nada fora do formato gerado pelo servidor). */
+export const isCasaFilePath = (v: unknown, dir: CasaFileDir): v is string => (dir === "docs" ? isCasaDocPath(v) : isCasaPetPath(v));
+
 export type WarrantyStatus = "vencida" | "vencendo" | "valida";
 
 /** Vencida: antes de hoje. Vencendo: de hoje até 30 dias. Sem data: null. */
