@@ -6,7 +6,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getAppContext } from "@/lib/data";
 import { parseBRL } from "@/lib/financas/money";
 import { dismissPair, runBaixaAutomatica } from "@/lib/financas/baixa-data";
-import { billReturnPath } from "@/lib/financas/routes";
+import { billDeleteResult } from "@/lib/financas/bill-delete";
+import { billReturnPath, CONTAS_FIXAS, flowReturnPath } from "@/lib/financas/routes";
 
 export type PlanState = { error?: string; ok?: boolean } | null;
 
@@ -99,15 +100,20 @@ export async function saveBill(_: PlanState, form: FormData): Promise<PlanState>
   redirect(billReturnPath(str(form, "voltar")));
 }
 
-export async function deleteBill(form: FormData) {
+/**
+ * Exclui a conta fixa e, em cascata no banco, os pagamentos (fin_bill_payments) e as dispensas de baixa
+ * (fin_baixa_dismissals). NÃO apaga lançamentos do extrato (fin_transactions) nem documentos: estes só
+ * perdem o vínculo (FK on delete set null). Só redireciona se uma linha foi mesmo apagada.
+ */
+export async function deleteBill(_: PlanState, form: FormData): Promise<PlanState> {
   const { household } = await getAppContext();
   const id = uuid(str(form, "id"));
-  if (id) {
-    const supabase = await createClient();
-    await supabase.from("fin_bills").delete().eq("id", id).eq("household_id", household.id);
-  }
+  if (!id) return { error: "Conta inválida." };
+  const supabase = await createClient();
+  const result = billDeleteResult(await supabase.from("fin_bills").delete().eq("id", id).eq("household_id", household.id).select("id"));
+  if (!result.ok) return { error: result.error };
   refresh();
-  redirect("/financas/contas-fixas");
+  redirect(flowReturnPath(str(form, "voltar"), CONTAS_FIXAS, str(form, "mes")));
 }
 
 /** Marca a conta do mês como paga, ligada a um lançamento do extrato ou sem lançamento. */

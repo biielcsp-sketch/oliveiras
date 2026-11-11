@@ -151,7 +151,7 @@ export function LinkButton({
   variant = "primary",
   className,
   ...props
-}: ComponentProps<"a"> & { variant?: "primary" | "ghost" }) {
+}: ComponentProps<"a"> & { variant?: "primary" | "ghost" | "danger" }) {
   return <a className={clsx(btnBase, "h-11 px-4", btnVariant[variant], className)} {...props} />;
 }
 

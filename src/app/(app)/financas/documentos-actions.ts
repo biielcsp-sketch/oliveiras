@@ -17,6 +17,7 @@ import {
   boletoEditConflict, duplicateBlock, editSaveError, readBarcode, validateBoletoEdit, validateBoletoForm, validateComprovanteEdit, validatePayLink,
 } from "@/lib/financas/documentos/input";
 import { runBaixaAutomatica } from "@/lib/financas/baixa-data";
+import { flowOrigin, flowReturnPath } from "@/lib/financas/routes";
 
 export type DocState = { error?: string } | null;
 
@@ -30,6 +31,8 @@ const CONFLICT = "Outro boleto igual ou do mesmo mês acabou de ser confirmado. 
 function refresh() {
   revalidatePath("/financas", "layout");
   revalidatePath("/inicio");
+  // Quando o envio vem de Casa > Contas, a conta e o boleto aparecem lá.
+  revalidatePath("/casa", "layout");
 }
 
 /** Data de referência do documento (dia do envio, fuso SP): decide o ciclo do fator de vencimento. */
@@ -117,7 +120,8 @@ export async function uploadDocument(_: DocState, form: FormData): Promise<DocSt
       .eq("id", doc.id);
   }
   refresh();
-  redirect(`/financas/documentos/${doc.id}`);
+  // `origem` só aceita "casa" (lista fechada); a tela de conferência repassa o mesmo parâmetro.
+  redirect(`/financas/documentos/${doc.id}${flowOrigin(str(form, "origem")) === "casa" ? `?origem=casa${/^\d{4}-(0[1-9]|1[0-2])$/.test(str(form, "mes")) ? `&mes=${str(form, "mes")}` : ""}` : ""}`);
 }
 
 /* ---------- Conferência: boleto → conta fixa ---------- */
@@ -178,7 +182,17 @@ export async function confirmBoleto(_: DocState, form: FormData): Promise<DocSta
     }
     const { data: bill, error } = await db
       .from("fin_bills")
-      .insert({ household_id: household.id, name: val.bill.name, amount: val.amount, due_day: val.bill.dueDay, category_id: categoryId, account_id: accountId, active: true })
+      .insert({
+        household_id: household.id,
+        name: val.bill.name,
+        amount: val.amount,
+        due_day: val.bill.dueDay,
+        category_id: categoryId,
+        account_id: accountId,
+        active: true,
+        // Enviado por Casa > Contas: a conta nova já é "da casa".
+        is_home: flowOrigin(str(form, "origem")) === "casa",
+      })
       .select("id")
       .single();
     if (error || !bill) return { error: "Não foi possível criar a conta fixa." };
@@ -234,7 +248,7 @@ export async function confirmBoleto(_: DocState, form: FormData): Promise<DocSta
   // O pagamento pode ter chegado no extrato antes do boleto: cruza agora (mesma sessão, RLS).
   await runBaixaAutomatica([val.bill_month]);
   refresh();
-  redirect(`/financas/contas-fixas?mes=${val.bill_month}`);
+  redirect(flowReturnPath(str(form, "origem"), `/financas/contas-fixas?mes=${val.bill_month}`, val.bill_month));
 }
 
 /* ---------- Conferência: comprovante → lançamento (e conta paga) ---------- */
@@ -339,7 +353,7 @@ export async function confirmComprovante(_: DocState, form: FormData): Promise<D
     return { error: error?.code === "23505" ? CONFLICT : GENERIC };
   }
   refresh();
-  redirect(`/financas/lancamentos?mes=${tx.date.slice(0, 7)}`);
+  redirect(flowReturnPath(str(form, "origem"), `/financas/lancamentos?mes=${tx.date.slice(0, 7)}`, tx.date.slice(0, 7)));
 }
 
 /* ---------- Outro: guardar ou descartar ---------- */
@@ -352,7 +366,7 @@ export async function keepDocument(form: FormData) {
     await db.from("fin_documents").update({ kind: "outro", status: "confirmado" }).eq("household_id", household.id).eq("id", doc.id).eq("status", "pendente");
   }
   refresh();
-  redirect("/financas/documentos");
+  redirect(flowReturnPath(str(form, "origem"), "/financas/documentos", str(form, "mes")));
 }
 
 /** Descarta: status 'descartado' e o arquivo sai do bucket. Lançamentos e contas já criados ficam. */
@@ -369,7 +383,7 @@ export async function discardDocument(form: FormData) {
     if (data?.length && isDocPath(doc.file_path)) await db.storage.from(DOC_BUCKET).remove([doc.file_path]);
   }
   refresh();
-  redirect("/financas/documentos");
+  redirect(flowReturnPath(str(form, "origem"), "/financas/documentos", str(form, "mes")));
 }
 
 /* ---------- Editar documento confirmado ---------- */

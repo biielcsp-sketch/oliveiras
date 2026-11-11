@@ -1,10 +1,10 @@
 import { notFound } from "next/navigation";
 import { Trash2 } from "lucide-react";
-import { Button, Card, PageHeader } from "@/components/ui";
+import { Card, LinkButton, PageHeader } from "@/components/ui";
 import { getFinanceBase } from "@/lib/financas/data";
 import { getBills } from "@/lib/financas/planning-data";
 import { BillForm } from "../../_components/bill-form";
-import { deleteBill } from "../../planning-actions";
+import { billDeletePath } from "@/lib/financas/routes";
 
 export const metadata = { title: "Editar conta fixa" };
 
@@ -19,12 +19,9 @@ export default async function EditarContaFixaPage({ params }: { params: Promise<
         <PageHeader title={bill.name} />
         <BillForm bill={bill} categories={categories} accounts={accounts} />
       </Card>
-      <form action={deleteBill}>
-        <input type="hidden" name="id" value={bill.id} />
-        <Button variant="danger" className="w-full">
-          <Trash2 size={16} /> Excluir conta fixa
-        </Button>
-      </form>
+      <LinkButton href={billDeletePath(bill.id)} variant="danger" className="w-full">
+        <Trash2 size={16} aria-hidden /> Excluir conta fixa
+      </LinkButton>
     </div>
   );
 }

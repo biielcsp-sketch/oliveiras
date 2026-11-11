@@ -18,3 +18,25 @@ export function legacyContasPath(rest: string[] | undefined, search: string) {
 
 /** Para onde voltar depois de salvar a conta fixa: só destinos fixos (nunca um caminho vindo do formulário). */
 export const billReturnPath = (voltar: unknown) => (voltar === "casa" ? "/casa/contas" : CONTAS_FIXAS);
+
+export const CASA_CONTAS = "/casa/contas";
+const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+/** Origem do fluxo de documentos/exclusão: lista fechada ("casa" ou nenhuma). Qualquer outro valor vira nenhuma. */
+export const flowOrigin = (v: unknown): "casa" | null => (v === "casa" ? "casa" : null);
+
+/** Contas da casa, mantendo o mês só se for AAAA-MM válido (nunca ecoa valor da URL). */
+export const casaContasPath = (mes?: unknown) => (typeof mes === "string" && MONTH_RE.test(mes) ? `${CASA_CONTAS}?mes=${mes}` : CASA_CONTAS);
+
+/** Destino ao concluir o fluxo: da Casa volta para Casa > Contas (mês mantido); senão o destino das Finanças. */
+export const flowReturnPath = (origem: unknown, financasPath: string, mes?: unknown) =>
+  flowOrigin(origem) === "casa" ? casaContasPath(mes) : financasPath;
+
+/** Tela de confirmação para excluir a conta fixa (id é validado como uuid na própria tela e na ação). */
+export const billDeletePath = (id: string, origem?: unknown, mes?: unknown) => {
+  const q = new URLSearchParams();
+  if (flowOrigin(origem) === "casa") q.set("voltar", "casa");
+  if (typeof mes === "string" && MONTH_RE.test(mes)) q.set("mes", mes);
+  const s = q.toString();
+  return `${CONTAS_FIXAS}/${id}/excluir${s ? `?${s}` : ""}`;
+};
