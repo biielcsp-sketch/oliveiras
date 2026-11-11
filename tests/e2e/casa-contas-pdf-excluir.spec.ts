@@ -33,8 +33,11 @@ async function uploadFromCasa(page: Page, tag: string) {
 }
 
 /** A conta mais recente com esse nome: o retry cria outra família, então `.single()` por nome pegaria duas linhas. */
-const latestBill = (admin: ReturnType<typeof adminClient>, name: string, cols: string) =>
-  admin.from("fin_bills").select(cols).eq("name", name).order("created_at", { ascending: false }).limit(1).single();
+async function latestBill<T>(admin: ReturnType<typeof adminClient>, name: string, cols: string): Promise<T> {
+  const { data, error } = await admin.from("fin_bills").select(cols).eq("name", name).order("created_at", { ascending: false }).limit(1).single();
+  if (error || !data) throw new Error(`conta "${name}" não encontrada`);
+  return data as unknown as T;
+}
 
 test("Casa > Contas: enviar boleto (liga à conta e cria conta da casa) e excluir conta com confirmação", async ({ page }) => {
   test.setTimeout(240_000);
@@ -81,8 +84,7 @@ test("Casa > Contas: enviar boleto (liga à conta e cria conta da casa) e exclui
     await page.getByRole("button", { name: "Confirmar conta fixa" }).click();
     await expect(page).toHaveURL(new RegExp(`/casa/contas\\?mes=${MES}$`));
     await expect(page.getByTestId("conta-casa").filter({ hasText: "Gás" })).toBeVisible();
-    const { data } = await latestBill(admin, "Gás", "is_home");
-    expect(data).toEqual({ is_home: true });
+    expect(await latestBill<{ is_home: boolean }>(admin, "Gás", "is_home")).toEqual({ is_home: true });
   });
 
   await test.step("descartar na conferência volta para a Casa; origem inválida não vira redirecionamento", async () => {
@@ -107,9 +109,9 @@ test("Casa > Contas: enviar boleto (liga à conta e cria conta da casa) e exclui
     await row.getByRole("link", { name: "Marcar paga" }).click();
     await page.getByRole("button", { name: "Confirmar pagamento" }).click();
     await expect(page).toHaveURL(/\/financas\/contas-fixas\?mes=/);
-    const { data: bill } = await latestBill(admin, "Condomínio", "id, household_id");
-    billId = bill!.id as string;
-    householdId = bill!.household_id as string;
+    const bill = await latestBill<{ id: string; household_id: string }>(admin, "Condomínio", "id, household_id");
+    billId = bill.id;
+    householdId = bill.household_id;
     const { data: acc } = await admin.from("fin_accounts").select("id").eq("household_id", householdId).single();
     const { data: tx, error } = await admin
       .from("fin_transactions")
@@ -159,8 +161,8 @@ test("Casa > Contas: enviar boleto (liga à conta e cria conta da casa) e exclui
     await page.getByRole("link", { name: "Excluir Gás" }).click();
     await expect(page).toHaveURL(/\/excluir\?voltar=casa/);
     const confirmUrl = page.url();
-    const { data: gas } = await latestBill(admin, "Gás", "id");
-    const { error } = await admin.from("fin_bills").delete().eq("id", gas!.id as string);
+    const gas = await latestBill<{ id: string }>(admin, "Gás", "id");
+    const { error } = await admin.from("fin_bills").delete().eq("id", gas.id);
     expect(error).toBeNull();
     await page.getByRole("button", { name: "Excluir conta e pagamentos" }).click();
     // `p[role=alert]`: o anunciador de rota do Next também é role="alert" (getByRole("alert") pegaria os dois).
