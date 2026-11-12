@@ -246,3 +246,49 @@ describe("Oli: contas a pagar com avulsas em aberto", () => {
     expect(d.total_pendente).toBe(440);
   });
 });
+
+describe("resumo da Casa: contagem com avulsas da casa", () => {
+  it("avulsas da casa do mês entram em em aberto/atrasadas; as de fora da casa, pagas ou de outro mês, não", async () => {
+    const { homeBillCounts } = await import("@/lib/casa/contas");
+    const rows = homeBillsForMonth({
+      bills: [{ id: LUZ, name: "Luz", amount: 100, due_day: 20, active: true, is_home: true }],
+      payments: [],
+      docs: new Map(),
+      oneOffs: [
+        { id: IPVA, name: "Portão", amount: 480, due_date: "2026-12-05", is_home: true, paid_on: null },
+        { id: U(3), name: "Pintura", amount: 900, due_date: "2026-12-25", is_home: true, paid_on: null },
+        { id: U(4), name: "Multa", amount: 90, due_date: "2026-12-01", is_home: false, paid_on: null },
+        { id: U(5), name: "Gás", amount: 50, due_date: "2026-12-02", is_home: true, paid_on: "2026-12-02" },
+        { id: U(6), name: "Janeiro", amount: 50, due_date: "2027-01-02", is_home: true, paid_on: null },
+      ],
+      month: "2026-12",
+      today: "2026-12-08",
+    });
+    // Sem avulsas seria { open: 1, late: 0 } (só a Luz).
+    expect(homeBillCounts(rows)).toEqual({ open: 2, late: 1 });
+  });
+});
+
+describe("mensagens de baixa automática: fixas + avulsas", () => {
+  it("countBaixas soma as duas listas (sincronização e botão do extrato)", async () => {
+    const { countBaixas } = await import("@/lib/financas/baixa");
+    expect(countBaixas({ applied: [1, 2], appliedOneOff: [3] })).toBe(3);
+    expect(countBaixas({ applied: [], appliedOneOff: [] })).toBe(0);
+    expect(countBaixas({ applied: [1] })).toBe(1);
+  });
+  it("baixaLabels (importação OFX/CSV) lista fixas e avulsas, avulsa no mês do vencimento", async () => {
+    const { baixaLabels } = await import("@/lib/financas/baixa");
+    expect(
+      baixaLabels(
+        [{ bill_id: LUZ, month: "2026-12" }],
+        [{ one_off_bill_id: IPVA, paid_on: "2027-01-03" }, { one_off_bill_id: U(9), paid_on: "2026-12-20" }],
+        new Map([[LUZ, "Luz"]]),
+        new Map([[IPVA, { name: "IPVA", due_date: "2026-12-15" }]]),
+      ),
+    ).toEqual([
+      { bill: "Luz", month: "2026-12" },
+      { bill: "IPVA (avulsa)", month: "2026-12" },
+      { bill: "Conta (avulsa)", month: "2026-12" },
+    ]);
+  });
+});

@@ -190,5 +190,28 @@ test("Conta avulsa: boleto pela Casa vira avulsa, aparece em Casa e Finanças (f
     await expect(page.getByTestId("conta-casa").filter({ hasText: NOME }).getByTestId("status")).toHaveText("Paga");
   });
 
+  await test.step("resumo da Casa: avulsas da casa do mês atual entram na contagem (em aberto e atrasada)", async () => {
+    // O resumo usa o mês corrente (fuso SP); as datas saem do relógio do teste, sem depender do dia.
+    const now = new Date(Date.now() - 3 * 3_600_000);
+    const ym = now.toISOString().slice(0, 7);
+    const day = now.getUTCDate();
+    const lastDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
+    // Sem conta fixa da casa no mês corrente que atrapalhe: o Condomínio (dia 10) fica pago neste mês.
+    const { data: bill } = await admin.from("fin_bills").select("id").eq("household_id", householdId).single();
+    await admin.from("fin_bill_payments").insert({ household_id: householdId, bill_id: bill!.id, month: ym, paid_on: `${ym}-01`, amount: 450 });
+    await page.goto("/casa");
+    await expect(page.getByTestId("resumo-contas")).toContainText("Nenhuma conta em aberto no mês.");
+    const rows = [
+      { household_id: householdId, name: "Avulsa a vencer", amount: 10, due_date: `${ym}-${String(lastDay).padStart(2, "0")}`, is_home: true },
+      { household_id: householdId, name: "Avulsa fora da casa", amount: 10, due_date: `${ym}-${String(lastDay).padStart(2, "0")}`, is_home: false },
+    ];
+    if (day > 1) rows.push({ household_id: householdId, name: "Avulsa atrasada", amount: 10, due_date: `${ym}-01`, is_home: true });
+    expect((await admin.from("fin_one_off_bills").insert(rows)).error).toBeNull();
+    await page.goto("/casa");
+    // Último dia do mês: a "a vencer" vence hoje e ainda conta como em aberto.
+    await expect(page.getByTestId("resumo-contas")).toContainText("1 em aberto");
+    if (day > 1) await expect(page.getByTestId("resumo-contas")).toContainText("1 atrasada");
+  });
+
   expect(problems.filter((p) => /Content Security Policy|Refused to/i.test(p))).toEqual([]);
 });

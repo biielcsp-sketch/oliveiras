@@ -6,7 +6,7 @@ import { getItem, listAccounts, listTransactions, pluggyAllowedFor, pluggyConfig
 import {
   bankBalanceToApp, buildSyncRows, consentExpired, itemHealthy, openingToMatchBank, planSync, syncFetchStart, syncRowCodes, syncWindowStart,
 } from "./normalize";
-import { monthsAround } from "@/lib/financas/baixa";
+import { countBaixas, monthsAround } from "@/lib/financas/baixa";
 import { runBaixaAutomatica, type TxCode } from "@/lib/financas/baixa-data";
 
 export type SyncResult =
@@ -164,7 +164,8 @@ export async function syncHousehold({ force }: { force: boolean }): Promise<Sync
       .eq("household_id", household.id);
   }
   // Mesma sessão do usuário (RLS). Falha aqui nunca derruba a sincronização.
-  const baixas = outflowDates.length ? (await runBaixaAutomatica(monthsAround(outflowDates), codes)).applied.length : 0;
+  // Fixas e avulsas pagas pelo extrato entram na mesma contagem.
+  const baixas = outflowDates.length ? countBaixas(await runBaixaAutomatica(monthsAround(outflowDates), codes)) : 0;
   return { status: "done", inserted, updated, removed, errors, baixas };
 }
 

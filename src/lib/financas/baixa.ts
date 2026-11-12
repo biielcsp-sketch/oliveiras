@@ -279,3 +279,25 @@ export function monthsAround(dates: string[]) {
   }
   return [...set].sort();
 }
+
+/** Quantas baixas automáticas foram gravadas, somando fixas e avulsas (mensagens da sincronização e importação). */
+export const countBaixas = (r: { applied: unknown[]; appliedOneOff?: unknown[] }) => r.applied.length + (r.appliedOneOff?.length ?? 0);
+
+/**
+ * Rótulos das baixas gravadas para a tela da importação: fixa com o mês dela; avulsa como "Nome (avulsa)"
+ * com o mês do vencimento. Nome desconhecido (apagada no meio) vira "Conta".
+ */
+export function baixaLabels(
+  applied: Pick<BaixaMatch, "bill_id" | "month">[],
+  appliedOneOff: Pick<OneOffMatch, "one_off_bill_id" | "paid_on">[],
+  billNames: Map<string, string>,
+  oneOffs: Map<string, { name: string; due_date: string }>,
+): { bill: string; month: string }[] {
+  return [
+    ...applied.map((m) => ({ bill: billNames.get(m.bill_id) ?? "Conta", month: m.month })),
+    ...appliedOneOff.map((m) => {
+      const o = oneOffs.get(m.one_off_bill_id);
+      return { bill: `${o?.name ?? "Conta"} (avulsa)`, month: (o?.due_date ?? m.paid_on).slice(0, 7) };
+    }),
+  ];
+}
