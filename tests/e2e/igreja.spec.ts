@@ -21,6 +21,11 @@ type MockFile = {
 };
 const driveFiles = async () => (await (await fetch(`${DRIVE}/__files`)).json()) as MockFile[];
 
+async function expectNoHorizontalScroll(page: Page) {
+  const { scroll, view } = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, view: window.innerWidth }));
+  expect(scroll, "página mais larga que a tela").toBeLessThanOrEqual(view);
+}
+
 async function login(page: Page, email: string) {
   await page.goto("/login");
   await page.getByLabel("E-mail").fill(email);
@@ -67,6 +72,8 @@ test("Igreja: devocional pessoal com compartilhamento, Carisma com Google Drive 
     const arc = page.getByRole("navigation", { name: "Seções de Igreja" });
     await expect(arc.locator('[aria-current="page"]')).toContainText("Resumo");
     await expect(page.getByTestId("igreja-resumo-oracoes")).toContainText("Nenhuma oração em andamento");
+    // Regressão: o texto com truncate alargava a grade e a página rolava para os lados
+    await expectNoHorizontalScroll(page);
   });
 
   await test.step("anotações: uma privada e uma compartilhada", async () => {
@@ -146,6 +153,7 @@ test("Igreja: devocional pessoal com compartilhamento, Carisma com Google Drive 
     await expect(page.getByTestId("igreja-resumo-oracoes")).toContainText("1 oração em andamento");
     await expect(page.getByTestId("igreja-resumo-propositos")).toContainText("1 propósito em andamento");
     await expect(page.getByTestId("igreja-resumo-anotacao")).toContainText("Palavra para a família");
+    await expectNoHorizontalScroll(page);
   });
 
   await test.step("cônjuge não vê o privado e vê o compartilhado sem editar", async () => {

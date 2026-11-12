@@ -9,8 +9,9 @@ import { Card } from "@/components/ui";
 export const metadata = { title: "Igreja" };
 
 function Tile({ href, icon: Icon, title, lines, testId }: { href: string; icon: LucideIcon; title: string; lines: string[]; testId: string }) {
+  // min-w-0: sem ele o item da grade cresce até a largura do texto com truncate e a página rola para os lados
   return (
-    <Link href={href} className="block" data-testid={testId}>
+    <Link href={href} className="block min-w-0" data-testid={testId}>
       <Card className="flex h-full items-start gap-4 transition hover:brightness-105">
         <span className="grid size-12 shrink-0 place-items-center rounded-full border border-line bg-accent-soft text-primary">
           <Icon size={22} aria-hidden />
