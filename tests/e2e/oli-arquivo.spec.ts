@@ -1,15 +1,14 @@
 import { expect, test, type Page } from "@playwright/test";
-import { E2E_HOUSEHOLD_ID } from "../../playwright.config";
+import { E2E_OLI_HOUSEHOLD_ID } from "../../playwright.config";
 import { adminClient, createFamilyWithId } from "./admin";
 import { PASSWORD, signUp, uniqueEmail, watchConsole } from "./helpers";
 
 /**
  * "+" do Oli: ler um arquivo e guardar no módulo certo, sempre com Confirmar na tela.
  * A IA é o Gemini SIMULADO (tests/e2e/gemini-mock.mjs): cada PDF de teste carrega a resposta desejada.
- * O Oli é liberado para OLI_HOUSEHOLD_ID = E2E_HOUSEHOLD_ID (playwright.config.ts); GEMINI_API_KEY é vazio,
+ * O Oli é liberado para OLI_HOUSEHOLD_ID = E2E_OLI_HOUSEHOLD_ID (playwright.config.ts); GEMINI_API_KEY é vazio,
  * então não há conversa de voz (token 503): o painel funciona sozinho. A leitura usa GEMINI_DOCS_API_KEY + mock.
- * Atenção: a família E2E_HOUSEHOLD_ID também é recriada por open-finance.spec.ts (mesmo padrão de saude.spec.ts
- * com a família da Agenda); com mais de um worker local, rode este arquivo sozinho.
+ * A família do Oli é só deste arquivo (antes era a mesma do open-finance.spec.ts e um apagava o outro em paralelo).
  */
 
 function pdfWith(response: object, tag = "") {
@@ -37,7 +36,7 @@ test("Oli: + lê o arquivo e guarda no lugar certo só depois de Confirmar", asy
   const page = await ctx.newPage();
   const problems = watchConsole(page);
   const admin = adminClient();
-  const hh = E2E_HOUSEHOLD_ID;
+  const hh = E2E_OLI_HOUSEHOLD_ID;
 
   await test.step("família liberada para o Oli", async () => {
     const email = uniqueEmail("oli-arquivo");
@@ -47,6 +46,14 @@ test("Oli: + lê o arquivo e guarda no lugar certo só depois de Confirmar", asy
     await page.getByLabel("Senha").fill(PASSWORD);
     await page.locator("form").getByRole("button", { name: "Entrar" }).click();
     await expect(page).toHaveURL(/\/inicio$/);
+  });
+
+  // Veio do open-finance.spec.ts (que agora tem família só da Pluggy): família autorizada do Oli sem GEMINI_API_KEY → 503.
+  await test.step("Oli: família autorizada sem GEMINI_API_KEY → 503", async () => {
+    const res = await page.request.post("/api/oli/token");
+    expect(res.status()).toBe(503);
+    expect(await res.json()).toEqual({ error: "Oli não configurado." });
+    expect(res.headers()["cache-control"]).toContain("no-store");
   });
 
   await test.step("arquivo falso é recusado no servidor, sem painel de confirmação", async () => {

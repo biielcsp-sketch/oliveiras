@@ -8,6 +8,9 @@ export const E2E_AGENDA_HOUSEHOLD_ID = "eeeeeeee-0000-4000-8000-000000000002";
 export const E2E_DOCS_HOUSEHOLD_ID = "eeeeeeee-0000-4000-8000-000000000003";
 // Família autorizada para o Carisma (Google Drive + resumo por IA), separada da Agenda para rodar em paralelo.
 export const E2E_IGREJA_HOUSEHOLD_ID = "eeeeeeee-0000-4000-8000-000000000004";
+// Família autorizada para o Oli (própria): open-finance.spec e oli-arquivo.spec recriavam a MESMA família
+// (E2E_HOUSEHOLD_ID) e, rodando em workers paralelos no CI, um apagava os dados do outro.
+export const E2E_OLI_HOUSEHOLD_ID = "eeeeeeee-0000-4000-8000-000000000005";
 
 export default defineConfig({
   testDir: "tests/e2e",
@@ -57,7 +60,7 @@ export default defineConfig({
         PLUGGY_CLIENT_SECRET: "test-secret",
         PLUGGY_HOUSEHOLD_ID: E2E_HOUSEHOLD_ID,
         // Oli: família autorizada fixa e sem chave do Gemini (o token responde 503; nunca chama o Gemini real).
-        OLI_HOUSEHOLD_ID: E2E_HOUSEHOLD_ID,
+        OLI_HOUSEHOLD_ID: E2E_OLI_HOUSEHOLD_ID,
         GEMINI_API_KEY: "",
         // Documentos: chave própria + Gemini simulado. O token do Oli lê só GEMINI_API_KEY, então segue em 503.
         GEMINI_DOCS_API_KEY: "test-key",
