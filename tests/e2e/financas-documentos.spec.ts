@@ -38,8 +38,7 @@ const AGUA = "836200000005667800481000180975657313001589636081"; // exemplo púb
 async function upload(page: Page, from: string, file: ReturnType<typeof pdfWith>) {
   await page.goto(from);
   const box = page.getByRole("region", { name: "Ler PDF ou foto" });
-  await box.getByLabel("Arquivo (PDF ou JPG, até 5 MB)").setInputFiles(file);
-  await box.getByRole("button", { name: "Ler documento" }).click();
+  await box.getByLabel("PDF", { exact: true }).setInputFiles(file);
   await expect(page).toHaveURL(DOC_URL, { timeout: 45_000 });
   return page.url().match(DOC_URL)![1];
 }
@@ -81,11 +80,9 @@ test("Finanças: leitura de boleto e comprovante com conferência", async ({ bro
   await test.step("arquivo falso e acima de 5 MB são recusados no servidor", async () => {
     await a.goto("/financas/contas-fixas");
     const box = a.getByRole("region", { name: "Ler PDF ou foto" });
-    await box.getByLabel("Arquivo (PDF ou JPG, até 5 MB)").setInputFiles({ name: "falso.pdf", mimeType: "application/pdf", buffer: Buffer.from("<html><script>alert(1)</script></html>") });
-    await box.getByRole("button", { name: "Ler documento" }).click();
+    await box.getByLabel("PDF", { exact: true }).setInputFiles({ name: "falso.pdf", mimeType: "application/pdf", buffer: Buffer.from("<html><script>alert(1)</script></html>") });
     await expect(box.getByText("Envie um arquivo PDF ou JPG.")).toBeVisible();
-    await box.getByLabel("Arquivo (PDF ou JPG, até 5 MB)").setInputFiles({ name: "grande.pdf", mimeType: "application/pdf", buffer: Buffer.concat([Buffer.from("%PDF-1.4\n"), Buffer.alloc(5 * 1024 * 1024)]) });
-    await box.getByRole("button", { name: "Ler documento" }).click();
+    await box.getByLabel("PDF", { exact: true }).setInputFiles({ name: "grande.pdf", mimeType: "application/pdf", buffer: Buffer.concat([Buffer.from("%PDF-1.4\n"), Buffer.alloc(5 * 1024 * 1024)]) });
     await expect(box.getByText("O arquivo passa de 5 MB.")).toBeVisible();
   });
 

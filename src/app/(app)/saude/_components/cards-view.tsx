@@ -2,13 +2,14 @@
 
 import { startTransition, useActionState, useEffect, useState } from "react";
 import { Plus } from "lucide-react";
+import { FileButtons } from "@/components/file-buttons";
 import { Button, Card, EmptyState, Field, FormError, Input, Select, Textarea } from "@/components/ui";
 import { Modal } from "@/components/modal";
 import { brDate } from "@/lib/agenda/dates";
 import { LIMITS } from "@/lib/saude/input";
 import { formatSize } from "@/lib/saude/files";
 import { deleteCard, saveCard, type SaudeState } from "../actions";
-import { ConfirmDelete, FileLink, fileInputClass, type Person } from "./shared";
+import { ConfirmDelete, FileLink, type Person } from "./shared";
 
 export type CardVM = {
   id: string;
@@ -61,9 +62,7 @@ function CardForm({ card, people, defaultMember, onDone }: { card?: CardVM; peop
       <Field label="Observações">
         <Textarea name="notes" maxLength={LIMITS.cardNotes} defaultValue={card?.notes ?? ""} />
       </Field>
-      <Field label={card ? "Trocar arquivo (PDF ou JPG, até 5 MB)" : "Arquivo (PDF ou JPG, até 5 MB)"}>
-        <input name="file" type="file" accept="application/pdf,image/jpeg,.pdf,.jpg,.jpeg" required={!card} className={fileInputClass} />
-      </Field>
+      <FileButtons label={card ? "Trocar arquivo (PDF ou JPG, até 5 MB)" : "Arquivo (PDF ou JPG, até 5 MB)"} required={!card} />
       <FormError message={state?.error} />
       <Button disabled={pending}>{pending ? "Salvando…" : card ? "Salvar alterações" : "Salvar carteirinha"}</Button>
     </form>

@@ -98,10 +98,10 @@ test("Casa parte 2: contas da casa, documentos, cardápio e prestadores (isolado
     await d.getByLabel("Título").fill("Garantia da geladeira");
     await d.getByLabel("Garantia até").fill(addDays(today, 10));
     // Arquivo que não é PDF/JPG (pelos bytes) é recusado no servidor.
-    await d.getByLabel(/Arquivo opcional/).setInputFiles({ name: "falso.pdf", mimeType: "application/pdf", buffer: Buffer.from("<html>oi</html>") });
+    await d.getByRole("group", { name: /Arquivo opcional/ }).getByLabel("PDF", { exact: true }).setInputFiles({ name: "falso.pdf", mimeType: "application/pdf", buffer: Buffer.from("<html>oi</html>") });
     await d.getByRole("button", { name: "Salvar documento" }).click();
     await expect(d.getByText("Envie um arquivo PDF ou JPG.")).toBeVisible();
-    await d.getByLabel(/Arquivo opcional/).setInputFiles(pdf("casa"));
+    await d.getByRole("group", { name: /Arquivo opcional/ }).getByLabel("PDF", { exact: true }).setInputFiles(pdf("casa"));
     await d.getByRole("button", { name: "Salvar documento" }).click();
     await expect(status(a, "Documento salvo.")).toBeVisible();
 
@@ -145,7 +145,7 @@ test("Casa parte 2: contas da casa, documentos, cardápio e prestadores (isolado
     // Anexa de novo para o teste da outra família.
     await card.getByRole("button", { name: "Editar" }).click();
     d = a.getByRole("dialog", { name: "Editar documento" });
-    await d.getByLabel(/Arquivo opcional/).setInputFiles(pdf("casa-2"));
+    await d.getByRole("group", { name: /Arquivo opcional/ }).getByLabel("PDF", { exact: true }).setInputFiles(pdf("casa-2"));
     await d.getByRole("button", { name: "Salvar alterações" }).click();
     await expect(d).toHaveCount(0);
     await expect(card.getByRole("link", { name: "Abrir PDF" })).toBeVisible();

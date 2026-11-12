@@ -35,8 +35,7 @@ function ofx(rows: { id: string; date: string; amount: string; memo: string }[])
 async function upload(page: Page, tag: string) {
   await page.goto("/financas/documentos");
   const box = page.getByRole("region", { name: "Ler PDF ou foto" });
-  await box.getByLabel("Arquivo (PDF ou JPG, até 5 MB)").setInputFiles(pdf(tag));
-  await box.getByRole("button", { name: "Ler documento" }).click();
+  await box.getByLabel("PDF", { exact: true }).setInputFiles(pdf(tag));
   await expect(page).toHaveURL(DOC_URL, { timeout: 45_000 });
   return page.url().match(DOC_URL)![1];
 }

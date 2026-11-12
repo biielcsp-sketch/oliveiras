@@ -3,6 +3,7 @@
 import { startTransition, useActionState, useState } from "react";
 import { Plus } from "lucide-react";
 import clsx from "clsx";
+import { FileButtons } from "@/components/file-buttons";
 import { Button, Card, chipClass, EmptyState, Field, FormError, Input, Select, Textarea } from "@/components/ui";
 import { Modal } from "@/components/modal";
 import { brDate, diffDays } from "@/lib/agenda/dates";
@@ -12,7 +13,7 @@ import { LIMITS } from "@/lib/casa/input";
 import { warrantyAlerts, warrantyStatus } from "@/lib/casa/docs";
 import { DOC_KIND_LABEL, DOC_KINDS, type DocKind } from "@/lib/casa/types";
 import { deleteCasaDocument, saveCasaDocument, type DocState } from "../documentos-actions";
-import { FileLink, fileInputClass } from "../../saude/_components/shared";
+import { FileLink } from "../../saude/_components/shared";
 import { ConfirmDelete, Feedback, smallBtn, useOnSaved, useRunner } from "./shared";
 
 export type DocumentVM = {
@@ -74,9 +75,7 @@ function DocumentForm({ doc, onDone }: { doc?: DocumentVM; onDone: (msg?: string
       <Field label="Observações">
         <Textarea name="notes" maxLength={LIMITS.docNotes} defaultValue={doc?.notes ?? ""} />
       </Field>
-      <Field label={doc?.mime ? "Trocar arquivo (PDF ou JPG, até 5 MB)" : "Arquivo opcional (PDF ou JPG, até 5 MB)"}>
-        <input name="file" type="file" accept="application/pdf,image/jpeg,.pdf,.jpg,.jpeg" className={fileInputClass} />
-      </Field>
+      <FileButtons label={doc?.mime ? "Trocar arquivo (PDF ou JPG, até 5 MB)" : "Arquivo opcional (PDF ou JPG, até 5 MB)"} />
       {doc?.mime && (
         <label className="flex min-h-11 items-center gap-3 text-[15px]">
           <input type="checkbox" name="remove_file" className="size-5 accent-[var(--primary)]" />
