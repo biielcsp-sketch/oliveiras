@@ -16,7 +16,7 @@ import {
 } from "@/lib/financas/documentos/input";
 import { BILL_KIND_REQUIRED, dueMonth, parseBillKind, parsePayTarget, validateOneOffInput } from "@/lib/financas/avulsas";
 import { runBaixaAutomatica } from "@/lib/financas/baixa-data";
-import { flowOrigin, flowReturnPath } from "@/lib/financas/routes";
+import { docReviewPath, flowOrigin, flowReturnPath } from "@/lib/financas/routes";
 
 export type DocState = { error?: string } | null;
 
@@ -75,8 +75,8 @@ export async function uploadDocument(_: DocState, form: FormData): Promise<DocSt
   const r = docsAiAllowedFor(household.id) ? await extractDocument(file.bytes, file.kind.mime) : null;
   if (r?.ok) await applyExtraction(db, household.id, stored.id, r.data);
   refresh();
-  // `origem` só aceita "casa" (lista fechada); a tela de conferência repassa o mesmo parâmetro.
-  redirect(`/financas/documentos/${stored.id}${flowOrigin(str(form, "origem")) === "casa" ? `?origem=casa${/^\d{4}-(0[1-9]|1[0-2])$/.test(str(form, "mes")) ? `&mes=${str(form, "mes")}` : ""}` : ""}`);
+  // `origem` só aceita "casa" (lista fechada): enviado pela Casa, a conferência abre dentro da Casa.
+  redirect(docReviewPath(stored.id, str(form, "origem"), str(form, "mes")));
 }
 
 /* ---------- Conferência: boleto → conta fixa ou conta avulsa ---------- */

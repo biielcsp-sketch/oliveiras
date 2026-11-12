@@ -25,12 +25,25 @@ const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 /** Origem do fluxo de documentos/exclusão: lista fechada ("casa" ou nenhuma). Qualquer outro valor vira nenhuma. */
 export const flowOrigin = (v: unknown): "casa" | null => (v === "casa" ? "casa" : null);
 
+/** Mês do fluxo (AAAA-MM) vindo da URL/formulário: só valor válido; qualquer outra coisa vira nenhum. */
+export const flowMonth = (v: unknown) => (typeof v === "string" && MONTH_RE.test(v) ? v : undefined);
+
 /** Contas da casa, mantendo o mês só se for AAAA-MM válido (nunca ecoa valor da URL). */
 export const casaContasPath = (mes?: unknown) => (typeof mes === "string" && MONTH_RE.test(mes) ? `${CASA_CONTAS}?mes=${mes}` : CASA_CONTAS);
 
 /** Destino ao concluir o fluxo: da Casa volta para Casa > Contas (mês mantido); senão o destino das Finanças. */
 export const flowReturnPath = (origem: unknown, financasPath: string, mes?: unknown) =>
   flowOrigin(origem) === "casa" ? casaContasPath(mes) : financasPath;
+
+/**
+ * Tela de conferência do documento. Enviado pela Casa: abre dentro da Casa (aba Contas e menu da Casa marcados),
+ * mantendo o mês só se for AAAA-MM válido. Sem origem (Finanças, "+" do Oli) ou origem inválida: nas Finanças.
+ */
+export const docReviewPath = (id: string, origem?: unknown, mes?: unknown) => {
+  if (flowOrigin(origem) !== "casa") return `/financas/documentos/${id}`;
+  const base = `${CASA_CONTAS}/documento/${id}`;
+  return typeof mes === "string" && MONTH_RE.test(mes) ? `${base}?mes=${mes}` : base;
+};
 
 /** Tela de confirmação para excluir a conta fixa (id é validado como uuid na própria tela e na ação). */
 export const billDeletePath = (id: string, origem?: unknown, mes?: unknown) => {

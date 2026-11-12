@@ -7,7 +7,7 @@ import { homeBillCounts, homeBillsForMonth, homeStatus } from "@/lib/casa/contas
 import { CASA_TABS } from "@/lib/casa/nav";
 import { activeRouteIndex } from "@/lib/arc-nav";
 import { billDeleteResult } from "@/lib/financas/bill-delete";
-import { billDeletePath, billReturnPath, casaContasPath, flowOrigin, flowReturnPath } from "@/lib/financas/routes";
+import { billDeletePath, billReturnPath, casaContasPath, docReviewPath, flowOrigin, flowReturnPath } from "@/lib/financas/routes";
 
 const HH = "11111111-1111-4111-8111-111111111111";
 const ID = "22222222-2222-4222-8222-222222222222";
@@ -207,6 +207,19 @@ describe("contas da casa (regras das Finanças)", () => {
       expect(!r.ok && r.error).toMatch(/^A conta não foi encontrada/);
     }
     expect(billDeleteResult({ error: null, data: [{ id: "x" }] })).toEqual({ ok: true });
+  });
+  it("conferência de documento enviado pela Casa abre dentro da Casa (aba Contas marcada)", () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    expect(docReviewPath(id, "casa", "2026-12")).toBe(`/casa/contas/documento/${id}?mes=2026-12`);
+    expect(docReviewPath(id, "casa")).toBe(`/casa/contas/documento/${id}`);
+    expect(docReviewPath(id, "casa", "2026-13")).toBe(`/casa/contas/documento/${id}`);
+    expect(docReviewPath(id, "casa", "2026-12&x=1")).toBe(`/casa/contas/documento/${id}`);
+    // Sem origem (Finanças, "+" do Oli) ou origem inválida: continua nas Finanças.
+    expect(docReviewPath(id)).toBe(`/financas/documentos/${id}`);
+    expect(docReviewPath(id, null, "2026-12")).toBe(`/financas/documentos/${id}`);
+    expect(docReviewPath(id, "https://exemplo.com", "2026-12")).toBe(`/financas/documentos/${id}`);
+    const path = docReviewPath(id, "casa", "2026-12").split("?")[0];
+    expect(CASA_TABS[activeRouteIndex(CASA_TABS, path)].key).toBe("contas");
   });
   it("tela de exclusão da conta fixa: destino montado só com valores validados", () => {
     const id = "11111111-1111-4111-8111-111111111111";

@@ -12,7 +12,8 @@ import { mod11Bancario, toLinhaDigitavel } from "../../src/lib/financas/document
  */
 
 const MES = "2026-12";
-const DOC_URL = /\/financas\/documentos\/([0-9a-f-]{36})(\?.*)?$/;
+// Conferência: nas Finanças, ou dentro da Casa quando enviado por Casa > Contas.
+const DOC_URL = /\/(?:financas\/documentos|casa\/contas\/documento)\/([0-9a-f-]{36})(\?.*)?$/;
 const NOME = "Conserto do portão";
 
 function pdf(tag: string) {
@@ -58,6 +59,9 @@ test("Conta avulsa: boleto pela Casa vira avulsa, aparece em Casa e Finanças (f
   let docId = "";
   await test.step("conferência: sem tipo não confirma (nem no servidor); escolhe Conta avulsa", async () => {
     docId = await upload(page, `/casa/contas?mes=${MES}`, "boleto-avulso");
+    // Regressão: pela Casa a conferência fica dentro da Casa (aba Casa marcada), não vai para Finanças.
+    await expect(page).toHaveURL(new RegExp(`/casa/contas/documento/${docId}\\?mes=${MES}$`));
+    await expect(page.getByRole("navigation", { name: "Principal" }).getByRole("link", { name: "Casa" })).toHaveAttribute("aria-current", "page");
     await page.getByRole("radio", { name: "Boleto" }).click();
     await page.getByLabel("Beneficiário").fill("Portões Silva Ltda");
     await page.getByLabel("Valor (R$)").fill("480,00");
