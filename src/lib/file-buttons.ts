@@ -43,3 +43,12 @@ export function clearFileFields(inputs: Partial<Record<FileKind, FileFieldLike |
     el.value = "";
   }
 }
+
+/**
+ * `name` que o input de cada botão recebe no render: só o escolhido leva o nome. Precisa ir pelo
+ * render (e não só pelo DOM) porque o React 19 remove o atributo `name` de um <input> sem essa prop
+ * a cada re-render, e o arquivo deixaria de ir no formulário.
+ */
+export function fileFieldName(chosen: FileKind | null, kind: FileKind, name: string): string | undefined {
+  return chosen === kind ? name : undefined;
+}

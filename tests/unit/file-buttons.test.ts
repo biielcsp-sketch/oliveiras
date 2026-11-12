@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assignFileField, clearFileFields, DEFAULT_ACCEPT, type FileFieldLike, type FileKind } from "@/lib/file-buttons";
+import { assignFileField, clearFileFields, DEFAULT_ACCEPT, fileFieldName, type FileFieldLike, type FileKind } from "@/lib/file-buttons";
 
 /** Simula um <input type="file">: `name` vazio quando o atributo é removido. */
 function fakeInput(value = "", name = ""): FileFieldLike {
@@ -49,5 +49,11 @@ describe("botões de arquivo: só um campo `file` vai no formulário", () => {
 
   it("tipos padrão não ampliam o que o servidor aceita (PDF e JPG)", () => {
     expect(DEFAULT_ACCEPT).toEqual({ pdf: "application/pdf,.pdf", image: "image/jpeg,.jpg,.jpeg", photo: "image/jpeg" });
+  });
+
+  it("render: só o input do botão escolhido recebe `name` (o React 19 apaga o `name` posto só no DOM)", () => {
+    expect(fileFieldName("pdf", "pdf", "file")).toBe("file");
+    expect(fileFieldName("pdf", "image", "file")).toBeUndefined();
+    expect(fileFieldName(null, "pdf", "file")).toBeUndefined();
   });
 });

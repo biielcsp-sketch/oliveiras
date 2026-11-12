@@ -30,8 +30,8 @@ const LINHA = boleto("48000", "1091234567812345678977777");
 async function upload(page: Page, from: string, tag: string) {
   await page.goto(from);
   const box = page.getByRole("region", { name: "Ler PDF ou foto" });
-  await box.getByLabel("Arquivo (PDF ou JPG, até 5 MB)").setInputFiles(pdf(tag));
-  await box.getByRole("button", { name: "Ler documento" }).click();
+  // Escolher o PDF já envia para leitura.
+  await box.getByLabel("PDF", { exact: true }).setInputFiles(pdf(tag));
   await expect(page).toHaveURL(DOC_URL, { timeout: 45_000 });
   return page.url().match(DOC_URL)![1];
 }

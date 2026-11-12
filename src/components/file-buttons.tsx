@@ -10,6 +10,7 @@ import {
   DEFAULT_ACCEPT,
   FILE_KIND_LABEL,
   FILE_KINDS,
+  fileFieldName,
   type FileKind,
 } from "@/lib/file-buttons";
 
@@ -48,7 +49,10 @@ export function FileButtons({
   const id = useId();
   const groupRef = useRef<HTMLDivElement>(null);
   const inputs = useRef<Partial<Record<FileKind, HTMLInputElement | null>>>({});
-  const [chosen, setChosen] = useState<string | null>(null);
+  // Botão escolhido + nome do arquivo. O `name` do input TEM de vir do render: no React 19, todo
+  // re-render de <input> sem a prop `name` remove o atributo (updateInput → removeAttribute("name")),
+  // então o `name` posto só no DOM sumia e o arquivo não ia ao servidor.
+  const [chosen, setChosen] = useState<{ kind: FileKind; fileName: string } | null>(null);
 
   // Form resetado (ex.: depois de uma server action): some o nome escolhido e o `name` dos inputs.
   useEffect(() => {
@@ -66,12 +70,13 @@ export function FileButtons({
     if (onPick) return onPick(e);
     const file = e.target.files?.[0];
     if (!file) return;
+    // No DOM já (o envio do modo "submit" é síncrono) e no estado (para o próximo render manter).
     assignFileField(inputs.current, kind, name);
     if (mode === "submit") {
       e.target.form?.requestSubmit();
       return;
     }
-    setChosen(file.name);
+    setChosen({ kind, fileName: file.name });
   }
 
   function remove() {
@@ -105,6 +110,7 @@ export function FileButtons({
                   inputs.current[kind] = el;
                 }}
                 type="file"
+                name={fileFieldName(chosen?.kind ?? null, kind, name)}
                 accept={accept?.[kind] ?? DEFAULT_ACCEPT[kind]}
                 capture={kind === "photo" ? "environment" : undefined}
                 disabled={disabled}
@@ -117,17 +123,17 @@ export function FileButtons({
           );
         })}
       </div>
-      {chosen && (
+      {chosen && mode === "select" && (
         <p className="flex min-h-11 items-center gap-2 text-[15px]" aria-live="polite">
           <FileText size={16} aria-hidden className="shrink-0 text-muted" />
           <span className="min-w-0 truncate" data-testid="arquivo-escolhido">
-            {chosen}
+            {chosen.fileName}
           </span>
           <button
             type="button"
             onClick={remove}
             disabled={disabled}
-            aria-label={`Remover ${chosen}`}
+            aria-label={`Remover ${chosen.fileName}`}
             className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1 text-[15px] font-medium text-danger disabled:opacity-50"
           >
             <X size={16} aria-hidden /> Remover

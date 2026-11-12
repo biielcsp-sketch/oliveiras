@@ -71,11 +71,11 @@ test("Oli: + lê o arquivo e guarda no lugar certo só depois de Confirmar", asy
   await test.step("exame: campos editáveis pré-preenchidos; Confirmar grava em Saúde com o arquivo", async () => {
     await sendFile(page, pdfWith({ tipo: "exame", nome: "Hemograma", resumo: "Hemograma completo.", pessoa: "Gabriel", data: "2026-10-05", instituicao: "Lab Central" }, "e"));
     const p = panel(page);
-    await expect(p.getByLabel("Exame")).toHaveValue("Hemograma");
+    await expect(p.getByLabel("Exame", { exact: true })).toHaveValue("Hemograma");
     await expect(p.getByLabel("Data")).toHaveValue("2026-10-05");
     await expect(p.getByLabel("Laboratório")).toHaveValue("Lab Central");
     await expect(p.getByLabel("De quem é").locator("option:checked")).toHaveText("Gabriel");
-    await p.getByLabel("Exame").fill("Hemograma completo");
+    await p.getByLabel("Exame", { exact: true }).fill("Hemograma completo");
     await p.getByRole("button", { name: "Confirmar" }).click();
     await expect(p.getByText("Exame salvo em Saúde.")).toBeVisible();
     const { data } = await admin.from("health_exams").select("name, exam_date, lab, file_path, file_mime").eq("household_id", hh);
