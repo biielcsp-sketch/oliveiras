@@ -2,13 +2,14 @@
 
 import { startTransition, useActionState, useEffect, useState } from "react";
 import { Plus } from "lucide-react";
+import { FileButtons } from "@/components/file-buttons";
 import { Button, Card, EmptyState, Field, FormError, Input, Select, Textarea } from "@/components/ui";
 import { Modal } from "@/components/modal";
 import { brDate } from "@/lib/agenda/dates";
 import { LIMITS } from "@/lib/saude/input";
 import { formatSize } from "@/lib/saude/files";
 import { deleteProcedure, saveProcedure, type SaudeState } from "../actions";
-import { ConfirmDelete, FileLink, fileInputClass, type Person } from "./shared";
+import { ConfirmDelete, FileLink, type Person } from "./shared";
 
 export type ProcedureVM = {
   id: string;
@@ -62,9 +63,7 @@ function ProcedureForm({ item, people, defaultMember, onDone }: { item?: Procedu
       <Field label="Observações">
         <Textarea name="notes" maxLength={LIMITS.procNotes} defaultValue={item?.notes ?? ""} />
       </Field>
-      <Field label={item?.mime ? "Trocar arquivo (PDF ou JPG, até 5 MB)" : "Arquivo opcional (PDF ou JPG, até 5 MB)"}>
-        <input name="file" type="file" accept="application/pdf,image/jpeg,.pdf,.jpg,.jpeg" className={fileInputClass} />
-      </Field>
+      <FileButtons label={item?.mime ? "Trocar arquivo (PDF ou JPG, até 5 MB)" : "Arquivo opcional (PDF ou JPG, até 5 MB)"} />
       {item?.mime && (
         <label className="flex min-h-11 items-center gap-3 text-[15px]">
           <input type="checkbox" name="remove_file" className="size-5 accent-[var(--primary)]" />

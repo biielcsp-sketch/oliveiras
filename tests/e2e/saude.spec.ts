@@ -50,13 +50,13 @@ test("Saúde: carteirinhas, consultas e exames (família compartilhada, arquivos
     await d.getByLabel("Operadora").fill("Unimed Teste");
     await d.getByLabel("Número da carteirinha").fill("0123 4567");
     // Texto/HTML com nome e mime de PDF: o servidor olha os bytes.
-    await d.getByLabel(/Arquivo \(PDF ou JPG/).setInputFiles({ name: "falso.pdf", mimeType: "application/pdf", buffer: Buffer.from("<html><script>alert(1)</script></html>") });
+    await d.getByRole("group", { name: /Arquivo \(PDF ou JPG/ }).getByLabel("PDF", { exact: true }).setInputFiles({ name: "falso.pdf", mimeType: "application/pdf", buffer: Buffer.from("<html><script>alert(1)</script></html>") });
     await d.getByRole("button", { name: "Salvar carteirinha" }).click();
     await expect(d.getByText("Envie um arquivo PDF ou JPG.")).toBeVisible();
-    await d.getByLabel(/Arquivo \(PDF ou JPG/).setInputFiles({ name: "grande.pdf", mimeType: "application/pdf", buffer: Buffer.concat([PDF, Buffer.alloc(5 * 1024 * 1024)]) });
+    await d.getByRole("group", { name: /Arquivo \(PDF ou JPG/ }).getByLabel("PDF", { exact: true }).setInputFiles({ name: "grande.pdf", mimeType: "application/pdf", buffer: Buffer.concat([PDF, Buffer.alloc(5 * 1024 * 1024)]) });
     await d.getByRole("button", { name: "Salvar carteirinha" }).click();
     await expect(d.getByText("O arquivo passa de 5 MB.")).toBeVisible();
-    await d.getByLabel(/Arquivo \(PDF ou JPG/).setInputFiles(pdf);
+    await d.getByRole("group", { name: /Arquivo \(PDF ou JPG/ }).getByLabel("PDF", { exact: true }).setInputFiles(pdf);
     await d.getByRole("button", { name: "Salvar carteirinha" }).click();
     await expect(a.getByRole("status").filter({ hasText: "Carteirinha salva." })).toBeVisible();
     const card = a.getByRole("region", { name: "Carteirinhas de Filho Teste" }).getByTestId("carteirinha");
@@ -145,7 +145,7 @@ test("Saúde: carteirinhas, consultas e exames (família compartilhada, arquivos
     await a.getByTestId("carteirinha").getByRole("button", { name: "Editar" }).click();
     const d = a.getByRole("dialog", { name: "Editar carteirinha" });
     await d.getByLabel("Plano").fill("Pleno");
-    await d.getByLabel(/Trocar arquivo/).setInputFiles(jpg);
+    await d.getByRole("group", { name: /Trocar arquivo/ }).getByLabel("Imagem", { exact: true }).setInputFiles(jpg);
     await d.getByRole("button", { name: "Salvar alterações" }).click();
     await expect(a.getByRole("status").filter({ hasText: "Carteirinha atualizada." })).toBeVisible();
     const card = a.getByTestId("carteirinha");
@@ -226,7 +226,7 @@ test("Saúde: carteirinhas, consultas e exames (família compartilhada, arquivos
 
     await ex.getByRole("button", { name: "Editar" }).click();
     const e = a.getByRole("dialog", { name: "Editar exame" });
-    await e.getByLabel(/Arquivo opcional/).setInputFiles(pdf);
+    await e.getByRole("group", { name: /Arquivo opcional/ }).getByLabel("PDF", { exact: true }).setInputFiles(pdf);
     await e.getByRole("button", { name: "Salvar alterações" }).click();
     const link = ex.getByRole("link", { name: "Abrir PDF" });
     await expect(link).toBeVisible();
@@ -249,7 +249,7 @@ test("Saúde: carteirinhas, consultas e exames (família compartilhada, arquivos
     await a.getByRole("button", { name: "Nova carteirinha" }).click();
     const d = a.getByRole("dialog", { name: "Nova carteirinha" });
     await d.getByLabel("Operadora").fill("Bradesco Saúde");
-    await d.getByLabel(/Arquivo \(PDF ou JPG/).setInputFiles(pdf);
+    await d.getByRole("group", { name: /Arquivo \(PDF ou JPG/ }).getByLabel("PDF", { exact: true }).setInputFiles(pdf);
     await d.getByRole("button", { name: "Salvar carteirinha" }).click();
     await expect(a.getByTestId("carteirinha")).toContainText("Bradesco Saúde");
     await expect.poll(async () => (await cachedPaths(a)).length).toBe(2);

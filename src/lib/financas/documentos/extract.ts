@@ -12,7 +12,8 @@ import { geminiBaseUrl, runExtraction, EXTRACTION_TIMEOUT_MS, type Generate, typ
  */
 export const DOCS_DEFAULT_MODEL = "gemini-3.5-flash-lite";
 
-function geminiGenerate(apiKey: string): Generate {
+/** Gerador do Gemini (exportado para a leitura de arquivos do Oli reaproveitar o mesmo cliente e limites). */
+export function geminiGenerate(apiKey: string): Generate {
   const baseUrl = geminiBaseUrl(process.env);
   const client = new GoogleGenAI({
     apiKey,
@@ -44,9 +45,12 @@ function geminiGenerate(apiKey: string): Generate {
   };
 }
 
+/** Chave da leitura de documentos (só no servidor). */
+export const docsApiKey = () => process.env.GEMINI_DOCS_API_KEY?.trim() || process.env.GEMINI_API_KEY?.trim() || "";
+
 /** Sem chave configurada, não chama nada: o documento fica para preenchimento à mão. */
 export async function extractDocument(bytes: Uint8Array, mime: "application/pdf" | "image/jpeg"): Promise<ExtractionResult> {
-  const apiKey = process.env.GEMINI_DOCS_API_KEY?.trim() || process.env.GEMINI_API_KEY?.trim();
+  const apiKey = docsApiKey();
   if (!apiKey) return { ok: false, motivo: "erro" };
   const r = await runExtraction(geminiGenerate(apiKey), bytes, mime);
   // Só o motivo, nunca o conteúdo do documento nem a resposta da IA.

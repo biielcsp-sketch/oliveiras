@@ -20,16 +20,17 @@ export default async function ApagarDocumentoPage({ params }: { params: Promise<
 
   // Mesma regra do servidor ao apagar: só oferece apagar o lançamento que este documento criou.
   let createdTransaction = false;
-  let paid = false;
+  let paid: "fixa" | "avulsa" | null = null;
   if (doc.transaction_id) {
     const db = await createClient();
-    const [{ data: tx }, { count }, { data: pay }] = await Promise.all([
+    const [{ data: tx }, { count }, { data: pay }, { data: oneOff }] = await Promise.all([
       db.from("fin_transactions").select("id, source").eq("household_id", household.id).eq("id", doc.transaction_id).maybeSingle(),
       db.from("fin_documents").select("id", { count: "exact", head: true }).eq("household_id", household.id).eq("transaction_id", doc.transaction_id).neq("id", doc.id),
       db.from("fin_bill_payments").select("id").eq("household_id", household.id).eq("transaction_id", doc.transaction_id).limit(1).maybeSingle(),
+      db.from("fin_one_off_bills").select("id").eq("household_id", household.id).eq("transaction_id", doc.transaction_id).limit(1).maybeSingle(),
     ]);
     createdTransaction = planDocDelete({ mode: "tudo", docTransactionId: doc.transaction_id, tx, otherDocsWithTx: count ?? 0 }).transactionId !== null;
-    paid = Boolean(pay);
+    paid = pay ? "fixa" : oneOff ? "avulsa" : null;
   }
 
   return (
@@ -44,7 +45,7 @@ export default async function ApagarDocumentoPage({ params }: { params: Promise<
           <p>
             Este documento criou um{" "}
             <Link href={`/financas/lancamentos/${doc.transaction_id}`} className="font-medium text-link">lançamento</Link>
-            {paid ? " e marcou uma conta fixa como paga" : ""}. Escolha se eles ficam ou saem junto.
+            {paid ? ` e marcou uma conta ${paid} como paga` : ""}. Escolha se eles ficam ou saem junto.
           </p>
         )}
         {doc.transaction_id && !createdTransaction && (

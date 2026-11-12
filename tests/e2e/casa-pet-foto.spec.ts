@@ -74,11 +74,11 @@ test("Pet: foto de perfil (cadastrar, trocar, remover, apagar) e outra família 
     await d.getByLabel("Nome do pet").fill("Moisés");
 
     // Arquivo que o navegador não decodifica (ex.: HEIC): erro claro, nada é selecionado.
-    await d.getByLabel("Foto", { exact: true }).setInputFiles(file("foto.heic", Buffer.from("isto nao e imagem"), "image/heic"));
+    await d.getByRole("group", { name: "Foto do pet" }).getByLabel("Imagem", { exact: true }).setInputFiles(file("foto.heic", Buffer.from("isto nao e imagem"), "image/heic"));
     await expect(d.getByRole("alert")).toContainText("Escolha uma foto JPG ou PNG");
     await expect(d.getByRole("button", { name: "Remover foto" })).toHaveCount(0);
 
-    await d.getByLabel("Foto", { exact: true }).setInputFiles(file("grande.png", png(1200, 900, [200, 80, 40])));
+    await d.getByRole("group", { name: "Foto do pet" }).getByLabel("Imagem", { exact: true }).setInputFiles(file("grande.png", png(1200, 900, [200, 80, 40])));
     await expect(d.getByTestId("pet-avatar")).toBeVisible(); // pré-visualização antes de salvar
     await d.getByRole("button", { name: "Cadastrar pet" }).click();
     await expect(status(a, "Moisés cadastrado.")).toBeVisible();
@@ -115,7 +115,7 @@ test("Pet: foto de perfil (cadastrar, trocar, remover, apagar) e outra família 
   await test.step("trocar a foto: arquivo antigo some do storage", async () => {
     await a.getByTestId("pet").getByRole("button", { name: "Editar" }).click();
     const d = a.getByRole("dialog", { name: "Editar Moisés" });
-    await d.getByLabel("Foto", { exact: true }).setInputFiles(file("nova.png", png(300, 600, [20, 90, 200])));
+    await d.getByRole("group", { name: "Foto do pet" }).getByLabel("Imagem", { exact: true }).setInputFiles(file("nova.png", png(300, 600, [20, 90, 200])));
     await d.getByRole("button", { name: "Salvar alterações" }).click();
     await expect(status(a, "Moisés atualizado.")).toBeVisible();
     secondPath = (await photoOf("Moisés")).photo_path as string;
@@ -143,13 +143,13 @@ test("Pet: foto de perfil (cadastrar, trocar, remover, apagar) e outra família 
         setTimeout(() => orig.apply(this, args), 1500);
       };
     });
-    await d.getByLabel("Foto", { exact: true }).setInputFiles(file("lenta.png", png(64, 64, [90, 90, 90])));
+    await d.getByRole("group", { name: "Foto do pet" }).getByLabel("Imagem", { exact: true }).setInputFiles(file("lenta.png", png(64, 64, [90, 90, 90])));
     await expect(d.getByText("Preparando a foto…")).toBeVisible();
     await expect(d.getByRole("button", { name: "Salvar alterações" })).toBeDisabled();
     await expect(d.getByText("Preparando a foto…")).toHaveCount(0);
     await expect(d.getByRole("button", { name: "Salvar alterações" })).toBeEnabled();
     // Falha de leitura: erro aparece, salvar volta a funcionar e a foto atual NÃO é removida.
-    await d.getByLabel("Foto", { exact: true }).setInputFiles(file("ruim.heic", Buffer.from("nao e imagem"), "image/heic"));
+    await d.getByRole("group", { name: "Foto do pet" }).getByLabel("Imagem", { exact: true }).setInputFiles(file("ruim.heic", Buffer.from("nao e imagem"), "image/heic"));
     await expect(d.getByRole("alert")).toContainText("Escolha uma foto JPG ou PNG");
     await expect(d.getByRole("button", { name: "Salvar alterações" })).toBeEnabled();
     await d.getByRole("button", { name: "Fechar" }).click(); // sem salvar: a foto atual segue intacta
@@ -178,7 +178,7 @@ test("Pet: foto de perfil (cadastrar, trocar, remover, apagar) e outra família 
   await test.step("nova foto e, depois, apagar o pet remove o arquivo do storage", async () => {
     await a.getByTestId("pet").getByRole("button", { name: "Editar" }).click();
     const d = a.getByRole("dialog", { name: "Editar Moisés" });
-    await d.getByLabel("Foto", { exact: true }).setInputFiles(file("outra.png", png(64, 64, [0, 160, 80])));
+    await d.getByRole("group", { name: "Foto do pet" }).getByLabel("Imagem", { exact: true }).setInputFiles(file("outra.png", png(64, 64, [0, 160, 80])));
     await d.getByRole("button", { name: "Salvar alterações" }).click();
     await expect(status(a, "Moisés atualizado.")).toBeVisible();
     // Mesmo motivo do passo de remover: o aviso "atualizado" anterior ainda está na tela, então espera a foto nova chegar ao banco.

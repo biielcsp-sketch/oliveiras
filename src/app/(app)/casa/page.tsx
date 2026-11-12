@@ -9,7 +9,7 @@ import { homeBillCounts, homeBillsForMonth } from "@/lib/casa/contas";
 import { warrantyAlerts } from "@/lib/casa/docs";
 import { MEALS, MEAL_LABEL, type Meal } from "@/lib/casa/types";
 import { petSummary } from "@/lib/casa/pet";
-import { getBillPayments, getBills } from "@/lib/financas/planning-data";
+import { getBillPayments, getBills, getOneOffBillsForMonth } from "@/lib/financas/planning-data";
 import { getConfirmedBillDocs } from "@/lib/financas/documentos/data";
 import { currentMonth } from "@/lib/financas/period";
 
@@ -44,7 +44,7 @@ export default async function Page() {
   const hh = ctx.household.id;
   const today = toSpDate(new Date());
   const month = currentMonth();
-  const [shopping, chores, maint, bills, payments, billDocs, docs, meals, providers, pets, petHealth, petCare, petFood] = await Promise.all([
+  const [shopping, chores, maint, bills, payments, billDocs, docs, meals, providers, pets, petHealth, petCare, petFood, oneOffs] = await Promise.all([
     db.from("casa_shopping_items").select("id", { count: "exact", head: true }).eq("household_id", hh).eq("done", false),
     db.from("casa_chores").select("active, next_due_on").eq("household_id", hh).eq("active", true).limit(500),
     db.from("casa_maintenance").select("next_due_on").eq("household_id", hh).eq("active", true).limit(500),
@@ -58,13 +58,15 @@ export default async function Page() {
     db.from("casa_pet_health").select("id, pet_id, kind, name, dose, applied_on, next_due_on, created_at").eq("household_id", hh).order("created_at", { ascending: false }).limit(2000),
     db.from("casa_pet_care").select("active, next_due_on").eq("household_id", hh).eq("active", true).limit(500),
     db.from("casa_pet_food").select("pet_id, bag_kg, daily_grams, started_on").eq("household_id", hh).eq("active", true).limit(100),
+    getOneOffBillsForMonth(month),
   ]);
 
   const b = choreBuckets((chores.data ?? []) as { active: boolean; next_due_on: string | null }[], today);
   const mStatus = (maint.data ?? []).map((m) => maintenanceStatus(m.next_due_on as string | null, today));
   const overdueM = mStatus.filter((s) => s === "vencida").length;
   const soonM = mStatus.filter((s) => s === "em-breve").length;
-  const billCounts = homeBillCounts(homeBillsForMonth({ bills, payments, docs: billDocs, month, today }));
+  // Avulsas da casa do mês contam junto das fixas da casa (homeBillsForMonth filtra is_home).
+  const billCounts = homeBillCounts(homeBillsForMonth({ bills, payments, docs: billDocs, oneOffs, month, today }));
   const w = warrantyAlerts((docs.data ?? []) as { warranty_until: string | null }[], today);
   const pet = petSummary(
     {

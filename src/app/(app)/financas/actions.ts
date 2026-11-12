@@ -10,7 +10,7 @@ import { decodeStatement, parseOfx } from "@/lib/financas/ofx";
 import { parseCsv } from "@/lib/financas/csv";
 import { buildImportRows, suggestInvert } from "@/lib/financas/import";
 import { validateManualTransaction } from "@/lib/financas/transaction-input";
-import { monthsAround } from "@/lib/financas/baixa";
+import { baixaLabels, countBaixas, monthsAround } from "@/lib/financas/baixa";
 import { runBaixaAutomatica } from "@/lib/financas/baixa-data";
 
 export type FormState = { error?: string; ok?: boolean } | null;
@@ -346,16 +346,28 @@ export async function confirmImport(_: ImportState, form: FormData): Promise<Imp
   }
   // Saídas do arquivo cruzam com as contas fixas (baixa automática, com a sessão do usuário).
   const outflowDates = rows.filter((x) => x.amount < 0).map((x) => x.date);
-  const { applied } = inserted > 0 && outflowDates.length ? await runBaixaAutomatica(monthsAround(outflowDates)) : { applied: [] };
+  const { applied, appliedOneOff } =
+    inserted > 0 && outflowDates.length ? await runBaixaAutomatica(monthsAround(outflowDates)) : { applied: [], appliedOneOff: [] };
   let baixas: { bill: string; month: string }[] = [];
-  if (applied.length) {
-    const { data: bills } = await r.supabase
-      .from("fin_bills")
-      .select("id, name")
-      .eq("household_id", r.household.id)
-      .in("id", [...new Set(applied.map((m) => m.bill_id))]);
-    const name = new Map((bills ?? []).map((b) => [b.id, b.name]));
-    baixas = applied.map((m) => ({ bill: name.get(m.bill_id) ?? "Conta", month: m.month }));
+  if (countBaixas({ applied, appliedOneOff })) {
+    const [{ data: bills }, { data: oneOffs }] = await Promise.all([
+      applied.length
+        ? r.supabase.from("fin_bills").select("id, name").eq("household_id", r.household.id).in("id", [...new Set(applied.map((m) => m.bill_id))])
+        : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+      appliedOneOff.length
+        ? r.supabase
+            .from("fin_one_off_bills")
+            .select("id, name, due_date")
+            .eq("household_id", r.household.id)
+            .in("id", [...new Set(appliedOneOff.map((m) => m.one_off_bill_id))])
+        : Promise.resolve({ data: [] as { id: string; name: string; due_date: string }[] }),
+    ]);
+    baixas = baixaLabels(
+      applied,
+      appliedOneOff,
+      new Map((bills ?? []).map((b) => [b.id, b.name])),
+      new Map((oneOffs ?? []).map((o) => [o.id, { name: o.name, due_date: o.due_date }])),
+    );
   }
   refresh();
   return { step: "done", inserted, skipped: rows.length - inserted, baixas };

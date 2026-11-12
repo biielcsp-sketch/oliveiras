@@ -2,27 +2,36 @@
 
 import { useActionState, useState } from "react";
 import { payBill, type PlanState } from "../planning-actions";
+import { payOneOff } from "../avulsas-actions";
 import { Button, Field, FormError, Input } from "@/components/ui";
 import { formatBRL } from "@/lib/financas/money";
 import { shortDate } from "@/lib/financas/period";
 import type { Transaction } from "@/lib/financas/types";
 
 type Props = {
-  billId: string;
+  /** Conta fixa (com o mês) ou, com `oneOffId`, conta avulsa (sem mês e sem valor pago: só a data). */
+  billId?: string;
+  oneOffId?: string;
   month: string;
   expected: number;
   due: string;
   suggestions: (Transaction & { accountName: string })[];
 };
 
-export function PayForm({ billId, month, expected, due, suggestions }: Props) {
-  const [state, action, pending] = useActionState<PlanState, FormData>(payBill, null);
+export function PayForm({ billId, oneOffId, month, expected, due, suggestions }: Props) {
+  const [state, action, pending] = useActionState<PlanState, FormData>(oneOffId ? payOneOff : payBill, null);
   const [choice, setChoice] = useState(suggestions[0]?.id ?? "sem");
 
   return (
     <form action={action} className="flex flex-col gap-3">
-      <input type="hidden" name="bill_id" value={billId} />
-      <input type="hidden" name="month" value={month} />
+      {oneOffId ? (
+        <input type="hidden" name="one_off_id" value={oneOffId} />
+      ) : (
+        <>
+          <input type="hidden" name="bill_id" value={billId} />
+          <input type="hidden" name="month" value={month} />
+        </>
+      )}
       <fieldset className="flex flex-col gap-2">
         <legend className="mb-2 text-sm text-muted">
           {suggestions.length > 0
@@ -45,7 +54,12 @@ export function PayForm({ billId, month, expected, due, suggestions }: Props) {
         </label>
       </fieldset>
 
-      {choice === "sem" && (
+      {choice === "sem" && oneOffId && (
+        <Field label="Pago em">
+          <Input name="paid_on" type="date" defaultValue={due} required />
+        </Field>
+      )}
+      {choice === "sem" && !oneOffId && (
         <div className="grid grid-cols-2 gap-3">
           <Field label="Pago em">
             <Input name="paid_on" type="date" defaultValue={due} required />

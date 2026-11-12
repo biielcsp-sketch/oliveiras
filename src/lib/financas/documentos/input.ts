@@ -118,6 +118,31 @@ export function validateBoletoEdit(f: BoletoEditForm): { ok: true; value: Boleto
   return { ok: true, value: { bill_id: billId, amount, due_date: f.dueDate, bill_month: f.billMonth } };
 }
 
+export const ONE_OFF_BOLETO_EDIT = "Este boleto é de uma conta avulsa: edite pela conta avulsa.";
+export const ORPHAN_BOLETO_EDIT = "Este boleto era de uma conta avulsa que foi apagada: não há conta para editar. Se não precisar mais dele, apague o documento.";
+
+/**
+ * Pode abrir "Editar documento"? null = pode; senão, o motivo (mesma regra na tela e no servidor).
+ * A edição do boleto é a da conta FIXA (conta + mês). Boleto de avulsa se edita pela avulsa; boleto cuja
+ * avulsa foi apagada fica sem bill_id, sem bill_month e sem one_off_bill_id (o FK só zera o vínculo) e não
+ * pode virar boleto de conta fixa por esta tela. Boleto de conta fixa apagada guarda o bill_month
+ * (o FK zera só bill_id) e continua editável para escolher outra conta, como antes.
+ */
+export function docEditBlock(doc: {
+  status: string;
+  kind: string;
+  bill_id: string | null;
+  bill_month: string | null;
+  one_off_bill_id: string | null;
+}): string | null {
+  if (doc.status !== "confirmado") return "Só documentos confirmados podem ser editados.";
+  if (doc.kind === "comprovante") return null;
+  if (doc.kind !== "boleto") return "Este tipo de documento não tem dados para editar.";
+  if (doc.one_off_bill_id) return ONE_OFF_BOLETO_EDIT;
+  if (!doc.bill_id && !doc.bill_month) return ORPHAN_BOLETO_EDIT;
+  return null;
+}
+
 export type ComprovanteEditForm = { amount: string; paidOn: string; payee: string };
 export type ComprovanteEditValues = { amount: number; paid_on: string; payee: string | null };
 

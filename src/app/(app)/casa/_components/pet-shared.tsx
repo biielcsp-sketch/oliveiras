@@ -2,9 +2,9 @@
 
 import { startTransition, useActionState, type ReactNode } from "react";
 import clsx from "clsx";
-import { Button, Field, FormError } from "@/components/ui";
+import { FileButtons } from "@/components/file-buttons";
+import { Button, FormError } from "@/components/ui";
 import type { PetState } from "../pet-actions";
-import { fileInputClass } from "../../saude/_components/shared";
 import { useOnSaved } from "./shared";
 
 /** Formulário de uma server action da aba Pet: envia o FormData, mostra o erro e avisa no sucesso. */
@@ -51,9 +51,7 @@ export function ActionForm({
 export function FileFields({ hasFile }: { hasFile: boolean }) {
   return (
     <>
-      <Field label={hasFile ? "Trocar anexo (PDF ou JPG, até 5 MB)" : "Anexo opcional (PDF ou JPG, até 5 MB)"}>
-        <input name="file" type="file" accept="application/pdf,image/jpeg,.pdf,.jpg,.jpeg" className={fileInputClass} />
-      </Field>
+      <FileButtons label={hasFile ? "Trocar anexo (PDF ou JPG, até 5 MB)" : "Anexo opcional (PDF ou JPG, até 5 MB)"} />
       {hasFile && (
         <label className="flex min-h-11 items-center gap-3 text-[15px]">
           <input type="checkbox" name="remove_file" className="size-5 accent-[var(--primary)]" />

@@ -8,6 +8,7 @@ import { Button, Field, FormError, Input, Select } from "@/components/ui";
 import { monthOf, sameBillMonthDocs, type DocRef } from "@/lib/financas/documentos/rules";
 import type { DocKind } from "@/lib/financas/documentos/schema";
 import type { CategoryKind } from "@/lib/financas/types";
+import { oneOffOption, type BillKind } from "@/lib/financas/avulsas";
 
 type Props = {
   doc: {
@@ -30,7 +31,10 @@ type Props = {
   paidKeys: string[];
   dupBoleto: string[];
   dupComprovante: string[];
-  boletoLink: { billId: string; month: string } | null;
+  /** Contas avulsas em aberto (para marcar paga junto do comprovante). */
+  oneOffs: { id: string; name: string; due_date: string }[];
+  /** Boleto conferido com o mesmo código: conta já sugerida no comprovante (fixa com mês, ou "avulsa:<id>"). */
+  boletoLink: { target: string; month: string | null } | null;
   /** "casa": veio de Casa > Contas (conta nova já é da casa; ao terminar volta para a Casa). */
   origem?: "casa" | null;
   mes?: string;
@@ -42,8 +46,14 @@ const KINDS: { key: DocKind; label: string }[] = [
   { key: "outro", label: "Outro" },
 ];
 
+const BILL_KINDS: { key: BillKind; label: string }[] = [
+  { key: "fixa", label: "Conta fixa (todo mês)" },
+  { key: "avulsa", label: "Conta avulsa (só esta vez)" },
+];
+
 const money = (v: number | null) => (v === null ? "" : v.toFixed(2).replace(".", ","));
 const monthBr = (m: string) => `${m.slice(5, 7)}/${m.slice(0, 4)}`;
+const dateBr = (iso: string) => iso.split("-").reverse().join("/");
 
 function Warning({ children }: { children: React.ReactNode }) {
   return <div role="alert" className="rounded-2xl bg-warning-soft px-4 py-3 text-sm text-warning">{children}</div>;
@@ -121,6 +131,10 @@ export function DocReview(p: Props) {
 
 function BoletoForm(p: Props) {
   const [state, action, pending] = useActionState<DocState, FormData>(confirmBoleto, null);
+  // Sem padrão: o usuário escolhe fixa ou avulsa (o servidor também recusa sem tipo).
+  const [billKind, setBillKind] = useState<BillKind | null>(null);
+  // O nome da avulsa nasce do beneficiário (lido ou digitado) no momento da escolha.
+  const [payee, setPayee] = useState(p.doc.payee ?? "");
   const [billChoice, setBillChoice] = useState(p.suggestedBillId ?? (p.bills.length ? "" : "nova"));
   const [dueDate, setDueDate] = useState(p.doc.dueDate ?? "");
   const [month, setMonth] = useState(monthOf(p.doc.dueDate) ?? p.today.slice(0, 7));
@@ -133,8 +147,26 @@ function BoletoForm(p: Props) {
     <form action={action} className="flex flex-col gap-4">
       <input type="hidden" name="id" value={p.doc.id} />
       {p.origem === "casa" && <input type="hidden" name="origem" value="casa" />}
+      <input type="hidden" name="bill_kind" value={billKind ?? ""} />
+      <div className="flex flex-col gap-1.5">
+        <span className="text-sm text-muted" id="tipo-conta">Tipo de conta</span>
+        <div className="grid grid-cols-2 rounded-full bg-surface-2 p-1 text-[14px]" role="radiogroup" aria-labelledby="tipo-conta">
+          {BILL_KINDS.map((k) => (
+            <button
+              key={k.key}
+              type="button"
+              role="radio"
+              aria-checked={billKind === k.key}
+              onClick={() => setBillKind(k.key)}
+              className={clsx("min-h-11 rounded-full px-2 leading-tight transition", billKind === k.key ? "bg-surface-solid font-medium text-ink shadow-soft" : "text-muted")}
+            >
+              {k.label}
+            </button>
+          ))}
+        </div>
+      </div>
       <Field label="Beneficiário">
-        <Input name="payee" maxLength={120} defaultValue={p.doc.payee ?? ""} />
+        <Input name="payee" maxLength={120} value={payee} onChange={(e) => setPayee(e.target.value)} />
       </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Valor (R$)">
@@ -157,6 +189,10 @@ function BoletoForm(p: Props) {
       <Field label="Linha digitável">
         <Input name="barcode" inputMode="numeric" maxLength={60} defaultValue={p.doc.linha} />
       </Field>
+      {billKind === null && <p className="text-sm text-muted">Escolha acima se é uma conta fixa (todo mês) ou avulsa (só esta vez).</p>}
+      {billKind === "avulsa" && <OneOffFields {...p} defaultName={payee.trim().slice(0, 60)} />}
+      {billKind === "fixa" && (
+      <>
       <Field label="Conta fixa">
         <Select name="bill_choice" value={billChoice} onChange={(e) => setBillChoice(e.target.value)} required>
           <option value="" disabled>Escolha…</option>
@@ -209,18 +245,51 @@ function BoletoForm(p: Props) {
         </Warning>
       )}
       {paid && <Warning>Esta conta já está paga em {monthBr(month)}.</Warning>}
+      </>
+      )}
       <FormError message={state?.error} />
-      <Button disabled={pending}>{pending ? "Salvando…" : "Confirmar conta fixa"}</Button>
+      {billKind && (
+        <Button disabled={pending}>{pending ? "Salvando…" : billKind === "fixa" ? "Confirmar conta fixa" : "Confirmar conta avulsa"}</Button>
+      )}
     </form>
+  );
+}
+
+/** Conta avulsa: só esta vez. Nome vem do beneficiário (ao escolher o tipo); valor e vencimento são os do boleto (campos acima). */
+function OneOffFields(p: Props & { defaultName: string }) {
+  return (
+    <div className="flex flex-col gap-4 rounded-2xl border border-line p-4">
+      <p className="text-[13px] text-muted">Aparece nas Finanças no mês do vencimento{p.origem === "casa" ? " e em Casa > Contas" : ""}. Não se repete nos próximos meses.</p>
+      <Field label="Nome da conta avulsa">
+        <Input name="oneoff_name" maxLength={60} defaultValue={p.defaultName} required />
+      </Field>
+      <Field label="Categoria">
+        <Select name="category_id" defaultValue="">
+          <option value="">Sem categoria</option>
+          {p.categories.filter((c) => c.kind === "despesa").map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </Select>
+      </Field>
+      <Field label="Paga pela conta">
+        <Select name="account_id" defaultValue="">
+          <option value="">Qualquer conta</option>
+          {p.accounts.map((a) => (
+            <option key={a.id} value={a.id}>{a.name}</option>
+          ))}
+        </Select>
+      </Field>
+    </div>
   );
 }
 
 function ComprovanteForm(p: Props) {
   const [state, action, pending] = useActionState<DocState, FormData>(confirmComprovante, null);
   const [date, setDate] = useState(p.doc.paidOn ?? p.today);
-  const [payBill, setPayBill] = useState(p.boletoLink?.billId ?? "");
+  const [payBill, setPayBill] = useState(p.boletoLink?.target ?? "");
   const [payMonth, setPayMonth] = useState(p.boletoLink?.month ?? monthOf(p.doc.paidOn) ?? p.today.slice(0, 7));
-  const paid = payBill ? p.paidKeys.includes(`${payBill}:${payMonth}`) : false;
+  const payFixed = Boolean(payBill) && !payBill.startsWith(oneOffOption(""));
+  const paid = payFixed ? p.paidKeys.includes(`${payBill}:${payMonth}`) : false;
   const cats = p.categories.filter((c) => c.kind !== "receita");
 
   return (
@@ -263,12 +332,27 @@ function ComprovanteForm(p: Props) {
         <Field label="Marcar como paga a conta">
           <Select name="pay_bill_id" value={payBill} onChange={(e) => setPayBill(e.target.value)}>
             <option value="">Não marcar</option>
-            {p.bills.map((b) => (
-              <option key={b.id} value={b.id}>{b.name}</option>
-            ))}
+            {p.oneOffs.length > 0 ? (
+              <>
+                <optgroup label="Contas fixas">
+                  {p.bills.map((b) => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="Contas avulsas em aberto">
+                  {p.oneOffs.map((o) => (
+                    <option key={o.id} value={oneOffOption(o.id)}>{`${o.name} (avulsa, vence ${dateBr(o.due_date)})`}</option>
+                  ))}
+                </optgroup>
+              </>
+            ) : (
+              p.bills.map((b) => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))
+            )}
           </Select>
         </Field>
-        {payBill && (
+        {payFixed && (
           <Field label="Mês da conta paga">
             <Input name="pay_month" type="month" value={payMonth} onChange={(e) => setPayMonth(e.target.value)} required />
           </Field>

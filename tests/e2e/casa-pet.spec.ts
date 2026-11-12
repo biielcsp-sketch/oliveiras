@@ -70,10 +70,10 @@ test("Pet: Moisés com vacina, veterinário, cuidados, peso e ração (isolado d
     await d.getByLabel("Dose", { exact: true }).fill("Reforço");
     await d.getByLabel("Aplicada em").fill(addDays(today, -362));
     await d.getByLabel("Próxima dose").fill(due);
-    await d.getByLabel(/Anexo opcional/).setInputFiles({ name: "falso.pdf", mimeType: "application/pdf", buffer: Buffer.from("<html>oi</html>") });
+    await d.getByRole("group", { name: /Anexo opcional/ }).getByLabel("PDF", { exact: true }).setInputFiles({ name: "falso.pdf", mimeType: "application/pdf", buffer: Buffer.from("<html>oi</html>") });
     await d.getByRole("button", { name: "Salvar" }).click();
     await expect(d.getByText("Envie um arquivo PDF ou JPG.")).toBeVisible();
-    await d.getByLabel(/Anexo opcional/).setInputFiles(pdf("pet"));
+    await d.getByRole("group", { name: /Anexo opcional/ }).getByLabel("PDF", { exact: true }).setInputFiles(pdf("pet"));
     await d.getByRole("button", { name: "Salvar" }).click();
     await expect(status(a, "V10 salvo.")).toBeVisible();
     await expect(d).toHaveCount(0);

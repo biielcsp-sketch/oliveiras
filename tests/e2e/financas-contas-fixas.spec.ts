@@ -35,8 +35,7 @@ function ofx(rows: { id: string; date: string; amount: string; memo: string }[])
 async function upload(page: Page, tag: string) {
   await page.goto("/financas/documentos");
   const box = page.getByRole("region", { name: "Ler PDF ou foto" });
-  await box.getByLabel("Arquivo (PDF ou JPG, até 5 MB)").setInputFiles(pdf(tag));
-  await box.getByRole("button", { name: "Ler documento" }).click();
+  await box.getByLabel("PDF", { exact: true }).setInputFiles(pdf(tag));
   await expect(page).toHaveURL(DOC_URL, { timeout: 45_000 });
   return page.url().match(DOC_URL)![1];
 }
@@ -100,6 +99,7 @@ test("Contas fixas: rota antiga, editar/apagar documentos e baixa automática pe
   await test.step("boleto conferido à mão e editado (valor e vencimento)", async () => {
     boletoId = await upload(page, "boleto");
     await page.getByRole("radio", { name: "Boleto" }).click();
+    await page.getByRole("radio", { name: "Conta fixa (todo mês)" }).click();
     await page.getByLabel("Beneficiário").fill("ENEL Distribuição");
     await page.getByLabel("Valor (R$)").fill("187,90");
     await page.getByLabel("Vencimento").fill("2026-12-10");

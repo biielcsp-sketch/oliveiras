@@ -38,8 +38,7 @@ const AGUA = "836200000005667800481000180975657313001589636081"; // exemplo púb
 async function upload(page: Page, from: string, file: ReturnType<typeof pdfWith>) {
   await page.goto(from);
   const box = page.getByRole("region", { name: "Ler PDF ou foto" });
-  await box.getByLabel("Arquivo (PDF ou JPG, até 5 MB)").setInputFiles(file);
-  await box.getByRole("button", { name: "Ler documento" }).click();
+  await box.getByLabel("PDF", { exact: true }).setInputFiles(file);
   await expect(page).toHaveURL(DOC_URL, { timeout: 45_000 });
   return page.url().match(DOC_URL)![1];
 }
@@ -81,11 +80,9 @@ test("Finanças: leitura de boleto e comprovante com conferência", async ({ bro
   await test.step("arquivo falso e acima de 5 MB são recusados no servidor", async () => {
     await a.goto("/financas/contas-fixas");
     const box = a.getByRole("region", { name: "Ler PDF ou foto" });
-    await box.getByLabel("Arquivo (PDF ou JPG, até 5 MB)").setInputFiles({ name: "falso.pdf", mimeType: "application/pdf", buffer: Buffer.from("<html><script>alert(1)</script></html>") });
-    await box.getByRole("button", { name: "Ler documento" }).click();
+    await box.getByLabel("PDF", { exact: true }).setInputFiles({ name: "falso.pdf", mimeType: "application/pdf", buffer: Buffer.from("<html><script>alert(1)</script></html>") });
     await expect(box.getByText("Envie um arquivo PDF ou JPG.")).toBeVisible();
-    await box.getByLabel("Arquivo (PDF ou JPG, até 5 MB)").setInputFiles({ name: "grande.pdf", mimeType: "application/pdf", buffer: Buffer.concat([Buffer.from("%PDF-1.4\n"), Buffer.alloc(5 * 1024 * 1024)]) });
-    await box.getByRole("button", { name: "Ler documento" }).click();
+    await box.getByLabel("PDF", { exact: true }).setInputFiles({ name: "grande.pdf", mimeType: "application/pdf", buffer: Buffer.concat([Buffer.from("%PDF-1.4\n"), Buffer.alloc(5 * 1024 * 1024)]) });
     await expect(box.getByText("O arquivo passa de 5 MB.")).toBeVisible();
   });
 
@@ -102,6 +99,9 @@ test("Finanças: leitura de boleto e comprovante com conferência", async ({ bro
     await expect(a.getByLabel("Valor (R$)")).toHaveValue("187,90");
     await expect(a.getByLabel("Vencimento")).toHaveValue("2026-12-10");
     await expect(a.getByLabel("Beneficiário")).toHaveValue("ENEL Distribuição - Luz");
+    // Sem tipo escolhido não há como confirmar: o usuário decide fixa ou avulsa.
+    await expect(a.getByRole("button", { name: "Confirmar conta fixa" })).toHaveCount(0);
+    await a.getByRole("radio", { name: "Conta fixa (todo mês)" }).click();
     await expect(a.getByLabel("Conta fixa").locator("option:checked")).toHaveText("Luz");
     await expect(a.getByLabel("Mês da conta")).toHaveValue("2026-12");
     // Mês é obrigatório no servidor também (o navegador não é confiável).
@@ -158,6 +158,7 @@ test("Finanças: leitura de boleto e comprovante com conferência", async ({ bro
   let boletoNovoId = "";
   await test.step("substituir o boleto do mês: o novo vale em Contas fixas e Pagar; o antigo fica descartado com o arquivo", async () => {
     boletoNovoId = await upload(a, "/financas/contas-fixas", pdfWith({ tipo: "boleto", beneficiario: "ENEL Luz", valor: 199, codigo: BOLETO_NOVO }, "novo"));
+    await a.getByRole("radio", { name: "Conta fixa (todo mês)" }).click();
     await expect(a.getByLabel("Conta fixa").locator("option:checked")).toHaveText("Luz");
     await expect(a.getByRole("alert").filter({ hasText: "Esta conta já tem um boleto confirmado em 12/2026" })).toBeVisible();
     // Sem marcar "substituir", o servidor recusa.
@@ -186,6 +187,7 @@ test("Finanças: leitura de boleto e comprovante com conferência", async ({ bro
   await test.step("boleto de água sem conta parecida: cria conta nova pré-preenchida", async () => {
     await upload(a, "/financas/documentos", pdfWith({ tipo: "boleto", beneficiario: "Sabesp", valor: 66.78, vencimento: "2026-12-15", codigo: AGUA }));
     // Sem conta parecida, nada vem escolhido: o usuário decide entre as existentes e uma nova.
+    await a.getByRole("radio", { name: "Conta fixa (todo mês)" }).click();
     await expect(a.getByLabel("Conta fixa").locator("option:checked")).toHaveText("Escolha…");
     await a.getByLabel("Conta fixa").selectOption({ label: "+ Criar nova conta" });
     await expect(a.getByLabel("Nome da conta")).toHaveValue("Sabesp");

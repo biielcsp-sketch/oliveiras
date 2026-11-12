@@ -4,7 +4,8 @@ import { Card, PageHeader } from "@/components/ui";
 import { createClient } from "@/lib/supabase/server";
 import { getAppContext } from "@/lib/data";
 import { getFinanceBase } from "@/lib/financas/data";
-import { getBills } from "@/lib/financas/planning-data";
+import { getBills, getOneOffBill, getOpenOneOffBills } from "@/lib/financas/planning-data";
+import { oneOffOption } from "@/lib/financas/avulsas";
 import { formatBRL } from "@/lib/financas/money";
 import { shiftMonth } from "@/lib/financas/period";
 import { todaySP } from "@/lib/financas/today";
@@ -12,6 +13,7 @@ import { UUID_RE } from "@/lib/financas/transaction-input";
 import { flowOrigin } from "@/lib/financas/routes";
 import { getDocument, getRelatedDocs } from "@/lib/financas/documentos/data";
 import { toLinhaDigitavel } from "@/lib/financas/documentos/boleto";
+import { docEditBlock, ORPHAN_BOLETO_EDIT } from "@/lib/financas/documentos/input";
 import { reconcile, storedExtracted } from "@/lib/financas/documentos/schema";
 import { DOC_BUCKET, isDocPath, KIND_LABEL, monthOf, sameBarcodeDocs, STATUS_LABEL, suggestBill } from "@/lib/financas/documentos/rules";
 import { DocReview } from "../../_components/doc-review";
@@ -37,6 +39,7 @@ export default async function ConferirDocumentoPage({ params, searchParams }: { 
   const billName = new Map(bills.map((b) => [b.id, b.name]));
 
   if (doc.status !== "pendente") {
+    const oneOff = doc.one_off_bill_id ? await getOneOffBill(doc.one_off_bill_id) : null;
     // Descartado à mão apagou o arquivo; boleto substituído guarda o arquivo como histórico.
     const hasFile =
       doc.status !== "descartado" ||
@@ -49,17 +52,23 @@ export default async function ConferirDocumentoPage({ params, searchParams }: { 
           {doc.due_date && (<><dt className="text-muted">Vencimento</dt><dd>{br(doc.due_date)}</dd></>)}
           {doc.paid_on && (<><dt className="text-muted">Pago em</dt><dd>{br(doc.paid_on)}</dd></>)}
           {doc.bill_id && (<><dt className="text-muted">Conta</dt><dd>{billName.get(doc.bill_id) ?? "—"}{doc.bill_month && ` (${doc.bill_month.slice(5)}/${doc.bill_month.slice(0, 4)})`}</dd></>)}
+          {oneOff && (<><dt className="text-muted">Conta avulsa</dt><dd>{oneOff.name}{oneOff.paid_on ? ` · paga em ${br(oneOff.paid_on)}` : ""}</dd></>)}
         </dl>
+        {docEditBlock(doc) === ORPHAN_BOLETO_EDIT && <p className="mt-4 text-[15px] text-muted">{ORPHAN_BOLETO_EDIT}</p>}
         <div className="mt-5 flex flex-wrap gap-4 text-[15px] font-medium">
           {hasFile && (
             <a href={fileHref} target="_blank" rel="noopener" className="text-link">{isPdf ? "Abrir PDF" : "Abrir foto"}</a>
           )}
           {doc.transaction_id && <Link href={`/financas/lancamentos/${doc.transaction_id}`} className="text-link">Ver lançamento</Link>}
           {doc.bill_month && doc.kind === "boleto" && <Link href={`/financas/contas-fixas?mes=${doc.bill_month}`} className="text-link">Ver em Contas fixas</Link>}
+          {oneOff && <Link href={`/financas/contas-fixas?mes=${oneOff.due_date.slice(0, 7)}`} className="text-link">Ver em Contas avulsas</Link>}
         </div>
         <div className="mt-5 flex flex-wrap gap-4 text-sm">
-          {doc.status === "confirmado" && (doc.kind === "boleto" || doc.kind === "comprovante") && (
+          {docEditBlock(doc) === null && (
             <Link href={`/financas/documentos/${doc.id}/editar`} className="font-medium text-link">Editar documento</Link>
+          )}
+          {doc.status === "confirmado" && oneOff && (
+            <Link href={`/financas/contas-fixas/avulsa/${oneOff.id}`} className="font-medium text-link">Editar conta avulsa</Link>
           )}
           <Link href={`/financas/documentos/${doc.id}/apagar`} className="text-danger underline">Apagar documento</Link>
         </div>
@@ -80,6 +89,11 @@ export default async function ConferirDocumentoPage({ params, searchParams }: { 
   const dupComprovante = sameBarcodeDocs({ id: doc.id, barcode }, "comprovante", related).map((d) => d.id);
   // Comprovante de um boleto já conferido: sugere marcar paga a mesma conta/mês.
   const boletoLink = related.find((d) => d.kind === "boleto" && d.status === "confirmado" && d.barcode && d.barcode === barcode && d.bill_id && d.bill_month);
+  const openOneOffs = await getOpenOneOffBills();
+  // Boleto de avulsa (ainda em aberto) com o mesmo código: sugere marcar paga essa avulsa.
+  const oneOffLink = related.find(
+    (d) => d.kind === "boleto" && d.status === "confirmado" && d.barcode && d.barcode === barcode && d.one_off_bill_id && openOneOffs.some((o) => o.id === d.one_off_bill_id),
+  );
 
   const baseMonth = monthOf(doc.due_date) ?? monthOf(doc.paid_on) ?? reference.slice(0, 7);
   const db = await createClient();
@@ -132,7 +146,14 @@ export default async function ConferirDocumentoPage({ params, searchParams }: { 
         paidKeys={(payments ?? []).map((p) => `${p.bill_id}:${p.month}`)}
         dupBoleto={dupBoleto}
         dupComprovante={dupComprovante}
-        boletoLink={boletoLink ? { billId: boletoLink.bill_id!, month: boletoLink.bill_month! } : null}
+        oneOffs={openOneOffs.map((o) => ({ id: o.id, name: o.name, due_date: o.due_date }))}
+        boletoLink={
+          boletoLink
+            ? { target: boletoLink.bill_id!, month: boletoLink.bill_month! }
+            : oneOffLink
+              ? { target: oneOffOption(oneOffLink.one_off_bill_id!), month: null }
+              : null
+        }
         origem={origem}
         mes={mes}
       />

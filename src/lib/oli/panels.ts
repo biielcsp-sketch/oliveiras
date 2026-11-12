@@ -14,6 +14,7 @@ import { validateAppointmentInput, type AppointmentInput } from "@/lib/saude/inp
 import type { AppointmentKind } from "@/lib/saude/types";
 import { cleanText, DOC_LIMITS, storedExtracted } from "@/lib/financas/documentos/schema";
 import { billForMonth } from "@/lib/financas/documentos/rules";
+import type { OliFileDest, OliFileOptions, OliFileReading } from "./arquivo";
 
 const cents = (v: number) => Math.round(v * 100);
 const reais = (c: number) => c / 100;
@@ -35,7 +36,7 @@ export type SaldosData = {
   cartoes: { nome: string; saldo: number }[];
 };
 
-export type ContaAPagar = { nome: string; valor: number; vencimento: string; status: BillStatus; fatura: boolean };
+export type ContaAPagar = { nome: string; valor: number; vencimento: string; status: BillStatus; fatura: boolean; avulsa?: boolean };
 export type ContasData = { mes: string; mes_rotulo: string; total_pendente: number; contas: ContaAPagar[] };
 
 export type LancamentoItem = { data: string; descricao: string; valor: number; categoria: string | null; conta: string };
@@ -100,6 +101,9 @@ export type DocumentoData = DocumentoItem & { descricao: string | null; conta_li
 
 export type ConfirmStatus = "pendente" | "salvando" | "criado" | "cancelado" | "erro";
 
+/** Arquivo lido pelo "+" do Oli. O arquivo em si fica só na memória da tela (não entra aqui). */
+export type ArquivoPreview = { leitura: OliFileReading; destino: OliFileDest; opcoes: OliFileOptions; nome_arquivo: string };
+
 export type OliPanel =
   | { id: string; kind: "resumo"; data: ResumoData }
   | { id: string; kind: "saldos"; data: SaldosData }
@@ -115,6 +119,7 @@ export type OliPanel =
   | { id: string; kind: "confirmar_consulta"; data: ConsultaPreview; status: ConfirmStatus; erro?: string }
   | { id: string; kind: "documentos"; data: DocumentosData }
   | { id: string; kind: "documento"; data: DocumentoData }
+  | { id: string; kind: "confirmar_arquivo"; data: ArquivoPreview; status: ConfirmStatus; erro?: string }
   | { id: string; kind: "aviso"; texto: string };
 
 /* ---------- Montagem dos dados ---------- */
@@ -151,7 +156,10 @@ export function buildSaldos(accounts: Account[]): SaldosData {
   };
 }
 
-/** Contas fixas do mês (contas cadastradas + faturas), como na tela Contas fixas. */
+/**
+ * Contas fixas do mês (contas cadastradas + faturas), como na tela Contas fixas, e as contas avulsas
+ * em aberto que vencem até o fim do mês (inclui as atrasadas de meses anteriores), marcadas `avulsa`.
+ */
 export function buildContasAPagar(input: {
   month: string;
   today: string;
@@ -162,8 +170,10 @@ export function buildContasAPagar(input: {
   cardTxs: Transaction[];
   /** Boleto confirmado do mês por conta: valor e vencimento dele prevalecem (mesma regra da tela). */
   billDocs?: Map<string, { amount: number | null; due_date: string | null }>;
+  oneOffs?: { name: string; amount: number; due_date: string; paid_on: string | null }[];
 }): ContasData {
   const { month, today, bills, payments, accounts, categories, cardTxs, billDocs } = input;
+  const oneOffs = (input.oneOffs ?? []).filter((o) => !o.paid_on && o.due_date.slice(0, 7) <= month);
   const paymentByBill = new Map(payments.map((p) => [p.bill_id, p]));
   const transferIds = new Set(categories.filter((c) => c.kind === "transferencia").map((c) => c.id));
   const cards = accounts.filter((a) => a.kind === "cartao" && !a.archived && a.closing_day && a.due_day);
@@ -200,6 +210,14 @@ export function buildContasAPagar(input: {
         },
       ];
     }),
+    ...oneOffs.map((o) => ({
+      nome: o.name,
+      valor: o.amount,
+      vencimento: o.due_date,
+      status: billStatus(o.due_date, false, today),
+      fatura: false,
+      avulsa: true,
+    })),
   ].sort((a, b) => a.vencimento.localeCompare(b.vencimento));
 
   const pendente = contas.filter((c) => c.status !== "paga").reduce((s, c) => s + cents(c.valor), 0);
@@ -437,7 +455,8 @@ const isPending = (p: OliPanel) =>
     p.kind === "confirmar_esquecer" ||
     p.kind === "confirmar_memoria" ||
     p.kind === "confirmar_evento" ||
-    p.kind === "confirmar_consulta") &&
+    p.kind === "confirmar_consulta" ||
+    p.kind === "confirmar_arquivo") &&
   (p.status === "pendente" || p.status === "salvando");
 
 /** Novo painel no topo; no máximo MAX_PANELS. Confirmações pendentes nunca somem. */

@@ -17,10 +17,10 @@ export function Card({ className, tone = "glass", ...props }: ComponentProps<"di
   );
 }
 
-const btnBase =
+export const btnBase =
   "inline-flex items-center justify-center gap-2 rounded-full text-[15px] font-medium transition active:scale-[0.98] disabled:opacity-50";
 
-const btnVariant = {
+export const btnVariant = {
   primary: "glass-primary hover:brightness-110",
   ghost: "glass glass-shine border border-[var(--glass-edge)] text-ink shadow-glass hover:brightness-105",
   danger: "text-danger hover:bg-surface-2",

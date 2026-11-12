@@ -5,7 +5,8 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getAppContext } from "@/lib/data";
 import { parseBRL } from "@/lib/financas/money";
-import { dismissPair, runBaixaAutomatica } from "@/lib/financas/baixa-data";
+import { dismissPair, runBaixaAutomatica, transactionUses } from "@/lib/financas/baixa-data";
+import { txPayConflict } from "@/lib/financas/avulsas";
 import { billDeleteResult } from "@/lib/financas/bill-delete";
 import { billReturnPath, CONTAS_FIXAS, flowReturnPath } from "@/lib/financas/routes";
 
@@ -137,6 +138,9 @@ export async function payBill(_: PlanState, form: FormData): Promise<PlanState> 
       .eq("household_id", household.id)
       .maybeSingle();
     if (!tx || Number(tx.amount) >= 0) return { error: "Escolha um lançamento de saída desta família." };
+    // Um lançamento paga uma conta só: o banco não impede fixa + avulsa com o mesmo lançamento.
+    const conflict = txPayConflict({ kind: "fixa", billId, month }, await transactionUses(supabase, household.id, tx.id));
+    if (conflict) return { error: conflict };
     row = { transaction_id: tx.id, paid_on: tx.date, amount: Math.abs(Number(tx.amount)) };
   } else {
     const paidOn = str(form, "paid_on");
@@ -185,9 +189,9 @@ export async function searchStatementPayments(form: FormData) {
   await getAppContext();
   const month = str(form, "month");
   if (!MONTH.test(month)) redirect("/financas/contas-fixas");
-  const { applied } = await runBaixaAutomatica([month]);
+  const { applied, appliedOneOff } = await runBaixaAutomatica([month]);
   refresh();
-  redirect(`/financas/contas-fixas?mes=${month}&procurado=${applied.length}`);
+  redirect(`/financas/contas-fixas?mes=${month}&procurado=${applied.length + appliedOneOff.length}`);
 }
 
 /** "Não é": a sugestão some para a família e o par nunca vira baixa automática. */

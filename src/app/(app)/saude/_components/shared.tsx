@@ -5,9 +5,6 @@ import { Button } from "@/components/ui";
 
 export type Person = { id: string; name: string };
 
-export const fileInputClass =
-  "w-full rounded-2xl border border-transparent bg-surface-2 px-4 py-3 text-[15px] text-ink file:mr-3 file:rounded-full file:border-0 file:bg-accent-soft file:px-3 file:py-1.5 file:text-sm";
-
 /** Arquivo anexado: PDF abre em nova aba (a CSP não deixa embutir); JPG aparece como imagem. */
 export function FileLink({ href, mime, label, preview }: { href: string; mime: string; label: string; preview?: boolean }) {
   if (mime === "image/jpeg" && preview) {

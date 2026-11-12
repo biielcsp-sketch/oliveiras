@@ -26,8 +26,7 @@ function boleto(cents: string, livre: string) {
 async function uploadFromCasa(page: Page, tag: string) {
   await page.goto(`/casa/contas?mes=${MES}`);
   const box = page.getByRole("region", { name: "Ler PDF ou foto" });
-  await box.getByLabel("Arquivo (PDF ou JPG, até 5 MB)").setInputFiles(pdf(tag));
-  await box.getByRole("button", { name: "Ler documento" }).click();
+  await box.getByLabel("PDF", { exact: true }).setInputFiles(pdf(tag));
   await expect(page).toHaveURL(DOC_URL, { timeout: 45_000 });
   await page.getByRole("radio", { name: "Boleto" }).click();
 }
@@ -63,6 +62,7 @@ test("Casa > Contas: enviar boleto (liga à conta e cria conta da casa) e exclui
 
   await test.step("enviar boleto pela Casa: liga ao Condomínio e volta para Casa > Contas (mês mantido)", async () => {
     await uploadFromCasa(page, "boleto-condominio");
+    await page.getByRole("radio", { name: "Conta fixa (todo mês)" }).click();
     await page.getByLabel("Beneficiário").fill("Condomínio Edifício");
     await page.getByLabel("Valor (R$)").fill("187,90");
     await page.getByLabel("Vencimento").fill("2026-12-10");
@@ -75,6 +75,7 @@ test("Casa > Contas: enviar boleto (liga à conta e cria conta da casa) e exclui
 
   await test.step("enviar boleto pela Casa e criar conta nova: nasce como conta da casa", async () => {
     await uploadFromCasa(page, "boleto-gas");
+    await page.getByRole("radio", { name: "Conta fixa (todo mês)" }).click();
     await page.getByLabel("Beneficiário").fill("Gás Encanado");
     await page.getByLabel("Valor (R$)").fill("199,00");
     await page.getByLabel("Vencimento").fill("2026-12-10");

@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import { Field } from "@/components/ui";
+import { FileButtons } from "@/components/file-buttons";
 import { petInitial, petPhotoFormFields, petPhotoHref } from "@/lib/casa/pet-photo";
 import { PHOTO_DECODE_ERROR, resizePetPhoto } from "@/lib/casa/pet-photo-client";
-import { fileInputClass } from "../../saude/_components/shared";
 
 const SIZES = { sm: "size-12 text-xl", lg: "size-20 text-3xl" } as const;
 const PX = { sm: 48, lg: 80 } as const;
@@ -88,12 +87,7 @@ export function usePetPhotoField(pet?: { id: string; name: string; photo_v: stri
         <PetAvatar name={name} version={null} src={shown} size="lg" />
         <p className="text-sm text-muted">{preview ? "Pré-visualização: a foto só é salva ao salvar o pet." : shown ? "Foto atual." : "Sem foto."}</p>
       </div>
-      <Field label="Foto">
-        <input type="file" accept="image/*" onChange={onPick} className={fileInputClass} />
-      </Field>
-      <Field label="Tirar foto agora">
-        <input type="file" accept="image/*" capture="environment" onChange={onPick} className={fileInputClass} />
-      </Field>
+      <FileButtons label="Foto" kinds={["image", "photo"]} accept={{ image: "image/*", photo: "image/*" }} onPick={onPick} />
       {processing && (
         <p role="status" className="text-sm text-muted">
           Preparando a foto…
