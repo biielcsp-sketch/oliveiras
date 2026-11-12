@@ -1,13 +1,11 @@
 "use client";
 
-import { useActionState, useRef } from "react";
+import { useActionState } from "react";
 import Link from "next/link";
-import { Camera, FileScan } from "lucide-react";
+import { FileScan } from "lucide-react";
 import { uploadDocument, type DocState } from "../documentos-actions";
-import { Button, Card, FormError } from "@/components/ui";
-
-const fileInputClass =
-  "w-full rounded-2xl border border-transparent bg-surface-2 px-4 py-3 text-[15px] text-ink file:mr-3 file:rounded-full file:border-0 file:bg-accent-soft file:px-3 file:py-1.5 file:text-sm";
+import { Card, FormError } from "@/components/ui";
+import { FileButtons } from "@/components/file-buttons";
 
 /**
  * "Ler PDF ou foto": envia boleto/comprovante para leitura. Nada é gravado como conta ou
@@ -27,7 +25,6 @@ export function DocUpload({
   mes?: string;
 }) {
   const [state, action, busy] = useActionState<DocState, FormData>(uploadDocument, null);
-  const cameraForm = useRef<HTMLFormElement>(null);
 
   return (
     <Card className="flex flex-col gap-3" role="region" aria-label="Ler PDF ou foto">
@@ -42,31 +39,16 @@ export function DocUpload({
         )}
       </div>
       <p className="text-[13px] text-muted">Boleto ou comprovante. Você confere tudo antes de salvar.</p>
+      {/* Escolher o arquivo (PDF, imagem ou foto da câmera) já envia para leitura. */}
       <form action={action} className="flex flex-col gap-3">
         {origem === "casa" && <input type="hidden" name="origem" value="casa" />}
         {origem === "casa" && mes && <input type="hidden" name="mes" value={mes} />}
-        <label className="flex flex-col gap-1.5">
-          <span className="text-[13px] font-medium text-muted">Arquivo (PDF ou JPG, até 5 MB)</span>
-          <input name="file" type="file" accept="application/pdf,image/jpeg,.pdf,.jpg,.jpeg" required className={fileInputClass} />
-        </label>
-        <Button disabled={busy}>{busy ? "Lendo o documento…" : "Ler documento"}</Button>
-      </form>
-      {/* Celular: abre a câmera direto e envia assim que a foto é tirada. */}
-      <form action={action} ref={cameraForm} className="sm:hidden">
-        {origem === "casa" && <input type="hidden" name="origem" value="casa" />}
-        {origem === "casa" && mes && <input type="hidden" name="mes" value={mes} />}
-        <label className="inline-flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-full border border-line text-[15px] font-medium">
-          <Camera size={16} aria-hidden /> Tirar foto
-          <input
-            name="file"
-            type="file"
-            accept="image/jpeg"
-            capture="environment"
-            className="sr-only"
-            disabled={busy}
-            onChange={() => cameraForm.current?.requestSubmit()}
-          />
-        </label>
+        <FileButtons label="Arquivo (PDF ou JPG, até 5 MB)" mode="submit" disabled={busy} />
+        {busy && (
+          <p role="status" className="text-sm text-muted">
+            Lendo o documento…
+          </p>
+        )}
       </form>
       <FormError message={state?.error} />
     </Card>

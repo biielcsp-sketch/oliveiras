@@ -2,13 +2,14 @@
 
 import { startTransition, useActionState, useEffect, useState } from "react";
 import { Plus } from "lucide-react";
+import { FileButtons } from "@/components/file-buttons";
 import { Button, Card, EmptyState, Field, FormError, Input, Select, Textarea } from "@/components/ui";
 import { Modal } from "@/components/modal";
 import { brDate } from "@/lib/agenda/dates";
 import { LIMITS } from "@/lib/saude/input";
 import { formatSize } from "@/lib/saude/files";
 import { deleteExam, saveExam, type SaudeState } from "../actions";
-import { ConfirmDelete, FileLink, fileInputClass, type Person } from "./shared";
+import { ConfirmDelete, FileLink, type Person } from "./shared";
 
 export type ExamVM = {
   id: string;
@@ -62,9 +63,7 @@ function ExamForm({ exam, people, defaultMember, onDone }: { exam?: ExamVM; peop
       <Field label="Resumo do resultado">
         <Textarea name="result_summary" maxLength={LIMITS.summary} defaultValue={exam?.summary ?? ""} />
       </Field>
-      <Field label={exam?.mime ? "Trocar arquivo (PDF ou JPG, até 5 MB)" : "Arquivo opcional (PDF ou JPG, até 5 MB)"}>
-        <input name="file" type="file" accept="application/pdf,image/jpeg,.pdf,.jpg,.jpeg" className={fileInputClass} />
-      </Field>
+      <FileButtons label={exam?.mime ? "Trocar arquivo (PDF ou JPG, até 5 MB)" : "Arquivo opcional (PDF ou JPG, até 5 MB)"} />
       {exam?.mime && (
         <label className="flex min-h-11 items-center gap-3 text-[15px]">
           <input type="checkbox" name="remove_file" className="size-5 accent-[var(--primary)]" />

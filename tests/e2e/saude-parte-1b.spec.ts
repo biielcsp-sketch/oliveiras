@@ -51,13 +51,13 @@ test("Saúde 1b: procedimentos, medicamentos e vacinas (arquivos privados, famí
     await d.getByLabel("Procedimento", { exact: true }).fill("Cirurgia <b>amígdalas</b>");
     await d.getByLabel("Data de realização").fill("2026-03-10");
     await d.getByLabel("Local").fill("Hospital Central");
-    await d.getByLabel("Arquivo opcional").setInputFiles({ name: "falso.pdf", mimeType: "application/pdf", buffer: Buffer.from("<html><script>alert(1)</script></html>") });
+    await d.getByRole("group", { name: "Arquivo opcional" }).getByLabel("PDF", { exact: true }).setInputFiles({ name: "falso.pdf", mimeType: "application/pdf", buffer: Buffer.from("<html><script>alert(1)</script></html>") });
     await d.getByRole("button", { name: "Salvar procedimento" }).click();
     await expect(d.getByText("Envie um arquivo PDF ou JPG.")).toBeVisible();
-    await d.getByLabel("Arquivo opcional").setInputFiles({ name: "grande.pdf", mimeType: "application/pdf", buffer: Buffer.concat([PDF, Buffer.alloc(5 * 1024 * 1024)]) });
+    await d.getByRole("group", { name: "Arquivo opcional" }).getByLabel("PDF", { exact: true }).setInputFiles({ name: "grande.pdf", mimeType: "application/pdf", buffer: Buffer.concat([PDF, Buffer.alloc(5 * 1024 * 1024)]) });
     await d.getByRole("button", { name: "Salvar procedimento" }).click();
     await expect(d.getByText("O arquivo passa de 5 MB.")).toBeVisible();
-    await d.getByLabel("Arquivo opcional").setInputFiles(pdf);
+    await d.getByRole("group", { name: "Arquivo opcional" }).getByLabel("PDF", { exact: true }).setInputFiles(pdf);
     await d.getByRole("button", { name: "Salvar procedimento" }).click();
     await expect(a.getByRole("status").filter({ hasText: "Procedimento salvo." })).toBeVisible();
     const item = a.getByTestId("procedimento");
@@ -87,7 +87,7 @@ test("Saúde 1b: procedimentos, medicamentos e vacinas (arquivos privados, famí
     await a.getByTestId("procedimento").getByRole("button", { name: "Editar" }).click();
     const d = a.getByRole("dialog", { name: "Editar procedimento" });
     await d.getByLabel("Médico").fill("Dr. Paulo");
-    await d.getByLabel("Trocar arquivo").setInputFiles(jpg);
+    await d.getByRole("group", { name: "Trocar arquivo" }).getByLabel("Imagem", { exact: true }).setInputFiles(jpg);
     await d.getByRole("button", { name: "Salvar alterações" }).click();
     await expect(a.getByRole("status").filter({ hasText: "Procedimento atualizado." })).toBeVisible();
     await expect(a.getByTestId("procedimento")).toContainText("Dr. Paulo");
@@ -147,7 +147,7 @@ test("Saúde 1b: procedimentos, medicamentos e vacinas (arquivos privados, famí
     await d.getByLabel("Data de aplicação").fill("2026-05-01");
     await d.getByLabel("Próxima dose").fill("2099-11-01");
     await d.getByLabel("Lote").fill("L123");
-    await d.getByLabel("Comprovante opcional").setInputFiles(jpg);
+    await d.getByRole("group", { name: "Comprovante opcional" }).getByLabel("Imagem", { exact: true }).setInputFiles(jpg);
     await d.getByRole("button", { name: "Salvar vacina" }).click();
     await expect(a.getByRole("status").filter({ hasText: "Vacina salva." })).toBeVisible();
     const item = a.getByTestId("vacina");

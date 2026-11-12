@@ -26,8 +26,7 @@ function boleto(cents: string, livre: string) {
 async function uploadFromCasa(page: Page, tag: string) {
   await page.goto(`/casa/contas?mes=${MES}`);
   const box = page.getByRole("region", { name: "Ler PDF ou foto" });
-  await box.getByLabel("Arquivo (PDF ou JPG, até 5 MB)").setInputFiles(pdf(tag));
-  await box.getByRole("button", { name: "Ler documento" }).click();
+  await box.getByLabel("PDF", { exact: true }).setInputFiles(pdf(tag));
   await expect(page).toHaveURL(DOC_URL, { timeout: 45_000 });
   await page.getByRole("radio", { name: "Boleto" }).click();
 }

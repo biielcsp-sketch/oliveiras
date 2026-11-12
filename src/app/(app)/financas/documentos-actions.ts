@@ -1,18 +1,16 @@
 "use server";
 
-import { randomUUID } from "node:crypto";
-import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getAppContext } from "@/lib/data";
 import { parseBRL } from "@/lib/financas/money";
 import { todaySP } from "@/lib/financas/today";
 import { validateManualTransaction, UUID_RE, optUuid } from "@/lib/financas/transaction-input";
-import { checkUpload, MAX_FILE_BYTES } from "@/lib/saude/files";
 import { extractDocument } from "@/lib/financas/documentos/extract";
 import { docsAiAllowedFor } from "@/lib/financas/documentos/access";
-import { cleanText, DOC_LIMITS, reconcile } from "@/lib/financas/documentos/schema";
-import { dailyLimitError, docStoragePath, DOC_BUCKET, isDocPath, planDocDelete, retry, sameBillMonthDocs, spDayStartIso, type DocRef } from "@/lib/financas/documentos/rules";
+import { cleanText, DOC_LIMITS } from "@/lib/financas/documentos/schema";
+import { applyExtraction, readUploadedFile, revalidateDocPaths, storePendingDocument } from "@/lib/financas/documentos/store";
+import { DOC_BUCKET, isDocPath, planDocDelete, retry, sameBillMonthDocs, type DocRef } from "@/lib/financas/documentos/rules";
 import {
   boletoEditConflict, duplicateBlock, editSaveError, readBarcode, validateBoletoEdit, validateBoletoForm, validateComprovanteEdit,
 } from "@/lib/financas/documentos/input";
@@ -29,12 +27,7 @@ const GENERIC = "Não foi possível salvar. Tente de novo.";
 /** Índice único do banco (boleto igual ou outro boleto do mês confirmado ao mesmo tempo por outra pessoa). */
 const CONFLICT = "Outro boleto igual ou do mesmo mês acabou de ser confirmado. Recarregue a página e confira de novo.";
 
-function refresh() {
-  revalidatePath("/financas", "layout");
-  revalidatePath("/inicio");
-  // Quando o envio vem de Casa > Contas, a conta e o boleto aparecem lá.
-  revalidatePath("/casa", "layout");
-}
+const refresh = revalidateDocPaths;
 
 /** Data de referência do documento (dia do envio, fuso SP): decide o ciclo do fator de vencimento. */
 const refDate = (createdAt: string) => todaySP(new Date(createdAt));
@@ -68,61 +61,19 @@ async function relatedDocs(db: Db, householdId: string, barcode: string | null, 
  */
 export async function uploadDocument(_: DocState, form: FormData): Promise<DocState> {
   const { household } = await getAppContext();
-  const file = form.get("file");
-  if (!(file instanceof File) || file.size === 0) return { error: "Escolha um PDF ou uma foto (JPG)." };
-  if (file.size > MAX_FILE_BYTES) return { error: "O arquivo passa de 5 MB." };
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const check = checkUpload(bytes);
-  if (!check.ok) return { error: check.erro };
+  const file = await readUploadedFile(form);
+  if (!file.ok) return { error: file.error };
 
   const db = await createClient();
-  const today = todaySP();
-  const { count, error: countError } = await db
-    .from("fin_documents")
-    .select("id", { count: "exact", head: true })
-    .eq("household_id", household.id)
-    .gte("created_at", spDayStartIso(today));
-  if (countError) return { error: GENERIC };
-  const limit = dailyLimitError(count ?? 0);
-  if (limit) return { error: limit };
-
-  const path = docStoragePath(household.id, randomUUID(), check.kind.ext);
-  const up = await db.storage.from(DOC_BUCKET).upload(path, bytes, { contentType: check.kind.mime, upsert: false });
-  if (up.error) return { error: "Não foi possível enviar o arquivo. Tente de novo." };
-
-  const { data: doc, error } = await db
-    .from("fin_documents")
-    .insert({ household_id: household.id, kind: "outro", status: "pendente", file_path: path, file_mime: check.kind.mime, file_size: bytes.length })
-    .select("id")
-    .single();
-  if (error || !doc) {
-    await db.storage.from(DOC_BUCKET).remove([path]);
-    return { error: GENERIC };
-  }
+  const stored = await storePendingDocument(db, household.id, file);
+  if (!stored.ok) return { error: stored.error };
 
   // Família sem leitura automática: o arquivo fica guardado e pendente, sem chamar o Gemini.
-  const r = docsAiAllowedFor(household.id) ? await extractDocument(bytes, check.kind.mime) : null;
-  if (r?.ok) {
-    const rec = reconcile(r.data, today);
-    // Sugestões para a conferência; nada vira lançamento ou conta sem o usuário confirmar.
-    await db
-      .from("fin_documents")
-      .update({
-        extracted: r.data,
-        kind: rec.tipo,
-        payee: rec.beneficiario,
-        amount: rec.valor,
-        due_date: rec.vencimento,
-        paid_on: rec.data_pagamento,
-        // A coluna barcode só é gravada na confirmação (índice único de boletos não descartados);
-        // até lá o código fica em `extracted` e a conferência mostra o aviso de duplicidade.
-      })
-      .eq("household_id", household.id)
-      .eq("id", doc.id);
-  }
+  const r = docsAiAllowedFor(household.id) ? await extractDocument(file.bytes, file.kind.mime) : null;
+  if (r?.ok) await applyExtraction(db, household.id, stored.id, r.data);
   refresh();
   // `origem` só aceita "casa" (lista fechada); a tela de conferência repassa o mesmo parâmetro.
-  redirect(`/financas/documentos/${doc.id}${flowOrigin(str(form, "origem")) === "casa" ? `?origem=casa${/^\d{4}-(0[1-9]|1[0-2])$/.test(str(form, "mes")) ? `&mes=${str(form, "mes")}` : ""}` : ""}`);
+  redirect(`/financas/documentos/${stored.id}${flowOrigin(str(form, "origem")) === "casa" ? `?origem=casa${/^\d{4}-(0[1-9]|1[0-2])$/.test(str(form, "mes")) ? `&mes=${str(form, "mes")}` : ""}` : ""}`);
 }
 
 /* ---------- Conferência: boleto → conta fixa ou conta avulsa ---------- */

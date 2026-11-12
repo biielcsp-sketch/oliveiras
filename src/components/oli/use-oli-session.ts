@@ -411,6 +411,24 @@ export function useOliSession(opts: {
     [flushTurn, pushLog, setStatus, start],
   );
 
+  /**
+   * Dado gerado pela tela (ex.: <documento_lido>) para o Oli comentar. Só com conversa ativa: não abre
+   * sessão, não entra no log nem no histórico salvo. Devolve se enviou.
+   */
+  const sendContext = useCallback((text: string) => {
+    const s = r.current;
+    if (!s.session) return false;
+    s.awaiting = true;
+    s.awaitingAt = performance.now();
+    s.lastVoice = 0;
+    try {
+      s.session.sendRealtimeInput({ text });
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
   /* ---------- laço: estado e nível para o avatar ---------- */
   useEffect(() => {
     const s = r.current;
@@ -453,5 +471,5 @@ export function useOliSession(opts: {
     setLog([]);
   }, []);
 
-  return { state, active, busy, status, log, start, stop, sendText, pushLog, clearLog };
+  return { state, active, busy, status, log, start, stop, sendText, sendContext, pushLog, clearLog };
 }

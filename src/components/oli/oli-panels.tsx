@@ -8,19 +8,25 @@ import { StatusBadge } from "@/app/(app)/financas/_components/status-badge";
 import { formatBRL } from "@/lib/financas/money";
 import { shortDate } from "@/lib/financas/period";
 import type { OliPanel } from "@/lib/oli/panels";
+import type { OliFileDest } from "@/lib/oli/arquivo";
+import { ArquivoPanel } from "./oli-arquivo";
 
 /**
  * Painéis do Oli: renderização determinística a partir dos DADOS das ferramentas.
  * Todo texto entra como texto do React (escapado); nada de HTML vindo do modelo.
  */
+type ConfirmArquivo = (id: string, dest: OliFileDest, values: Record<string, string>) => void;
+
 export function OliPanels({
   panels,
   onConfirm,
+  onConfirmArquivo,
   onCancel,
   onClear,
 }: {
   panels: OliPanel[];
   onConfirm: (id: string) => void;
+  onConfirmArquivo?: ConfirmArquivo;
   onCancel: (id: string) => void;
   onClear: () => void;
 }) {
@@ -40,7 +46,7 @@ export function OliPanels({
       <ul className="flex flex-col gap-4">
         {panels.map((p) => (
           <li key={p.id} className="oli-rise" data-panel={p.kind}>
-            <PanelView panel={p} onConfirm={onConfirm} onCancel={onCancel} />
+            <PanelView panel={p} onConfirm={onConfirm} onConfirmArquivo={onConfirmArquivo} onCancel={onCancel} />
           </li>
         ))}
       </ul>
@@ -70,10 +76,12 @@ const docWhen = (x: { tipo: string; vencimento: string | null; pagamento: string
 export function PanelView({
   panel: p,
   onConfirm,
+  onConfirmArquivo,
   onCancel,
 }: {
   panel: OliPanel;
   onConfirm: (id: string) => void;
+  onConfirmArquivo?: ConfirmArquivo;
   onCancel: (id: string) => void;
 }) {
   switch (p.kind) {
@@ -431,6 +439,17 @@ export function PanelView({
         </Card>
       );
     }
+    case "confirmar_arquivo":
+      return (
+        <ArquivoPanel
+          id={p.id}
+          data={p.data}
+          status={p.status}
+          erro={p.erro}
+          onConfirm={onConfirmArquivo ?? (() => {})}
+          onCancel={onCancel}
+        />
+      );
     case "aviso":
       return (
         <Card className="p-4">
