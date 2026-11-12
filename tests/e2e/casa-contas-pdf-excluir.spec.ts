@@ -10,7 +10,8 @@ import { mod11Bancario, toLinhaDigitavel } from "../../src/lib/financas/document
  */
 
 const MES = "2026-12";
-const DOC_URL = /\/financas\/documentos\/([0-9a-f-]{36})\?origem=casa&mes=2026-12$/;
+// Enviado pela Casa, a conferência abre DENTRO da Casa (regressão: ia para /financas/documentos e marcava Finanças).
+const DOC_URL = /\/casa\/contas\/documento\/([0-9a-f-]{36})\?mes=2026-12$/;
 
 function pdf(tag: string) {
   return { name: "documento.pdf", mimeType: "application/pdf", buffer: Buffer.from(`%PDF-1.4\n% ${tag}\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n`) };
@@ -28,6 +29,11 @@ async function uploadFromCasa(page: Page, tag: string) {
   const box = page.getByRole("region", { name: "Ler PDF ou foto" });
   await box.getByLabel("PDF", { exact: true }).setInputFiles(pdf(tag));
   await expect(page).toHaveURL(DOC_URL, { timeout: 45_000 });
+  // Menu principal com Casa marcada (não Finanças) e ferradura da Casa com Contas marcada.
+  const nav = page.getByRole("navigation", { name: "Principal" });
+  await expect(nav.getByRole("link", { name: "Casa" })).toHaveAttribute("aria-current", "page");
+  await expect(nav.getByRole("link", { name: "Finanças" })).not.toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("navigation", { name: "Seções de Casa" }).getByRole("link", { name: "Contas" })).toHaveAttribute("aria-current", "page");
   await page.getByRole("radio", { name: "Boleto" }).click();
 }
 
@@ -92,10 +98,32 @@ test("Casa > Contas: enviar boleto (liga à conta e cria conta da casa) e exclui
     await uploadFromCasa(page, "descartar");
     await page.getByRole("button", { name: "Descartar este documento" }).click();
     await expect(page).toHaveURL(new RegExp(`/casa/contas\\?mes=${MES}$`));
+    await uploadFromCasa(page, "voltar");
+    await page.getByRole("link", { name: "Voltar para Contas" }).click();
+    await expect(page).toHaveURL(new RegExp(`/casa/contas\\?mes=${MES}$`));
+    // Regressão: "Apagar documento" na conferência pela Casa fica na Casa e volta para Casa > Contas no mês.
+    await uploadFromCasa(page, "apagar");
+    const apagarId = page.url().match(DOC_URL)![1];
+    const nav = page.getByRole("navigation", { name: "Principal" });
+    await page.getByRole("link", { name: "Apagar documento" }).click();
+    await expect(page).toHaveURL(new RegExp(`/casa/contas/documento/${apagarId}/apagar\\?mes=${MES}$`));
+    await expect(nav.getByRole("link", { name: "Casa" })).toHaveAttribute("aria-current", "page");
+    await page.getByRole("link", { name: "Cancelar" }).click();
+    await expect(page).toHaveURL(DOC_URL);
+    await page.getByRole("link", { name: "Apagar documento" }).click();
+    await page.getByRole("button", { name: "Apagar documento" }).click();
+    await expect(page).toHaveURL(new RegExp(`/casa/contas\\?mes=${MES}$`));
+    expect((await admin.from("fin_documents").select("id", { count: "exact", head: true }).eq("id", apagarId)).count).toBe(0);
     await uploadFromCasa(page, "origem-falsa");
-    const url = new URL(page.url());
-    url.searchParams.set("origem", "https://exemplo.com");
-    await page.goto(url.toString());
+    const id = page.url().match(DOC_URL)![1];
+    // Link antigo (Finanças com ?origem=casa) abre a mesma conferência dentro da Casa, mês validado.
+    await page.goto(`/financas/documentos/${id}?origem=casa&mes=${MES}`);
+    await expect(page).toHaveURL(DOC_URL);
+    await page.goto(`/financas/documentos/${id}?origem=casa&mes=https://exemplo.com`);
+    await expect(page).toHaveURL(new RegExp(`/casa/contas/documento/${id}$`));
+    // Origem inválida não vira redirecionamento: fica nas Finanças e descartar volta para Documentos.
+    await page.goto(`/financas/documentos/${id}?origem=${encodeURIComponent("https://exemplo.com")}`);
+    await expect(page).toHaveURL(new RegExp(`/financas/documentos/${id}\\?`));
     await page.getByRole("button", { name: "Descartar este documento" }).click();
     await expect(page).toHaveURL(/\/financas\/documentos$/);
   });

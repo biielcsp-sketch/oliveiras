@@ -8,11 +8,13 @@ import { Button, FormError } from "@/components/ui";
  * Confirmação explícita de apagar. Com lançamento criado pelo documento, a pessoa escolhe:
  * só o documento (lançamento e baixa ficam) ou documento + lançamento + baixa.
  */
-export function DocDeleteForm({ id, createdTransaction }: { id: string; createdTransaction: boolean }) {
+export function DocDeleteForm({ id, createdTransaction, origem, mes }: { id: string; createdTransaction: boolean; origem?: "casa" | null; mes?: string }) {
   const [state, action, pending] = useActionState<DocState, FormData>(deleteDocument, null);
   return (
     <form action={action} className="flex flex-col gap-3">
       <input type="hidden" name="id" value={id} />
+      {origem === "casa" && <input type="hidden" name="origem" value="casa" />}
+      {origem === "casa" && mes && <input type="hidden" name="mes" value={mes} />}
       {createdTransaction ? (
         <>
           <Button variant="danger" name="mode" value="documento" disabled={pending}>
