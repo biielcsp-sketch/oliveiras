@@ -16,6 +16,7 @@ import {
   driveErrorMessage,
   generateFileId,
   getFile,
+  renameFile,
   startResumableUpload,
   trashFile,
 } from "@/lib/google/drive";
@@ -26,6 +27,7 @@ import {
   HEAD_BYTES,
   headMatches,
   isDocxZip,
+  renamedDisplayName,
   safeWebViewLink,
   validateDeclaredUpload,
   type CarismaMime,
@@ -352,6 +354,36 @@ export async function deleteLessonFile(fileId: string): Promise<Result> {
   } catch (e) {
     return { ok: false, erro: driveFail(e) };
   }
+  done();
+  return { ok: true };
+}
+
+/** Renomeia no Drive (conta do arquivo) e no app; a extensão é mantida. Falha no Drive não muda o nome no app. */
+export async function renameLessonFile(fileId: string, rawName: string): Promise<Result> {
+  const ctx = await getAppContext();
+  if (!isUuid(fileId)) return { ok: false, erro: "Arquivo inválido." };
+  if (typeof rawName !== "string" || rawName.length > 300) return { ok: false, erro: "Nome inválido." };
+  const db = await createClient();
+  const file = await ownFile(db, ctx, fileId);
+  if (!file || file.status !== "pronto") return { ok: false, erro: "Arquivo não encontrado." };
+  const name = renamedDisplayName(rawName, file.display_name, file.file_mime as CarismaMime);
+  if (!name) return { ok: false, erro: "Digite o novo nome do arquivo." };
+  if (name === file.display_name) return { ok: true };
+  try {
+    const acc = await myAccountById(db, ctx, file.google_account_id);
+    if (!acc) return { ok: false, erro: "A conta Google deste arquivo não está mais conectada." };
+    if (acc.status === "revogado") throw new RevokedError("revogado");
+    await runWithDrive(db, acc, (t) => renameFile(t, file.drive_file_id, name));
+  } catch (e) {
+    return { ok: false, erro: driveFail(e) };
+  }
+  const { error } = await db
+    .from("igreja_carisma_files")
+    .update({ display_name: name })
+    .eq("household_id", ctx.household.id)
+    .eq("owner_id", ctx.user.id)
+    .eq("id", file.id);
+  if (error) return { ok: false, erro: GENERIC };
   done();
   return { ok: true };
 }
