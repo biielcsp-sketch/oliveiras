@@ -27,6 +27,17 @@ describe("CSP", () => {
     expect(connect).not.toContain("https://generativelanguage.googleapis.com");
     expect(connect).not.toMatch(/\s{2}/);
   });
+  it("Carisma: libera só https://www.googleapis.com para o upload direto ao Drive (sem curinga nem outros hosts)", () => {
+    const connect = buildCsp("n", false, { NEXT_PUBLIC_SUPABASE_URL: "https://x.supabase.co" }).split("; ").find((d) => d.startsWith("connect-src"))!;
+    expect(connect).toBe("connect-src 'self' https://x.supabase.co wss://generativelanguage.googleapis.com https://www.googleapis.com");
+    expect(connect).not.toContain("*");
+  });
+  it("origem do Drive simulado só entra nos testes (localhost e fora da produção)", () => {
+    const connect = (env: Record<string, string>) => buildCsp("n", false, env).split("; ").find((d) => d.startsWith("connect-src"))!;
+    expect(connect({ GOOGLE_DRIVE_UPLOAD_BASE: "http://127.0.0.1:4040/upload/drive/v3" })).toContain("http://127.0.0.1:4040");
+    expect(connect({ GOOGLE_DRIVE_UPLOAD_BASE: "http://127.0.0.1:4040/upload/drive/v3", VERCEL_ENV: "production" })).not.toContain("127.0.0.1");
+    expect(connect({ GOOGLE_DRIVE_UPLOAD_BASE: "https://evil.example.com/upload" })).not.toContain("evil");
+  });
   it("nonce é único por chamada", () => {
     expect(createNonce()).not.toBe(createNonce());
   });

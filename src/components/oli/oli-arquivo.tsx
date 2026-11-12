@@ -50,7 +50,7 @@ export function OliAddFile({ busy, onFile }: { busy: boolean; onFile: (file: Fil
         <p className="mb-4 text-[15px] leading-snug text-muted">
           O Oli lê o documento e sugere onde guardar. Nada é gravado sem você conferir e tocar em Confirmar.
         </p>
-        <FileButtons label="PDF ou JPG, até 5 MB" onPick={pick} disabled={busy} />
+        <FileButtons label="PDF ou JPG, até 4 MB" onPick={pick} disabled={busy} />
       </Modal>
     </>
   );

@@ -48,12 +48,14 @@ describe("arquivos: bytes mágicos", () => {
     expect(detectFileKind(new Uint8Array([0xff, 0xd8]))).toBeNull();
     expect(detectFileKind(new Uint8Array())).toBeNull();
   });
-  it("limita o tamanho a 5 MB e recusa vazio", () => {
+  it("limita o tamanho a 4 MB e recusa vazio", () => {
+    // Abaixo do limite de 4,5 MB do corpo das funções da Vercel (regressão: era 5 MB e dava 413).
+    expect(MAX_FILE_BYTES).toBe(4 * 1024 * 1024);
     expect(checkUpload(pdf).ok).toBe(true);
     expect(checkUpload(new Uint8Array())).toMatchObject({ ok: false });
     const big = new Uint8Array(MAX_FILE_BYTES + 1);
     big.set(pdf);
-    expect(checkUpload(big)).toMatchObject({ ok: false, erro: "O arquivo passa de 5 MB." });
+    expect(checkUpload(big)).toMatchObject({ ok: false, erro: "O arquivo passa de 4 MB." });
     const edge = new Uint8Array(MAX_FILE_BYTES);
     edge.set(jpg);
     expect(checkUpload(edge).ok).toBe(true);

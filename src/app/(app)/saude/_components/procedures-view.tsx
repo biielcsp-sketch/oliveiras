@@ -63,7 +63,7 @@ function ProcedureForm({ item, people, defaultMember, onDone }: { item?: Procedu
       <Field label="Observações">
         <Textarea name="notes" maxLength={LIMITS.procNotes} defaultValue={item?.notes ?? ""} />
       </Field>
-      <FileButtons label={item?.mime ? "Trocar arquivo (PDF ou JPG, até 5 MB)" : "Arquivo opcional (PDF ou JPG, até 5 MB)"} />
+      <FileButtons label={item?.mime ? "Trocar arquivo (PDF ou JPG, até 4 MB)" : "Arquivo opcional (PDF ou JPG, até 4 MB)"} />
       {item?.mime && (
         <label className="flex min-h-11 items-center gap-3 text-[15px]">
           <input type="checkbox" name="remove_file" className="size-5 accent-[var(--primary)]" />

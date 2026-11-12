@@ -77,13 +77,13 @@ test("Finanças: leitura de boleto e comprovante com conferência", async ({ bro
     await expect(a).toHaveURL(/\/financas\/contas-fixas$/);
   });
 
-  await test.step("arquivo falso e acima de 5 MB são recusados no servidor", async () => {
+  await test.step("arquivo falso e acima de 4 MB são recusados no servidor", async () => {
     await a.goto("/financas/contas-fixas");
     const box = a.getByRole("region", { name: "Ler PDF ou foto" });
     await box.getByLabel("PDF", { exact: true }).setInputFiles({ name: "falso.pdf", mimeType: "application/pdf", buffer: Buffer.from("<html><script>alert(1)</script></html>") });
     await expect(box.getByText("Envie um arquivo PDF ou JPG.")).toBeVisible();
-    await box.getByLabel("PDF", { exact: true }).setInputFiles({ name: "grande.pdf", mimeType: "application/pdf", buffer: Buffer.concat([Buffer.from("%PDF-1.4\n"), Buffer.alloc(5 * 1024 * 1024)]) });
-    await expect(box.getByText("O arquivo passa de 5 MB.")).toBeVisible();
+    await box.getByLabel("PDF", { exact: true }).setInputFiles({ name: "grande.pdf", mimeType: "application/pdf", buffer: Buffer.concat([Buffer.from("%PDF-1.4\n"), Buffer.alloc(4 * 1024 * 1024)]) });
+    await expect(box.getByText("O arquivo passa de 4 MB.")).toBeVisible();
   });
 
   let boletoId = "";

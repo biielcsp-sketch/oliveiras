@@ -23,7 +23,7 @@ import {
 /**
  * Aba Pet da Casa. household_id sempre de getAppContext(); pet e prestador conferidos na família antes de gravar
  * (as FKs compostas (x, household_id) da 0018 recusam de novo). Anexos: mesmo upload dos documentos da Casa
- * (bytes PDF/JPG, até 5 MB, nome uuid em {household_id}/pets/), lidos só pela rota autenticada.
+ * (bytes PDF/JPG, até 4 MB, nome uuid em {household_id}/pets/), lidos só pela rota autenticada.
  */
 export type PetState = { ok?: boolean; error?: string; message?: string; id?: string } | null;
 type Result = { ok: boolean; erro?: string; message?: string };

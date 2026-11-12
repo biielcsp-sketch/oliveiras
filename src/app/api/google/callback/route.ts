@@ -1,8 +1,8 @@
 import "server-only";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { agendaAllowedFor } from "@/lib/family-access";
-import { googleConfigured, googleCredentials } from "@/lib/google/config";
+import { agendaAllowedFor, carismaAllowedFor } from "@/lib/family-access";
+import { DRIVE_SCOPE, googleConfigured, googleCredentials, hasScope } from "@/lib/google/config";
 import { sealToken, tokenAad } from "@/lib/google/crypto";
 import {
   checkState,
@@ -19,16 +19,18 @@ import { refreshCalendarList } from "@/lib/google/agenda";
 /**
  * Volta do Google: confere state (tempo constante) e sessão, troca o code (com code_verifier),
  * valida o id_token, cifra o refresh token e salva a conta + agendas. Erros não vazam detalhes.
+ * Pedido do Carisma (state.drive): volta para /ministerio/carisma e avisa se o Drive não foi autorizado.
  */
 export async function GET(request: NextRequest) {
   const { origin, searchParams } = request.nextUrl;
+  const saved = decodeState(request.cookies.get(STATE_COOKIE)?.value);
+  const back = saved?.drive ? "/ministerio/carisma" : "/agenda";
   const go = (google: string) => {
-    const res = NextResponse.redirect(`${origin}/agenda?google=${google}`, { headers: { "Cache-Control": "no-store" } });
+    const res = NextResponse.redirect(`${origin}${back}?google=${google}`, { headers: { "Cache-Control": "no-store" } });
     res.cookies.set(STATE_COOKIE, "", { httpOnly: true, secure: true, sameSite: "lax", path: STATE_COOKIE_PATH, maxAge: 0 });
     return res;
   };
 
-  const saved = decodeState(request.cookies.get(STATE_COOKIE)?.value);
   const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
   const uid = data?.claims?.sub as string | undefined;
@@ -39,7 +41,9 @@ export async function GET(request: NextRequest) {
   if (!code || code.length > 2048) return go("erro");
 
   const { data: me } = await supabase.from("members").select("id, household_id").eq("user_id", uid).maybeSingle();
-  if (!me || !agendaAllowedFor(me.household_id) || !googleConfigured()) return go("erro");
+  const agendaOn = !!me && agendaAllowedFor(me.household_id);
+  const carismaOn = !!me && saved?.drive === true && carismaAllowedFor(me.household_id);
+  if (!me || !(agendaOn || carismaOn) || !googleConfigured()) return go("erro");
   const hid = me.household_id as string;
 
   let tokens: Awaited<ReturnType<typeof exchangeCode>>;
@@ -82,7 +86,9 @@ export async function GET(request: NextRequest) {
       accountId = row.id;
     }
     rememberAccessToken(accountId, ciphertext, tokens.accessToken, tokens.expiresIn);
-    await refreshCalendarList(supabase, hid, accountId, tokens.accessToken);
+    if (agendaOn) await refreshCalendarList(supabase, hid, accountId, tokens.accessToken);
+    // A tela de consentimento deixa desmarcar o Drive: a conta fica salva (Agenda segue), mas o Carisma avisa.
+    if (saved?.drive && !hasScope(tokens.scope, DRIVE_SCOPE)) return go("sem-drive");
     return go("conectado");
   } catch (e) {
     console.error("Google: falha ao salvar a conta:", e instanceof Error ? e.message : "erro");

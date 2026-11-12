@@ -41,7 +41,7 @@ function refresh() {
 async function uploadFile(db: Db, householdId: string, dir: StorageDir, form: FormData) {
   const file = form.get("file");
   if (!(file instanceof File) || file.size === 0) return { ok: true as const, uploaded: null };
-  if (file.size > 5 * 1024 * 1024) return { ok: false as const, erro: "O arquivo passa de 5 MB." };
+  if (file.size > 4 * 1024 * 1024) return { ok: false as const, erro: "O arquivo passa de 4 MB." };
   const bytes = new Uint8Array(await file.arrayBuffer());
   const check = checkUpload(bytes);
   if (!check.ok) return { ok: false as const, erro: check.erro };

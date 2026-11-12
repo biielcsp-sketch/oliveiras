@@ -2,6 +2,9 @@
 // OAuth: /o/oauth2/v2/auth (consentimento automático), /token (code + PKCE, refresh), /revoke.
 // Calendar: /calendar/v3/users/me/calendarList e /calendar/v3/calendars/:id/events (list com syncToken, get, insert, patch, delete).
 // Controle dos testes: /__user, /__events/:cal (POST cria "no Google", GET lista), /__cancel, /__touch, /__expire, /__revoke-all, /__today.
+// Drive (Carisma): o escopo drive.file é concedido quando pedido (e mantido, como include_granted_scopes); /__whoami?token=
+// diz ao drive-mock de quem é um token. Usuários da Igreja (ig-*) são escolhidos pelo cookie mock_user do navegador
+// (cada teste tem o seu), para não disputar o /__user com a Agenda em paralelo; /__reset não mexe nos tokens deles.
 import { createHash, randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 
@@ -14,9 +17,25 @@ const fmtDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo"
 const today = fmtDate.format(new Date());
 const addDays = (d, n) => new Date(Date.parse(`${d}T12:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
 
+const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 const USERS = {
   gabriel: { sub: "1001", email: "gabriel.e2e@gmail.com" },
   karen: { sub: "2002", email: "karen.e2e@gmail.com" },
+};
+// Igreja/Carisma: contas próprias (fora do seed de agendas e do /__reset da Agenda).
+const IGREJA_USERS = {
+  "ig-gabriel": { sub: "3003", email: "gabriel.igreja.e2e@gmail.com" },
+  "ig-karen": { sub: "4004", email: "karen.igreja.e2e@gmail.com" },
+};
+const ALL_USERS = { ...USERS, ...IGREJA_USERS };
+const driveGranted = new Set(); // usuários que já deram drive.file
+const scopesFor = (user, requested) => {
+  if (requested?.split(/\s+/).includes(DRIVE_SCOPE)) driveGranted.add(user);
+  return driveGranted.has(user) ? `${SCOPES} ${DRIVE_SCOPE}` : SCOPES;
+};
+const cookieUser = (req) => {
+  const m = /(?:^|;\s*)mock_user=([\w-]+)/.exec(req.headers.cookie ?? "");
+  return m && ALL_USERS[m[1]] ? m[1] : null;
 };
 let nextUser = "gabriel";
 const codes = new Map(); // code → { challenge, redirect, user }
@@ -88,11 +107,19 @@ createServer(async (req, res) => {
 
   /* ---------- controle dos testes ---------- */
   if (p === "/__today") return send(res, 200, { today });
+  if (p === "/__whoami") {
+    const user = access.get(url.searchParams.get("token") ?? "");
+    if (!user) return send(res, 401, { error: "invalid_token" });
+    return send(res, 200, { user, email: ALL_USERS[user].email, scopes: driveGranted.has(user) ? `${SCOPES} ${DRIVE_SCOPE}` : SCOPES });
+  }
   if (req.method === "POST" && p === "/__reset") {
     seed();
-    codes.clear();
-    refresh.clear();
-    access.clear();
+    // Só os da Agenda: a spec da Igreja pode estar rodando em paralelo com as contas ig-*.
+    const agendaUser = (u) => u in USERS;
+    for (const [k, v] of codes) if (agendaUser(v.user)) codes.delete(k);
+    for (const [k, v] of refresh) if (agendaUser(v.user)) refresh.delete(k);
+    for (const [k, v] of access) if (agendaUser(v)) access.delete(k);
+    for (const u of Object.keys(USERS)) driveGranted.delete(u);
     expired.clear();
     calls.length = 0;
     return send(res, 200, { ok: true });
@@ -121,8 +148,9 @@ createServer(async (req, res) => {
     return send(res, 200, {});
   }
   if (req.method === "POST" && p === "/__revoke-all") {
-    for (const r of refresh.values()) r.revoked = true;
-    access.clear();
+    // Só os da Agenda (mesmo motivo do /__reset).
+    for (const r of refresh.values()) if (r.user in USERS) r.revoked = true;
+    for (const [k, v] of access) if (v in USERS) access.delete(k);
     return send(res, 200, {});
   }
 
@@ -140,7 +168,10 @@ createServer(async (req, res) => {
       q.redirect_uri?.endsWith("/api/google/callback");
     if (!ok) return send(res, 400, { error: "invalid_request" });
     const code = `code-${randomBytes(8).toString("hex")}`;
-    codes.set(code, { challenge: q.code_challenge, redirect: q.redirect_uri, user: nextUser });
+    // Cookie mock_deny_drive=1 simula a pessoa desmarcando o Drive na tela de consentimento.
+    const denyDrive = /(?:^|;\s*)mock_deny_drive=1/.test(req.headers.cookie ?? "");
+    const scope = denyDrive ? q.scope.split(" ").filter((x) => x !== DRIVE_SCOPE).join(" ") : q.scope;
+    codes.set(code, { challenge: q.code_challenge, redirect: q.redirect_uri, user: cookieUser(req) ?? nextUser, scope });
     const back = new URL(q.redirect_uri);
     back.searchParams.set("code", code);
     back.searchParams.set("state", q.state);
@@ -155,7 +186,8 @@ createServer(async (req, res) => {
       codes.delete(f.code);
       const challenge = f.code_verifier ? createHash("sha256").update(f.code_verifier).digest("base64url") : "";
       if (!c || c.redirect !== f.redirect_uri || challenge !== c.challenge) return send(res, 400, { error: "invalid_grant" });
-      const u = USERS[c.user];
+      const u = ALL_USERS[c.user];
+      const scope = scopesFor(c.user, c.scope);
       const rt = `rt-${c.user}-${randomBytes(6).toString("hex")}`;
       const at = `at-${randomBytes(8).toString("hex")}`;
       refresh.set(rt, { user: c.user, revoked: false });
@@ -165,7 +197,7 @@ createServer(async (req, res) => {
         access_token: at,
         expires_in: 3599,
         refresh_token: rt,
-        scope: SCOPES,
+        scope,
         token_type: "Bearer",
         id_token: jwt({ iss: "https://accounts.google.com", aud: CLIENT_ID, sub: u.sub, email: u.email, email_verified: true, iat: now, exp: now + 3600 }),
       });
@@ -175,7 +207,7 @@ createServer(async (req, res) => {
       if (!r || r.revoked) return send(res, 400, { error: "invalid_grant", error_description: "Token has been expired or revoked." });
       const at = `at-${randomBytes(8).toString("hex")}`;
       access.set(at, r.user);
-      return send(res, 200, { access_token: at, expires_in: 3599, scope: SCOPES, token_type: "Bearer" });
+      return send(res, 200, { access_token: at, expires_in: 3599, scope: scopesFor(r.user), token_type: "Bearer" });
     }
     return send(res, 400, { error: "unsupported_grant_type" });
   }

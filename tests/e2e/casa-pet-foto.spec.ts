@@ -89,7 +89,7 @@ test("Pet: foto de perfil (cadastrar, trocar, remover, apagar) e outra família 
     expect(firstPath).toMatch(new RegExp(`^${row.household_id}/pets/[0-9a-f-]{36}\\.jpg$`));
     expect(row.photo_mime).toBe("image/jpeg");
     expect(Number(row.photo_size)).toBeGreaterThan(0);
-    expect(Number(row.photo_size)).toBeLessThan(5 * 1024 * 1024);
+    expect(Number(row.photo_size)).toBeLessThan(4 * 1024 * 1024);
     expect(await stored(firstPath)).toBe(true);
   });
 
@@ -106,7 +106,7 @@ test("Pet: foto de perfil (cadastrar, trocar, remover, apagar) e outra família 
     expect(res.headers()["cache-control"]).toContain("no-store");
     const body = await res.body();
     expect([...body.subarray(0, 3)]).toEqual([0xff, 0xd8, 0xff]);
-    expect(body.length).toBeLessThan(5 * 1024 * 1024);
+    expect(body.length).toBeLessThan(4 * 1024 * 1024);
     // O servidor não entrega o caminho do bucket ao navegador.
     expect(await a.content()).not.toContain(firstPath);
   });

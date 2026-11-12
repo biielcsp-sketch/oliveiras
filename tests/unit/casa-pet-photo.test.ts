@@ -29,9 +29,10 @@ describe("foto do pet: bytes e tamanho", () => {
     expect(checkPetPhoto(jpeg())).toEqual({ ok: true });
     expect(checkPetPhoto(new Uint8Array())).toMatchObject({ ok: false });
     expect(checkPetPhoto(new TextEncoder().encode("<html>oi</html>"))).toMatchObject({ ok: false, erro: "Envie uma foto JPG ou PNG." });
+    expect(PET_PHOTO_MAX_BYTES).toBe(4 * 1024 * 1024);
     const big = new Uint8Array(PET_PHOTO_MAX_BYTES + 1);
     big.set([0xff, 0xd8, 0xff]);
-    expect(checkPetPhoto(big)).toMatchObject({ ok: false, erro: "A foto passa de 5 MB." });
+    expect(checkPetPhoto(big)).toMatchObject({ ok: false, erro: "A foto passa de 4 MB." });
     const max = new Uint8Array(PET_PHOTO_MAX_BYTES);
     max.set([0xff, 0xd8, 0xff]);
     expect(checkPetPhoto(max)).toEqual({ ok: true });

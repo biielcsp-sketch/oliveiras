@@ -35,7 +35,7 @@ export function FileButtons({
   mode = "select",
   onPick,
 }: {
-  /** Legenda visível do grupo (ex.: "Arquivo opcional (PDF ou JPG, até 5 MB)"). */
+  /** Legenda visível do grupo (ex.: "Arquivo opcional (PDF ou JPG, até 4 MB)"). */
   label: string;
   kinds?: readonly FileKind[];
   accept?: Partial<Record<FileKind, string>>;

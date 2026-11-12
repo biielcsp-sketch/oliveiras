@@ -6,7 +6,7 @@ import { checkPetPhoto, petPhotoPath } from "./pet-photo";
 import { CASA_BUCKET, casaFilePath, isCasaFilePath, type CasaFileDir } from "./docs";
 
 /**
- * Upload de arquivos da Casa (documentos e Pet). Tipo decidido pelos BYTES (PDF/JPG), até 5 MB, nome uuid
+ * Upload de arquivos da Casa (documentos e Pet). Tipo decidido pelos BYTES (PDF/JPG), até 4 MB, nome uuid
  * gerado aqui, envio com a sessão do usuário (RLS do bucket privado `casa`). Só roda no servidor.
  */
 type Db = Awaited<ReturnType<typeof createClient>>;
@@ -15,7 +15,7 @@ export type Uploaded = { path: string; mime: "application/pdf" | "image/jpeg"; s
 export async function uploadCasaFile(db: Db, householdId: string, form: FormData, dir: CasaFileDir) {
   const file = form.get("file");
   if (!(file instanceof File) || file.size === 0) return { ok: true as const, uploaded: null };
-  if (file.size > MAX_FILE_BYTES) return { ok: false as const, erro: "O arquivo passa de 5 MB." };
+  if (file.size > MAX_FILE_BYTES) return { ok: false as const, erro: "O arquivo passa de 4 MB." };
   const bytes = new Uint8Array(await file.arrayBuffer());
   const check = checkUpload(bytes);
   if (!check.ok) return { ok: false as const, erro: check.erro };
@@ -36,11 +36,11 @@ export function fileColumns(uploaded: Uploaded | null, remove: boolean) {
   return {};
 }
 
-/** Foto do pet (campo `photo`): só JPEG pelos bytes, até 5 MB, caminho {household_id}/pets/{uuid}.jpg, sessão do usuário. */
+/** Foto do pet (campo `photo`): só JPEG pelos bytes, até 4 MB, caminho {household_id}/pets/{uuid}.jpg, sessão do usuário. */
 export async function uploadPetPhoto(db: Db, householdId: string, form: FormData) {
   const file = form.get("photo");
   if (!(file instanceof File) || file.size === 0) return { ok: true as const, uploaded: null };
-  if (file.size > MAX_FILE_BYTES) return { ok: false as const, erro: "A foto passa de 5 MB." };
+  if (file.size > MAX_FILE_BYTES) return { ok: false as const, erro: "A foto passa de 4 MB." };
   const bytes = new Uint8Array(await file.arrayBuffer());
   const check = checkPetPhoto(bytes);
   if (!check.ok) return { ok: false as const, erro: check.erro };

@@ -43,7 +43,7 @@ export function DocUpload({
       <form action={action} className="flex flex-col gap-3">
         {origem === "casa" && <input type="hidden" name="origem" value="casa" />}
         {origem === "casa" && mes && <input type="hidden" name="mes" value={mes} />}
-        <FileButtons label="Arquivo (PDF ou JPG, até 5 MB)" mode="submit" disabled={busy} />
+        <FileButtons label="Arquivo (PDF ou JPG, até 4 MB)" mode="submit" disabled={busy} />
         {busy && (
           <p role="status" className="text-sm text-muted">
             Lendo o documento…

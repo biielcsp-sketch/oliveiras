@@ -4,7 +4,7 @@
  */
 import type { FileMime } from "./types";
 
-export const MAX_FILE_BYTES = 5 * 1024 * 1024;
+export const MAX_FILE_BYTES = 4 * 1024 * 1024;
 export type FileKind = { mime: FileMime; ext: "pdf" | "jpg" };
 
 const PDF = [0x25, 0x50, 0x44, 0x46, 0x2d]; // %PDF-
@@ -23,7 +23,7 @@ export type UploadCheck = { ok: true; kind: FileKind } | { ok: false; erro: stri
 
 export function checkUpload(bytes: Uint8Array): UploadCheck {
   if (bytes.length === 0) return { ok: false, erro: "O arquivo está vazio." };
-  if (bytes.length > MAX_FILE_BYTES) return { ok: false, erro: "O arquivo passa de 5 MB." };
+  if (bytes.length > MAX_FILE_BYTES) return { ok: false, erro: "O arquivo passa de 4 MB." };
   const kind = detectFileKind(bytes);
   if (!kind) return { ok: false, erro: "Envie um arquivo PDF ou JPG." };
   return { ok: true, kind };

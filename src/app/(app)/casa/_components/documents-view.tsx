@@ -75,7 +75,7 @@ function DocumentForm({ doc, onDone }: { doc?: DocumentVM; onDone: (msg?: string
       <Field label="Observações">
         <Textarea name="notes" maxLength={LIMITS.docNotes} defaultValue={doc?.notes ?? ""} />
       </Field>
-      <FileButtons label={doc?.mime ? "Trocar arquivo (PDF ou JPG, até 5 MB)" : "Arquivo opcional (PDF ou JPG, até 5 MB)"} />
+      <FileButtons label={doc?.mime ? "Trocar arquivo (PDF ou JPG, até 4 MB)" : "Arquivo opcional (PDF ou JPG, até 4 MB)"} />
       {doc?.mime && (
         <label className="flex min-h-11 items-center gap-3 text-[15px]">
           <input type="checkbox" name="remove_file" className="size-5 accent-[var(--primary)]" />

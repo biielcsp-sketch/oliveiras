@@ -276,12 +276,12 @@ describe("Oli arquivo: validação do arquivo no servidor (mesma de Finanças)",
     expect(await readUploadedFile(form(JPG, "foto.jpg", "image/jpeg"))).toMatchObject({ ok: true, kind: { mime: "image/jpeg", ext: "jpg" } });
   });
 
-  it("recusa vazio, ausente, acima de 5 MB e arquivo com extensão falsa", async () => {
+  it("recusa vazio, ausente, acima de 4 MB e arquivo com extensão falsa", async () => {
     expect(await readUploadedFile(form(null))).toEqual({ ok: false, error: "Escolha um PDF ou uma foto (JPG)." });
     expect(await readUploadedFile(form(new Uint8Array(0)))).toEqual({ ok: false, error: "Escolha um PDF ou uma foto (JPG)." });
-    const big = new Uint8Array(5 * 1024 * 1024 + 1);
+    const big = new Uint8Array(4 * 1024 * 1024 + 1);
     big.set(PDF);
-    expect(await readUploadedFile(form(big))).toEqual({ ok: false, error: "O arquivo passa de 5 MB." });
+    expect(await readUploadedFile(form(big))).toEqual({ ok: false, error: "O arquivo passa de 4 MB." });
     expect(await readUploadedFile(form("<script>alert(1)</script>", "x.pdf"))).toEqual({ ok: false, error: "Envie um arquivo PDF ou JPG." });
   });
 });

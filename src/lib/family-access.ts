@@ -19,3 +19,8 @@ export function familyAllowed(householdId: string | null | undefined, env: Env =
 export function agendaAllowedFor(householdId: string | null | undefined, env: Env = process.env) {
   return familyAllowed(householdId, env, "AGENDA_HOUSEHOLD_ID");
 }
+
+/** Igreja/Carisma (resumo por IA e arquivos no Google Drive): CARISMA_HOUSEHOLD_ID opcional; sem ela, vale a família do Oli. */
+export function carismaAllowedFor(householdId: string | null | undefined, env: Env = process.env) {
+  return familyAllowed(householdId, env, "CARISMA_HOUSEHOLD_ID");
+}

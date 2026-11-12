@@ -41,7 +41,7 @@ test("Saúde: carteirinhas, consultas e exames (família compartilhada, arquivos
   let cardId = "";
   let cardPath = "";
 
-  await test.step("carteirinha: recusa arquivo falso e acima de 5 MB; aceita PDF", async () => {
+  await test.step("carteirinha: recusa arquivo falso e acima de 4 MB; aceita PDF", async () => {
     await a.goto("/saude");
     await expect(a.getByText("Nenhuma carteirinha ainda.")).toBeVisible();
     await a.getByRole("button", { name: "Nova carteirinha" }).click();
@@ -53,9 +53,9 @@ test("Saúde: carteirinhas, consultas e exames (família compartilhada, arquivos
     await d.getByRole("group", { name: /Arquivo \(PDF ou JPG/ }).getByLabel("PDF", { exact: true }).setInputFiles({ name: "falso.pdf", mimeType: "application/pdf", buffer: Buffer.from("<html><script>alert(1)</script></html>") });
     await d.getByRole("button", { name: "Salvar carteirinha" }).click();
     await expect(d.getByText("Envie um arquivo PDF ou JPG.")).toBeVisible();
-    await d.getByRole("group", { name: /Arquivo \(PDF ou JPG/ }).getByLabel("PDF", { exact: true }).setInputFiles({ name: "grande.pdf", mimeType: "application/pdf", buffer: Buffer.concat([PDF, Buffer.alloc(5 * 1024 * 1024)]) });
+    await d.getByRole("group", { name: /Arquivo \(PDF ou JPG/ }).getByLabel("PDF", { exact: true }).setInputFiles({ name: "grande.pdf", mimeType: "application/pdf", buffer: Buffer.concat([PDF, Buffer.alloc(4 * 1024 * 1024)]) });
     await d.getByRole("button", { name: "Salvar carteirinha" }).click();
-    await expect(d.getByText("O arquivo passa de 5 MB.")).toBeVisible();
+    await expect(d.getByText("O arquivo passa de 4 MB.")).toBeVisible();
     await d.getByRole("group", { name: /Arquivo \(PDF ou JPG/ }).getByLabel("PDF", { exact: true }).setInputFiles(pdf);
     await d.getByRole("button", { name: "Salvar carteirinha" }).click();
     await expect(a.getByRole("status").filter({ hasText: "Carteirinha salva." })).toBeVisible();
