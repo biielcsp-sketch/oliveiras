@@ -96,6 +96,11 @@ export async function trashFile(token: string, id: string) {
   }
 }
 
+/** Renomeia (só o campo name). 404 sobe como erro: o arquivo sumiu do Drive ou o app perdeu o acesso. */
+export async function renameFile(token: string, id: string, name: string) {
+  await call<DriveFile>(token, "PATCH", `/files/${enc(id)}?fields=${enc("id,name")}`, { body: { name } });
+}
+
 /* ---------- Upload resumível ---------- */
 
 export type ResumableInput = {

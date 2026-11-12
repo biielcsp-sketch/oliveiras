@@ -33,20 +33,47 @@ export const ACCEPT_ATTR = ".pdf,.jpg,.jpeg,.png,.docx,application/pdf,image/jpe
 
 const CONTROL = /[\u0000-\u001F\u007F-\u009F\u2028\u2029\u202A-\u202E\u2066-\u2069]/g;
 
+/** Limpeza do nome (pode sobrar vazio): sem controle, aspas, barras, < > nem pontos no começo; espaços colapsados. */
+function cleanName(raw: unknown) {
+  let s = typeof raw === "string" ? raw : "";
+  s = s.normalize("NFC").replace(CONTROL, "").replace(/["'`\\/<>|*?:]/g, " ").replace(/\s+/g, " ").trim();
+  return s.replace(/^\.+/, "").trim();
+}
+
 /**
  * Nome exibido (e nome do arquivo no Drive): sem caracteres de controle, aspas, barras, < > nem marcas de direção;
  * espaços colapsados; até 120 caracteres preservando a extensão. Vazio → "arquivo.<ext>".
  */
 export function sanitizeDisplayName(raw: unknown, ext?: string): string {
-  let s = typeof raw === "string" ? raw : "";
-  s = s.normalize("NFC").replace(CONTROL, "").replace(/["'`\\/<>|*?:]/g, " ").replace(/\s+/g, " ").trim();
-  s = s.replace(/^\.+/, "").trim();
+  const s = cleanName(raw);
   const max = 120;
   if (!s) return ext ? `arquivo.${ext}` : "arquivo";
   if (s.length <= max) return s;
   const dot = s.lastIndexOf(".");
   const tail = dot > 0 && s.length - dot <= 6 ? s.slice(dot) : "";
   return s.slice(0, max - tail.length).trimEnd() + tail;
+}
+
+/** Nome sem a extensão (para o campo de renomear). */
+export function baseName(name: string) {
+  const ext = extOf(name);
+  return ext ? name.slice(0, -(ext.length + 1)) : name;
+}
+
+/**
+ * Novo nome ao renomear: a pessoa digita só o nome; a extensão do arquivo atual é mantida
+ * (a do nome atual, se combina com o tipo; senão a padrão do tipo). Se digitou a mesma extensão, não duplica.
+ * Nome vazio (depois de limpo) → null.
+ */
+export function renamedDisplayName(raw: unknown, currentName: string, mime: CarismaMime): string | null {
+  const cur = extOf(currentName);
+  const ext = BY_EXT[cur] === mime ? cur : MIME_INFO[mime].ext;
+  let base = typeof raw === "string" ? raw : "";
+  const typed = extOf(base);
+  if (typed && BY_EXT[typed] === mime) base = baseName(base);
+  const clean = cleanName(base);
+  if (!clean) return null;
+  return `${clean.slice(0, 120 - ext.length - 1).trimEnd()}.${ext}`;
 }
 
 /* ---------- Pedido de upload (declarado pelo navegador) ---------- */

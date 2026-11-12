@@ -245,6 +245,23 @@ test("Igreja: devocional pessoal com compartilhamento, Carisma com Google Drive 
     expect(count).toBe(1);
   });
 
+  await test.step("arquivos em lista: renomear muda no app e no Drive e mantém a extensão", async () => {
+    const item = page.getByRole("list", { name: "Lista de arquivos" }).getByTestId("arquivo-aula").filter({ hasText: "apostila.pdf" });
+    await item.getByRole("button", { name: "Renomear" }).click();
+    const d = page.getByRole("dialog", { name: "Renomear arquivo" });
+    await expect(d.getByLabel("Novo nome")).toHaveValue("apostila");
+    await d.getByLabel("Novo nome").fill("   ");
+    await d.getByRole("button", { name: "Salvar nome" }).click();
+    await expect(d.getByText("Digite o novo nome do arquivo.")).toBeVisible();
+    await d.getByLabel("Novo nome").fill("Apostila da aula 1");
+    await d.getByRole("button", { name: "Salvar nome" }).click();
+    await expect(d).toBeHidden();
+    await expect(page.getByTestId("arquivo-aula").filter({ hasText: "Apostila da aula 1.pdf" })).toBeVisible();
+    const { data: row } = await admin.from("igreja_carisma_files").select("display_name, drive_file_id").eq("household_id", E2E_IGREJA_HOUSEHOLD_ID).single();
+    expect(row?.display_name).toBe("Apostila da aula 1.pdf");
+    expect((await driveFiles()).find((x) => x.id === row!.drive_file_id)?.name).toBe("Apostila da aula 1.pdf");
+  });
+
   await test.step(".doc antigo é recusado na tela com explicação", async () => {
     await page.getByLabel("Escolher arquivo da aula").setInputFiles({ name: "antigo.doc", mimeType: "application/msword", buffer: Buffer.from([0xd0, 0xcf, 0x11, 0xe0]) });
     await expect(page.getByText("Arquivo .doc (Word antigo) não é aceito. Abra no Word")).toBeVisible();
@@ -348,7 +365,9 @@ test("Igreja: devocional pessoal com compartilhamento, Carisma com Google Drive 
     await expect(page).toHaveURL(/\/ministerio\/carisma$/);
     const files = await driveFiles();
     expect(files.find((x) => x.id === lesson!.drive_folder_id)?.trashed).toBe(true);
-    expect(files.filter((x) => x.name === "apostila.pdf").every((x) => x.trashed)).toBe(true);
+    const renamed = files.filter((x) => x.name === "Apostila da aula 1.pdf");
+    expect(renamed.length).toBeGreaterThan(0);
+    expect(renamed.every((x) => x.trashed)).toBe(true);
     const { count } = await admin.from("igreja_carisma_files").select("id", { count: "exact", head: true }).eq("household_id", E2E_IGREJA_HOUSEHOLD_ID);
     expect(count).toBe(0);
   });

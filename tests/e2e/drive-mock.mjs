@@ -1,7 +1,7 @@
 // Google Drive API v3 simulado nos testes E2E (Carisma). Nunca usado em produção.
 // Tokens: confere no google-mock (/__whoami) de quem é o token e se tem o escopo drive.file (sem ele: 403).
 // API: /drive/v3/files/generateIds, POST /drive/v3/files (pasta), GET /drive/v3/files/:id (metadados ou alt=media com Range),
-//      PATCH /drive/v3/files/:id (trashed), /drive/v3/files/:id/permissions (GET, POST com sendNotificationEmail, DELETE).
+//      PATCH /drive/v3/files/:id (trashed, name), /drive/v3/files/:id/permissions (GET, POST com sendNotificationEmail, DELETE).
 // Upload resumível: POST /upload/drive/v3/files?uploadType=resumable (exige o header Origin) → Location com upload_id;
 //      OPTIONS/PUT no session URI com CORS para a origem que iniciou a sessão (o navegador envia direto).
 // Controle dos testes: GET /__files (tudo, com permissões e lixeira).
@@ -176,6 +176,7 @@ createServer(async (req, res) => {
         // Pasta na lixeira leva os filhos junto.
         if (f.mimeType === FOLDER) for (const c of files.values()) if (c.parents?.includes(f.id)) c.trashed = body.trashed;
       }
+      if (typeof body.name === "string") f.name = body.name;
       return send(res, 200, pick(f, url.searchParams.get("fields") ?? "id,trashed"));
     }
   }

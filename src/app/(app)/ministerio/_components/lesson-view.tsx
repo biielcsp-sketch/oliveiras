@@ -3,12 +3,12 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ExternalLink, FileText, Image as ImageIcon, Sparkles, Upload } from "lucide-react";
-import { Button, Card, EmptyState, Textarea } from "@/components/ui";
+import { ArrowLeft, ExternalLink, FileText, Image as ImageIcon, Pencil, Sparkles, Upload } from "lucide-react";
+import { Button, Card, EmptyState, Field, FormError, Input, Textarea } from "@/components/ui";
 import { Modal } from "@/components/modal";
 import { brDate } from "@/lib/agenda/dates";
 import { IGREJA_LIMITS } from "@/lib/igreja/input";
-import { ACCEPT_ATTR, validateDeclaredUpload } from "@/lib/igreja/files";
+import { ACCEPT_ATTR, baseName, extOf, validateDeclaredUpload } from "@/lib/igreja/files";
 import { formatBytes, putToSession } from "@/lib/igreja/upload-client";
 import {
   cancelDriveUpload,
@@ -16,6 +16,7 @@ import {
   deleteLesson,
   deleteLessonFile,
   prepareDriveUpload,
+  renameLessonFile,
   saveSummary,
   setLessonShared,
   summarizeLessonAction,
@@ -40,6 +41,71 @@ type FileVM = { id: string; name: string; mime: string; size: number; status: "p
 
 function FileIcon({ mime }: { mime: string }) {
   return mime.startsWith("image/") ? <ImageIcon size={18} aria-hidden /> : <FileText size={18} aria-hidden />;
+}
+
+/** Uma linha da lista de arquivos: nome inteiro em cima, ações embaixo. Renomear e apagar só para o dono. */
+function FileItem({ file: f, mine, pending, run }: { file: FileVM; mine: boolean; pending: boolean; run: ReturnType<typeof useRunner>["run"] }) {
+  const [renaming, setRenaming] = useState(false);
+  const [name, setName] = useState(baseName(f.name));
+  const [err, setErr] = useState<string | null>(null);
+  const ext = extOf(f.name);
+  return (
+    <li data-testid="arquivo-aula" className="flex flex-col gap-1 px-4 py-3">
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 shrink-0 text-primary">
+          <FileIcon mime={f.mime} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="font-medium [overflow-wrap:anywhere]">{f.name}</p>
+          <p className="text-[13px] text-muted">{formatBytes(f.size)}</p>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pl-9">
+        {f.link && (
+          <a href={f.link} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center gap-1 text-[15px] font-medium text-link">
+            Abrir no Drive <ExternalLink size={16} aria-hidden />
+          </a>
+        )}
+        {mine && (
+          <button
+            type="button"
+            className="inline-flex min-h-11 items-center gap-1 text-[15px] font-medium text-link"
+            onClick={() => {
+              setName(baseName(f.name));
+              setErr(null);
+              setRenaming(true);
+            }}
+          >
+            <Pencil size={15} aria-hidden /> Renomear
+          </button>
+        )}
+        {mine && <ConfirmDelete what="este arquivo (vai para a lixeira do Drive)" pending={pending} onConfirm={() => run(() => deleteLessonFile(f.id), "Arquivo enviado para a lixeira do Google Drive.")} />}
+      </div>
+      {mine && (
+        <Modal open={renaming} onClose={() => setRenaming(false)} title="Renomear arquivo">
+          <form
+            className="flex flex-col gap-4"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const r = await run(() => renameLessonFile(f.id, name), "Arquivo renomeado.");
+              if (r.ok) setRenaming(false);
+              else setErr(r.erro ?? "Não foi possível renomear.");
+            }}
+          >
+            <Field label="Novo nome">
+              <div className="flex items-center gap-2">
+                <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={115} required autoFocus />
+                {ext && <span className="shrink-0 text-[15px] text-muted">.{ext}</span>}
+              </div>
+            </Field>
+            <FormError message={err} />
+            <p className="text-[13px] text-muted">O nome muda aqui e no seu Google Drive. A extensão continua a mesma.</p>
+            <Button disabled={pending}>{pending ? "Salvando…" : "Salvar nome"}</Button>
+          </form>
+        </Modal>
+      )}
+    </li>
+  );
 }
 
 /** Envio: prepara no servidor → PUT direto ao Drive com progresso → confirma no servidor (bytes conferidos lá). */
@@ -277,23 +343,15 @@ export function LessonView({
           </p>
         )}
         {ready.length === 0 && pendingFiles.length === 0 && <p className="text-sm text-muted">Nenhum arquivo ainda.</p>}
-        {ready.map((f) => (
-          <Card key={f.id} data-testid="arquivo-aula" className="flex flex-wrap items-center gap-3">
-            <span className="text-primary">
-              <FileIcon mime={f.mime} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="break-words font-medium">{f.name}</p>
-              <p className="text-[13px] text-muted">{formatBytes(f.size)}</p>
-            </div>
-            {f.link && (
-              <a href={f.link} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center gap-1 text-[15px] font-medium text-link">
-                Abrir no Drive <ExternalLink size={16} aria-hidden />
-              </a>
-            )}
-            {mine && <ConfirmDelete what="este arquivo (vai para a lixeira do Drive)" pending={pending} onConfirm={() => run(() => deleteLessonFile(f.id), "Arquivo enviado para a lixeira do Google Drive.")} />}
+        {ready.length > 0 && (
+          <Card className="p-0">
+            <ul aria-label="Lista de arquivos" className="divide-y divide-line">
+              {ready.map((f) => (
+                <FileItem key={f.id} file={f} mine={mine} pending={pending} run={run} />
+              ))}
+            </ul>
           </Card>
-        ))}
+        )}
         {mine &&
           pendingFiles.map((f) => (
             <p key={f.id} className="text-sm text-muted">

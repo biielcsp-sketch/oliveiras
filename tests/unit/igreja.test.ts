@@ -10,6 +10,7 @@ import {
   withOwnership,
 } from "@/lib/igreja/input";
 import {
+  baseName,
   CARISMA_MAX_BYTES,
   detectKind,
   DOCX_MAX_UNCOMPRESSED,
@@ -21,6 +22,7 @@ import {
   lessonFolderName,
   OLD_DOC_MESSAGE,
   PENDING_TTL_MS,
+  renamedDisplayName,
   safeWebViewLink,
   sanitizeDisplayName,
   validateDeclaredUpload,
@@ -196,6 +198,37 @@ describe("arquivos do Carisma", () => {
     expect(isDriveId("abc_DEF-123")).toBe(true);
     expect(isDriveId("../x")).toBe(false);
     expect(lessonFolderName('Aula "1"/Intro', "2026-11-12")).toBe("2026-11-12 · Aula 1 Intro");
+  });
+});
+
+describe("renomear arquivo do Carisma", () => {
+  it("mantém a extensão do arquivo e não duplica se a pessoa digitar a mesma", () => {
+    expect(renamedDisplayName("Apostila aula 1", "01M718V0ES.pdf", "application/pdf")).toBe("Apostila aula 1.pdf");
+    expect(renamedDisplayName("Apostila aula 1.pdf", "x.pdf", "application/pdf")).toBe("Apostila aula 1.pdf");
+    expect(renamedDisplayName("Quadro", "foto.jpeg", "image/jpeg")).toBe("Quadro.jpeg");
+    expect(renamedDisplayName("Notas", "notas.docx", DOCX_MIME)).toBe("Notas.docx");
+  });
+  it("extensão que não combina com o tipo não troca o tipo: vira parte do nome", () => {
+    expect(renamedDisplayName("virus.exe", "a.pdf", "application/pdf")).toBe("virus.exe.pdf");
+    expect(renamedDisplayName("foto.png", "a.pdf", "application/pdf")).toBe("foto.png.pdf");
+  });
+  it("nome atual sem extensão válida usa a padrão do tipo", () => {
+    expect(renamedDisplayName("Aula", "sem-extensao", "image/png")).toBe("Aula.png");
+  });
+  it("limpa caracteres perigosos e recusa nome vazio", () => {
+    expect(renamedDisplayName('<b>"x"</b>/..\u202E', "a.pdf", "application/pdf")).toBe("b x b ...pdf");
+    expect(renamedDisplayName("   ", "a.pdf", "application/pdf")).toBeNull();
+    expect(renamedDisplayName("...", "a.pdf", "application/pdf")).toBeNull();
+    expect(renamedDisplayName(42, "a.pdf", "application/pdf")).toBeNull();
+  });
+  it("cabe no limite de 120 caracteres com a extensão", () => {
+    const n = renamedDisplayName("a".repeat(200), "a.docx", DOCX_MIME)!;
+    expect(n.length).toBe(120);
+    expect(n.endsWith(".docx")).toBe(true);
+  });
+  it("baseName tira só a extensão", () => {
+    expect(baseName("Apostila 1.pdf")).toBe("Apostila 1");
+    expect(baseName("sem extensao")).toBe("sem extensao");
   });
 });
 
