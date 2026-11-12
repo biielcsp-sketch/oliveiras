@@ -64,6 +64,22 @@ export async function runExtraction(
   mime: GenerateRequest["mime"],
   timeoutMs = EXTRACTION_TIMEOUT_MS,
 ): Promise<ExtractionResult> {
+  return runStructured(generate, bytes, mime, { systemInstruction: EXTRACTION_INSTRUCTION, schema: EXTRACTION_SCHEMA, parse: parseExtraction }, timeoutMs);
+}
+
+export type StructuredResult<T> = { ok: true; data: T } | { ok: false; motivo: "timeout" | "erro" | "resposta_invalida" };
+
+/**
+ * Chamada genérica com saída estruturada (usada também pela leitura de arquivos do Oli):
+ * mesma instrução fixa por chamada, tempo limite, uma tentativa e resposta validada por `parse` (null → descartada).
+ */
+export async function runStructured<T>(
+  generate: Generate,
+  bytes: Uint8Array,
+  mime: GenerateRequest["mime"],
+  spec: { systemInstruction: string; schema: Schema; parse: (text: unknown) => T | null },
+  timeoutMs = EXTRACTION_TIMEOUT_MS,
+): Promise<StructuredResult<T>> {
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<"timeout">((resolve) => {
@@ -75,8 +91,8 @@ export async function runExtraction(
   try {
     const text = await Promise.race([
       generate({
-        systemInstruction: EXTRACTION_INSTRUCTION,
-        schema: EXTRACTION_SCHEMA,
+        systemInstruction: spec.systemInstruction,
+        schema: spec.schema,
         mime,
         base64: Buffer.from(bytes).toString("base64"),
         signal: controller.signal,
@@ -84,7 +100,7 @@ export async function runExtraction(
       timeout,
     ]);
     if (text === "timeout") return { ok: false, motivo: "timeout" };
-    const data = parseExtraction(text);
+    const data = spec.parse(text);
     return data ? { ok: true, data } : { ok: false, motivo: "resposta_invalida" };
   } catch {
     return { ok: false, motivo: "erro" };

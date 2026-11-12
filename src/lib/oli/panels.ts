@@ -14,6 +14,7 @@ import { validateAppointmentInput, type AppointmentInput } from "@/lib/saude/inp
 import type { AppointmentKind } from "@/lib/saude/types";
 import { cleanText, DOC_LIMITS, storedExtracted } from "@/lib/financas/documentos/schema";
 import { billForMonth } from "@/lib/financas/documentos/rules";
+import type { OliFileDest, OliFileOptions, OliFileReading } from "./arquivo";
 
 const cents = (v: number) => Math.round(v * 100);
 const reais = (c: number) => c / 100;
@@ -100,6 +101,9 @@ export type DocumentoData = DocumentoItem & { descricao: string | null; conta_li
 
 export type ConfirmStatus = "pendente" | "salvando" | "criado" | "cancelado" | "erro";
 
+/** Arquivo lido pelo "+" do Oli. O arquivo em si fica só na memória da tela (não entra aqui). */
+export type ArquivoPreview = { leitura: OliFileReading; destino: OliFileDest; opcoes: OliFileOptions; nome_arquivo: string };
+
 export type OliPanel =
   | { id: string; kind: "resumo"; data: ResumoData }
   | { id: string; kind: "saldos"; data: SaldosData }
@@ -115,6 +119,7 @@ export type OliPanel =
   | { id: string; kind: "confirmar_consulta"; data: ConsultaPreview; status: ConfirmStatus; erro?: string }
   | { id: string; kind: "documentos"; data: DocumentosData }
   | { id: string; kind: "documento"; data: DocumentoData }
+  | { id: string; kind: "confirmar_arquivo"; data: ArquivoPreview; status: ConfirmStatus; erro?: string }
   | { id: string; kind: "aviso"; texto: string };
 
 /* ---------- Montagem dos dados ---------- */
@@ -437,7 +442,8 @@ const isPending = (p: OliPanel) =>
     p.kind === "confirmar_esquecer" ||
     p.kind === "confirmar_memoria" ||
     p.kind === "confirmar_evento" ||
-    p.kind === "confirmar_consulta") &&
+    p.kind === "confirmar_consulta" ||
+    p.kind === "confirmar_arquivo") &&
   (p.status === "pendente" || p.status === "salvando");
 
 /** Novo painel no topo; no máximo MAX_PANELS. Confirmações pendentes nunca somem. */

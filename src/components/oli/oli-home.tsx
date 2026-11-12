@@ -1,20 +1,39 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { ChevronDown, Mic, SendHorizontal, Square } from "lucide-react";
 import { Button, Input } from "@/components/ui";
 import { clearPanels, pushPanel, type OliPanel } from "@/lib/oli/panels";
 import { clearOliHistory } from "@/app/(app)/inicio/oli-history-actions";
 import { confirmOliConsulta, confirmOliEsquecer, confirmOliEvento, confirmOliLancamento, confirmOliMemoria, runOliTool } from "@/app/(app)/inicio/oli-actions";
+import { confirmOliArquivoFinancas, readOliFile } from "@/app/(app)/inicio/oli-arquivo-actions";
+import { saveCard, saveExam, saveMedication, saveProcedure, saveVaccine } from "@/app/(app)/saude/actions";
+import { saveCasaDocument } from "@/app/(app)/casa/documentos-actions";
+import { savePetHealth } from "@/app/(app)/casa/pet-actions";
+import { documentoLidoText, formFieldsFor, OLI_FILE_KEEPS_FILE, type OliFileDest } from "@/lib/oli/arquivo";
 import type { Oli3D, OliState } from "./oli3d";
 import { OliStage } from "./oli-stage";
 import { OliPanels } from "./oli-panels";
+import { OliAddFile } from "./oli-arquivo";
 import { useOliSession, type LogEntry, type ToolCall } from "./use-oli-session";
 
 const LABELS: Record<OliState, string> = { idle: "Repouso", listen: "Ouvindo", think: "Pensando", speak: "Falando" };
 
 type Pending = { resolve: (out: Record<string, unknown>) => void };
+
+type SaveState = { ok?: boolean; error?: string; message?: string } | null;
+/** Destinos do "+" que gravam pelas server actions dos próprios módulos (mesma validação dos formulários). */
+const MODULE_SAVE: Record<Exclude<OliFileDest, "financas" | "nenhum">, (prev: null, form: FormData) => Promise<SaveState>> = {
+  saude_exame: saveExam,
+  saude_vacina: saveVaccine,
+  saude_procedimento: saveProcedure,
+  saude_carteirinha: saveCard,
+  saude_medicamento: saveMedication,
+  casa_documento: saveCasaDocument,
+  pet_saude: savePetHealth,
+};
 
 export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
   const avatar = useRef<Oli3D | null>(null);
@@ -22,7 +41,11 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
   const [text, setText] = useState("");
   const [showLog, setShowLog] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+  const router = useRouter();
+  const [reading, setReading] = useState(false);
   const pending = useRef(new Map<string, Pending>());
+  // Arquivos escolhidos no "+", só na memória da tela, até Confirmar ou Cancelar.
+  const files = useRef(new Map<string, File>());
   const seq = useRef(0);
   const panelsRef = useRef<OliPanel[]>([]);
 
@@ -111,7 +134,7 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
   const onConfirm = useCallback(
     async (id: string) => {
       const p = panelsRef.current.find((x) => x.id === id);
-      if (!p || !("status" in p) || p.status !== "pendente") return;
+      if (!p || !("status" in p) || p.status !== "pendente" || p.kind === "confirmar_arquivo") return;
       patch(id, { status: "salvando" });
       if (p.kind === "confirmar_consulta") {
         const c = await confirmOliConsulta(p.data);
@@ -151,6 +174,7 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
   const onCancel = useCallback(
     (id: string) => {
       patch(id, { status: "cancelado" });
+      files.current.delete(id);
       settle(id, { status: "cancelado", motivo: "o usuário tocou em Cancelar" });
     },
     [patch, settle],
@@ -172,6 +196,74 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
   }, []);
 
   const oli = useOliSession({ onTool, onFrame, onEnd, initialLog });
+  const { sendContext } = oli;
+
+  /** "+": lê o arquivo no servidor (nada é gravado) e mostra o painel; com conversa ativa, o Oli comenta. */
+  const onFile = useCallback(
+    async (file: File) => {
+      const id = `p${++seq.current}`;
+      setReading(true);
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await readOliFile(fd).catch(() => ({ ok: false as const, erro: "Não consegui ler o arquivo agora. Tente de novo." }));
+      setReading(false);
+      if (!res.ok) {
+        add({ id, kind: "aviso", texto: res.erro });
+        return;
+      }
+      files.current.set(id, file);
+      add({
+        id,
+        kind: "confirmar_arquivo",
+        data: { leitura: res.leitura, destino: res.destino, opcoes: res.opcoes, nome_arquivo: file.name.slice(0, 80) },
+        status: "pendente",
+      });
+      sendContext(documentoLidoText(res.leitura, res.destino));
+    },
+    [add, sendContext],
+  );
+
+  /** Confirmar do arquivo: grava no destino escolhido, com o arquivo, pela action do módulo. */
+  const onConfirmArquivo = useCallback(
+    async (id: string, dest: OliFileDest, values: Record<string, string>) => {
+      const p = panelsRef.current.find((x) => x.id === id);
+      if (!p || p.kind !== "confirmar_arquivo" || p.status !== "pendente" || dest === "nenhum") return;
+      const file = files.current.get(id);
+      if (!file) {
+        patch(id, { status: "erro", erro: "O arquivo não está mais na tela. Envie de novo pelo +." });
+        return;
+      }
+      patch(id, { status: "salvando" });
+      const fd = new FormData();
+      for (const [k, v] of Object.entries(formFieldsFor(dest, values))) fd.append(k, v);
+      if (OLI_FILE_KEEPS_FILE[dest]) fd.append("file", file);
+      try {
+        if (dest === "financas") {
+          fd.append("leitura", JSON.stringify(p.data.leitura));
+          const r = await confirmOliArquivoFinancas(fd);
+          if (!r.ok) {
+            patch(id, { status: "pendente", erro: r.erro });
+            return;
+          }
+          files.current.delete(id);
+          patch(id, { status: "criado", erro: undefined });
+          router.push(r.url);
+          return;
+        }
+        const r = await MODULE_SAVE[dest](null, fd);
+        if (r?.ok) {
+          files.current.delete(id);
+          patch(id, { status: "criado", erro: undefined });
+        } else {
+          // Volta a pendente com o erro à vista: a pessoa corrige o campo e confirma de novo.
+          patch(id, { status: "pendente", erro: r?.error ?? "Não foi possível salvar." });
+        }
+      } catch {
+        patch(id, { status: "pendente", erro: "Não foi possível salvar. Tente de novo." });
+      }
+    },
+    [patch, router],
+  );
 
   const clearHistory = async () => {
     if (!confirmClear) {
@@ -224,22 +316,36 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
         {oli.active ? "Encerrar conversa" : oli.busy ? "Conectando…" : "Conversar"}
       </Button>
 
-      <form onSubmit={submit} className="flex gap-2">
-        <Input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Ou digite aqui"
-          aria-label="Mensagem para o Oli"
-          maxLength={1000}
-          autoComplete="off"
-          enterKeyHint="send"
-        />
-        <Button type="submit" aria-label="Enviar" className="w-12 shrink-0 px-0" disabled={!text.trim() || oli.busy}>
-          <SendHorizontal size={20} aria-hidden />
-        </Button>
-      </form>
+      <div className="flex gap-2">
+        <OliAddFile busy={reading} onFile={(f) => void onFile(f)} />
+        <form onSubmit={submit} className="flex min-w-0 flex-1 gap-2">
+          <Input
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Ou digite aqui"
+            aria-label="Mensagem para o Oli"
+            maxLength={1000}
+            autoComplete="off"
+            enterKeyHint="send"
+          />
+          <Button type="submit" aria-label="Enviar" className="w-12 shrink-0 px-0" disabled={!text.trim() || oli.busy}>
+            <SendHorizontal size={20} aria-hidden />
+          </Button>
+        </form>
+      </div>
+      {reading && (
+        <p role="status" className="-mt-3 text-center text-sm text-muted">
+          Lendo o arquivo…
+        </p>
+      )}
 
-      <OliPanels panels={panels} onConfirm={onConfirm} onCancel={onCancel} onClear={() => update(clearPanels)} />
+      <OliPanels
+        panels={panels}
+        onConfirm={onConfirm}
+        onConfirmArquivo={(id, dest, values) => void onConfirmArquivo(id, dest, values)}
+        onCancel={onCancel}
+        onClear={() => update(clearPanels)}
+      />
 
       <div>
         <button
