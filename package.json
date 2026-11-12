@@ -34,7 +34,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/three": "^0.187.0",
-    "eslint": "^9",
+    "eslint": "^10",
     "eslint-config-next": "16.4.5",
     "supabase": "^3.0.0",
     "tailwindcss": "^4",
