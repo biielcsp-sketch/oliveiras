@@ -17,11 +17,11 @@ const GENERIC = "Não foi possível salvar. Tente de novo.";
 
 export type UploadedFile = { ok: true; bytes: Uint8Array; kind: FileKind } | { ok: false; error: string };
 
-/** Campo `file` do formulário: PDF ou JPG (pelos bytes), até 5 MB. */
+/** Campo `file` do formulário: PDF ou JPG (pelos bytes), até 4 MB. */
 export async function readUploadedFile(form: FormData, key = "file"): Promise<UploadedFile> {
   const file = form.get(key);
   if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Escolha um PDF ou uma foto (JPG)." };
-  if (file.size > MAX_FILE_BYTES) return { ok: false, error: "O arquivo passa de 5 MB." };
+  if (file.size > MAX_FILE_BYTES) return { ok: false, error: "O arquivo passa de 4 MB." };
   const bytes = new Uint8Array(await file.arrayBuffer());
   const check = checkUpload(bytes);
   if (!check.ok) return { ok: false, error: check.erro };

@@ -1,5 +1,5 @@
 import "server-only";
-import { googleCredentials, googleEndpoints, GOOGLE_ISSUERS, GOOGLE_SCOPES, REQUIRED_SCOPES } from "./config";
+import { DRIVE_SCOPE, googleCredentials, googleEndpoints, GOOGLE_ISSUERS, GOOGLE_SCOPES, REQUIRED_SCOPES } from "./config";
 import { pkceChallenge, randomToken, safeEqual } from "./crypto";
 
 /**
@@ -21,10 +21,13 @@ export class GoogleOAuthError extends Error {
 
 /* ---------- state + PKCE em cookie ---------- */
 
-export type OAuthState = { state: string; verifier: string; uid: string; exp: number };
+/** `drive`: pedido do Carisma (escopo extra do Drive e volta para /ministerio/carisma). */
+export type OAuthState = { state: string; verifier: string; uid: string; exp: number; drive?: boolean };
 
-export function newOAuthState(uid: string, now = Date.now()): OAuthState {
-  return { state: randomToken(), verifier: randomToken(48), uid, exp: now + STATE_TTL_S * 1000 };
+export function newOAuthState(uid: string, now = Date.now(), opts: { drive?: boolean } = {}): OAuthState {
+  const s: OAuthState = { state: randomToken(), verifier: randomToken(48), uid, exp: now + STATE_TTL_S * 1000 };
+  if (opts.drive) s.drive = true;
+  return s;
 }
 
 export const encodeState = (s: OAuthState) => Buffer.from(JSON.stringify(s), "utf8").toString("base64url");
@@ -36,6 +39,7 @@ export function decodeState(raw: string | undefined | null): OAuthState | null {
     if (typeof v?.state !== "string" || typeof v?.verifier !== "string" || typeof v?.uid !== "string" || typeof v?.exp !== "number") {
       return null;
     }
+    if (v.drive !== undefined && v.drive !== true) return null;
     return v as OAuthState;
   } catch {
     return null;
@@ -54,7 +58,8 @@ export function buildAuthUrl(s: OAuthState, redirectUri: string, env?: Record<st
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: "code",
-    scope: GOOGLE_SCOPES.join(" "),
+    // Drive (Carisma): mesmos escopos da Agenda + drive.file; include_granted_scopes mantém o que já foi dado.
+    scope: (s.drive ? [...GOOGLE_SCOPES, DRIVE_SCOPE] : [...GOOGLE_SCOPES]).join(" "),
     state: s.state,
     code_challenge: pkceChallenge(s.verifier),
     code_challenge_method: "S256",

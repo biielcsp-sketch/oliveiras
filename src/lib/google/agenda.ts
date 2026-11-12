@@ -43,7 +43,7 @@ export type AccountRow = {
   last_error: string | null;
   last_sync_at: string | null;
 };
-type AccountWithToken = AccountRow & { token_ciphertext: string };
+export type AccountWithToken = AccountRow & { token_ciphertext: string };
 
 export type CalendarDbRow = {
   id: string;
@@ -142,7 +142,8 @@ export function decryptRefreshToken(acc: Pick<AccountWithToken, "token_ciphertex
   return openToken(acc.token_ciphertext, googleCredentials().clientSecret, tokenAad(acc.household_id, acc.google_sub));
 }
 
-class RevokedError extends Error {}
+/** Conta revogada/expirada (status já marcado como 'revogado'). Exportado para o Drive (Carisma). */
+export class RevokedError extends Error {}
 
 /** Token de acesso da conta. invalid_grant → status 'revogado' (eventos ficam). */
 async function tokenFor(db: Db, acc: AccountWithToken) {
@@ -171,8 +172,8 @@ async function tokenFor(db: Db, acc: AccountWithToken) {
   }
 }
 
-/** Roda `fn` com o token de acesso; se o Google responder 401 (token em cache derrubado), renova uma vez. */
-async function withToken<T>(db: Db, acc: AccountWithToken, fn: (token: string) => Promise<T>): Promise<T> {
+/** Roda `fn` com o token de acesso; se o Google responder 401 (token em cache derrubado), renova uma vez. Reusado pelo Drive. */
+export async function withToken<T>(db: Db, acc: AccountWithToken, fn: (token: string) => Promise<T>): Promise<T> {
   try {
     return await fn(await tokenFor(db, acc));
   } catch (e) {

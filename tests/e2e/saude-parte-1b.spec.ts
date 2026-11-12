@@ -54,9 +54,9 @@ test("Saúde 1b: procedimentos, medicamentos e vacinas (arquivos privados, famí
     await d.getByRole("group", { name: "Arquivo opcional" }).getByLabel("PDF", { exact: true }).setInputFiles({ name: "falso.pdf", mimeType: "application/pdf", buffer: Buffer.from("<html><script>alert(1)</script></html>") });
     await d.getByRole("button", { name: "Salvar procedimento" }).click();
     await expect(d.getByText("Envie um arquivo PDF ou JPG.")).toBeVisible();
-    await d.getByRole("group", { name: "Arquivo opcional" }).getByLabel("PDF", { exact: true }).setInputFiles({ name: "grande.pdf", mimeType: "application/pdf", buffer: Buffer.concat([PDF, Buffer.alloc(5 * 1024 * 1024)]) });
+    await d.getByRole("group", { name: "Arquivo opcional" }).getByLabel("PDF", { exact: true }).setInputFiles({ name: "grande.pdf", mimeType: "application/pdf", buffer: Buffer.concat([PDF, Buffer.alloc(4 * 1024 * 1024)]) });
     await d.getByRole("button", { name: "Salvar procedimento" }).click();
-    await expect(d.getByText("O arquivo passa de 5 MB.")).toBeVisible();
+    await expect(d.getByText("O arquivo passa de 4 MB.")).toBeVisible();
     await d.getByRole("group", { name: "Arquivo opcional" }).getByLabel("PDF", { exact: true }).setInputFiles(pdf);
     await d.getByRole("button", { name: "Salvar procedimento" }).click();
     await expect(a.getByRole("status").filter({ hasText: "Procedimento salvo." })).toBeVisible();

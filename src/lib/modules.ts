@@ -25,7 +25,7 @@ export const MODULES: ModuleDef[] = [
   { href: "/agenda", label: "Agenda", icon: CalendarDays, description: "Agendas do casal integradas ao Google", phase: 3 },
   { href: "/saude", label: "Saúde", icon: HeartPulse, description: "Carteirinhas, consultas, exames, medicamentos e vacinas", phase: 4, entry: "/saude/consultas" },
   { href: "/casa", label: "Casa", icon: Home, description: "Compras, tarefas, manutenção e documentos", phase: 5 },
-  { href: "/ministerio", label: "Igreja", icon: Church, description: "Carisma, Consolidação e GC", phase: 6 },
+  { href: "/ministerio", label: "Igreja", icon: Church, description: "Vida devocional, Carisma e Consolidação", phase: 6 },
 ];
 
 /** O Oli mora na tela Início (/assistente redireciona para lá). */

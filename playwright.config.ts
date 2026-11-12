@@ -6,6 +6,8 @@ export const E2E_HOUSEHOLD_ID = "eeeeeeee-0000-4000-8000-000000000001";
 export const E2E_AGENDA_HOUSEHOLD_ID = "eeeeeeee-0000-4000-8000-000000000002";
 // Família autorizada para a leitura de documentos com IA (própria, para não colidir com Open Finance/Oli em paralelo).
 export const E2E_DOCS_HOUSEHOLD_ID = "eeeeeeee-0000-4000-8000-000000000003";
+// Família autorizada para o Carisma (Google Drive + resumo por IA), separada da Agenda para rodar em paralelo.
+export const E2E_IGREJA_HOUSEHOLD_ID = "eeeeeeee-0000-4000-8000-000000000004";
 
 export default defineConfig({
   testDir: "tests/e2e",
@@ -38,6 +40,12 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
     },
     {
+      // Google Drive simulado (Carisma; só nos testes): confere os tokens no Google simulado
+      command: "node tests/e2e/drive-mock.mjs",
+      port: 4040,
+      reuseExistingServer: !process.env.CI,
+    },
+    {
       // O app precisa ter sido gerado antes com `npm run build` apontando para o Supabase local.
       command: `npm run start -- -p ${PORT}`,
       port: PORT,
@@ -61,6 +69,11 @@ export default defineConfig({
         GOOGLE_OAUTH_BASE: "http://127.0.0.1:4020",
         GOOGLE_API_BASE: "http://127.0.0.1:4020/calendar/v3",
         AGENDA_HOUSEHOLD_ID: E2E_AGENDA_HOUSEHOLD_ID,
+        // Carisma: Drive simulado em localhost (a CSP libera essa origem só com esta variável e fora da produção)
+        // e família própria; o resumo usa o Gemini simulado acima.
+        GOOGLE_DRIVE_API_BASE: "http://127.0.0.1:4040/drive/v3",
+        GOOGLE_DRIVE_UPLOAD_BASE: "http://127.0.0.1:4040/upload/drive/v3",
+        CARISMA_HOUSEHOLD_ID: E2E_IGREJA_HOUSEHOLD_ID,
       },
     },
   ],

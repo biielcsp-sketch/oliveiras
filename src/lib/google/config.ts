@@ -12,6 +12,10 @@ export const GOOGLE_DEFAULTS = {
   api: "https://www.googleapis.com/calendar/v3",
 } as const;
 
+export class GoogleConfigError extends Error {}
+
+type Env = Record<string, string | undefined>;
+
 export const GOOGLE_ISSUERS = ["https://accounts.google.com", "accounts.google.com"];
 
 export const GOOGLE_SCOPES = [
@@ -23,9 +27,31 @@ export const GOOGLE_SCOPES = [
 /** Sem estes dois a Agenda não funciona (a tela de consentimento permite desmarcar). */
 export const REQUIRED_SCOPES = GOOGLE_SCOPES.slice(2);
 
-export class GoogleConfigError extends Error {}
+/**
+ * Google Drive: escopo INCREMENTAL e OPCIONAL (pedido só quando a pessoa conecta o Drive no Carisma).
+ * drive.file = só arquivos criados pelo app ou abertos com ele (não lê o resto do Drive).
+ * Fica fora de REQUIRED_SCOPES: a Agenda funciona sem ele.
+ */
+export const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 
-type Env = Record<string, string | undefined>;
+/** A conta tem o escopo `scope` na coluna google_accounts.scopes (lista separada por espaço). */
+export function hasScope(scopes: string | null | undefined, scope: string) {
+  return (scopes ?? "").split(/\s+/).includes(scope);
+}
+
+/** Drive API v3 (metadados) e o endpoint de upload. Bases de teste só em localhost, como as do Calendar. */
+export const DRIVE_DEFAULTS = {
+  api: "https://www.googleapis.com/drive/v3",
+  upload: "https://www.googleapis.com/upload/drive/v3",
+} as const;
+
+export function driveEndpoints(env: Env = process.env) {
+  return {
+    api: testBase(env.GOOGLE_DRIVE_API_BASE, "GOOGLE_DRIVE_API_BASE") ?? DRIVE_DEFAULTS.api,
+    upload: testBase(env.GOOGLE_DRIVE_UPLOAD_BASE, "GOOGLE_DRIVE_UPLOAD_BASE") ?? DRIVE_DEFAULTS.upload,
+  };
+}
+
 
 /** Base de teste: só http(s) em localhost/127.0.0.1, sem credenciais nem query. */
 export function testBase(raw: string | undefined, name: string): string | null {

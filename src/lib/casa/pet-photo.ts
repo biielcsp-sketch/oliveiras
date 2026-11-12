@@ -2,7 +2,7 @@
  * Foto de perfil do pet (funções puras, sem dependência de servidor/navegador).
  * O cliente reduz para JPEG; o servidor decide o tipo pelos BYTES (FF D8 FF) e nunca confia no mime enviado.
  */
-export const PET_PHOTO_MAX_BYTES = 5 * 1024 * 1024;
+export const PET_PHOTO_MAX_BYTES = 4 * 1024 * 1024;
 /** Lado maior da foto depois da redução no navegador, e qualidade do JPEG. */
 export const PET_PHOTO_MAX_SIDE = 1024;
 export const PET_PHOTO_QUALITY = 0.85;
@@ -18,7 +18,7 @@ export type PhotoCheck = { ok: true } | { ok: false; erro: string };
 
 export function checkPetPhoto(bytes: Uint8Array): PhotoCheck {
   if (bytes.length === 0) return { ok: false, erro: "A foto está vazia." };
-  if (bytes.length > PET_PHOTO_MAX_BYTES) return { ok: false, erro: "A foto passa de 5 MB." };
+  if (bytes.length > PET_PHOTO_MAX_BYTES) return { ok: false, erro: "A foto passa de 4 MB." };
   if (!isJpegBytes(bytes)) return { ok: false, erro: "Envie uma foto JPG ou PNG." };
   return { ok: true };
 }

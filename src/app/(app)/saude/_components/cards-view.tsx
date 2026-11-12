@@ -62,7 +62,7 @@ function CardForm({ card, people, defaultMember, onDone }: { card?: CardVM; peop
       <Field label="Observações">
         <Textarea name="notes" maxLength={LIMITS.cardNotes} defaultValue={card?.notes ?? ""} />
       </Field>
-      <FileButtons label={card ? "Trocar arquivo (PDF ou JPG, até 5 MB)" : "Arquivo (PDF ou JPG, até 5 MB)"} required={!card} />
+      <FileButtons label={card ? "Trocar arquivo (PDF ou JPG, até 4 MB)" : "Arquivo (PDF ou JPG, até 4 MB)"} required={!card} />
       <FormError message={state?.error} />
       <Button disabled={pending}>{pending ? "Salvando…" : card ? "Salvar alterações" : "Salvar carteirinha"}</Button>
     </form>

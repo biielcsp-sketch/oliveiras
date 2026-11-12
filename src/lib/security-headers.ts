@@ -2,8 +2,8 @@
  * Política de segurança de conteúdo (CSP) com nonce por requisição.
  * Usada no proxy; os demais headers fixos ficam no next.config.ts.
  */
-export function buildCsp(nonce: string, isDev: boolean) {
-  const supabase = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+export function buildCsp(nonce: string, isDev: boolean, env: Record<string, string | undefined> = process.env) {
+  const supabase = env.NEXT_PUBLIC_SUPABASE_URL ?? "";
   return [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDev ? " 'unsafe-eval'" : ""}`,
@@ -14,7 +14,11 @@ export function buildCsp(nonce: string, isDev: boolean) {
     "font-src 'self'",
     // Oli: o navegador abre o WebSocket do Gemini Live direto (token efêmero emitido pelo servidor).
     // Só o wss: o SDK não faz chamadas https a partir do navegador (o token é criado no servidor).
-    `connect-src 'self' ${supabase} wss://generativelanguage.googleapis.com`.replace(/\s+/g, " "),
+    // Carisma: o navegador envia o arquivo DIRETO ao Google Drive (PUT no session URI de upload resumível,
+    // https://www.googleapis.com/upload/drive/v3/…), porque a função da Vercel não aceita corpo acima de 4,5 MB.
+    `connect-src 'self' ${supabase} wss://generativelanguage.googleapis.com https://www.googleapis.com ${driveUploadTestOrigin(env)}`
+      .replace(/\s+/g, " ")
+      .trim(),
     "worker-src 'self'",
     "manifest-src 'self'",
     "object-src 'none'",
@@ -25,6 +29,21 @@ export function buildCsp(nonce: string, isDev: boolean) {
   ]
     .filter(Boolean)
     .join("; ");
+}
+
+/**
+ * Só nos testes E2E: origem do Drive simulado (GOOGLE_DRIVE_UPLOAD_BASE), aceita apenas em localhost e nunca
+ * em produção na Vercel. Fora disso, vazio.
+ */
+export function driveUploadTestOrigin(env: Record<string, string | undefined>) {
+  const raw = env.GOOGLE_DRIVE_UPLOAD_BASE?.trim();
+  if (!raw || env.VERCEL_ENV === "production") return "";
+  try {
+    const u = new URL(raw);
+    return ["localhost", "127.0.0.1"].includes(u.hostname) && /^https?:$/.test(u.protocol) ? u.origin : "";
+  } catch {
+    return "";
+  }
 }
 
 export function createNonce() {

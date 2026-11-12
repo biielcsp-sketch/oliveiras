@@ -63,7 +63,7 @@ function ExamForm({ exam, people, defaultMember, onDone }: { exam?: ExamVM; peop
       <Field label="Resumo do resultado">
         <Textarea name="result_summary" maxLength={LIMITS.summary} defaultValue={exam?.summary ?? ""} />
       </Field>
-      <FileButtons label={exam?.mime ? "Trocar arquivo (PDF ou JPG, até 5 MB)" : "Arquivo opcional (PDF ou JPG, até 5 MB)"} />
+      <FileButtons label={exam?.mime ? "Trocar arquivo (PDF ou JPG, até 4 MB)" : "Arquivo opcional (PDF ou JPG, até 4 MB)"} />
       {exam?.mime && (
         <label className="flex min-h-11 items-center gap-3 text-[15px]">
           <input type="checkbox" name="remove_file" className="size-5 accent-[var(--primary)]" />

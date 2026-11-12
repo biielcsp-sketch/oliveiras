@@ -35,11 +35,11 @@ test("navegação: barra inferior, logo para o Início e calendário da Agenda",
 
     // Menu em ferradura: o botão central é o selecionado e troca o conteúdo abaixo
     const arc = page.getByRole("navigation", { name: "Seções de Igreja" });
-    await expect(arc.getByRole("button", { name: "Escalas" })).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByText("Escalas de serviço (vão para a agenda)")).toBeVisible();
-    await arc.getByRole("button", { name: "Pessoas" }).click();
-    await expect(arc.getByRole("button", { name: "Pessoas" })).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByText("Pessoas acompanhadas e follow-up")).toBeVisible();
+    await expect(arc.locator('[aria-current="page"]')).toContainText("Resumo");
+    await arc.getByRole("link", { name: "Consolidação" }).click();
+    await expect(page).toHaveURL(/\/ministerio\/consolidacao$/);
+    await expect(arc.getByRole("link", { name: "Consolidação" })).toHaveAttribute("aria-current", "page");
+    await expect(page.getByText("Integração com o app da Consolidação em breve").first()).toBeVisible();
 
     await nav.getByRole("link", { name: "Oli, tela inicial" }).click();
     await expect(page).toHaveURL(/\/inicio$/);

@@ -8,7 +8,7 @@ import { fileColumns, removeCasaFile, uploadCasaFile } from "@/lib/casa/storage"
 
 /**
  * Documentos e garantias da Casa. Mesmo padrão de upload da Saúde/Finanças: tipo decidido pelos BYTES (PDF/JPG),
- * até 5 MB, nome uuid gerado aqui, envio com a sessão do usuário (RLS do bucket privado `casa`).
+ * até 4 MB, nome uuid gerado aqui, envio com a sessão do usuário (RLS do bucket privado `casa`).
  * A IA NÃO lê estes documentos.
  */
 export type DocState = { ok?: boolean; error?: string; message?: string } | null;

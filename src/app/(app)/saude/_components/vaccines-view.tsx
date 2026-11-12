@@ -75,7 +75,7 @@ function VaccineForm({ item, people, defaultMember, onDone }: { item?: VaccineVM
       <Field label="Observações">
         <Textarea name="notes" maxLength={LIMITS.vaccineNotes} defaultValue={item?.notes ?? ""} />
       </Field>
-      <FileButtons label={item?.mime ? "Trocar comprovante (PDF ou JPG, até 5 MB)" : "Comprovante opcional (PDF ou JPG, até 5 MB)"} />
+      <FileButtons label={item?.mime ? "Trocar comprovante (PDF ou JPG, até 4 MB)" : "Comprovante opcional (PDF ou JPG, até 4 MB)"} />
       {item?.mime && (
         <label className="flex min-h-11 items-center gap-3 text-[15px]">
           <input type="checkbox" name="remove_file" className="size-5 accent-[var(--primary)]" />
