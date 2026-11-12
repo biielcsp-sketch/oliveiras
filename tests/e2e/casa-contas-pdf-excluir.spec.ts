@@ -101,6 +101,19 @@ test("Casa > Contas: enviar boleto (liga à conta e cria conta da casa) e exclui
     await uploadFromCasa(page, "voltar");
     await page.getByRole("link", { name: "Voltar para Contas" }).click();
     await expect(page).toHaveURL(new RegExp(`/casa/contas\\?mes=${MES}$`));
+    // Regressão: "Apagar documento" na conferência pela Casa fica na Casa e volta para Casa > Contas no mês.
+    await uploadFromCasa(page, "apagar");
+    const apagarId = page.url().match(DOC_URL)![1];
+    const nav = page.getByRole("navigation", { name: "Principal" });
+    await page.getByRole("link", { name: "Apagar documento" }).click();
+    await expect(page).toHaveURL(new RegExp(`/casa/contas/documento/${apagarId}/apagar\\?mes=${MES}$`));
+    await expect(nav.getByRole("link", { name: "Casa" })).toHaveAttribute("aria-current", "page");
+    await page.getByRole("link", { name: "Cancelar" }).click();
+    await expect(page).toHaveURL(DOC_URL);
+    await page.getByRole("link", { name: "Apagar documento" }).click();
+    await page.getByRole("button", { name: "Apagar documento" }).click();
+    await expect(page).toHaveURL(new RegExp(`/casa/contas\\?mes=${MES}$`));
+    expect((await admin.from("fin_documents").select("id", { count: "exact", head: true }).eq("id", apagarId)).count).toBe(0);
     await uploadFromCasa(page, "origem-falsa");
     const id = page.url().match(DOC_URL)![1];
     // Link antigo (Finanças com ?origem=casa) abre a mesma conferência dentro da Casa, mês validado.

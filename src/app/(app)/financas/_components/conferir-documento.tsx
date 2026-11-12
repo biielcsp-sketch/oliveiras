@@ -10,7 +10,7 @@ import { formatBRL } from "@/lib/financas/money";
 import { shiftMonth } from "@/lib/financas/period";
 import { todaySP } from "@/lib/financas/today";
 import { UUID_RE } from "@/lib/financas/transaction-input";
-import { casaContasPath } from "@/lib/financas/routes";
+import { casaContasPath, docDeletePath } from "@/lib/financas/routes";
 import { getDocument, getRelatedDocs } from "@/lib/financas/documentos/data";
 import { toLinhaDigitavel } from "@/lib/financas/documentos/boleto";
 import { docEditBlock, ORPHAN_BOLETO_EDIT } from "@/lib/financas/documentos/input";
@@ -75,7 +75,7 @@ export async function ConferirDocumento({ id, origem, mes }: { id: string; orige
           {doc.status === "confirmado" && oneOff && (
             <Link href={`/financas/contas-fixas/avulsa/${oneOff.id}`} className="font-medium text-link">Editar conta avulsa</Link>
           )}
-          <Link href={`/financas/documentos/${doc.id}/apagar`} className="text-danger underline">Apagar documento</Link>
+          <Link href={docDeletePath(doc.id, origem, mes)} className="text-danger underline">Apagar documento</Link>
         </div>
         {back}
       </Card>
@@ -163,7 +163,7 @@ export async function ConferirDocumento({ id, origem, mes }: { id: string; orige
         origem={origem}
         mes={mes}
       />
-      <Link href={`/financas/documentos/${doc.id}/apagar`} className="mt-4 block text-center text-sm text-danger underline">
+      <Link href={docDeletePath(doc.id, origem, mes)} className="mt-4 block text-center text-sm text-danger underline">
         Apagar documento
       </Link>
       {back}

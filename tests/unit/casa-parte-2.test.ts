@@ -7,7 +7,7 @@ import { homeBillCounts, homeBillsForMonth, homeStatus } from "@/lib/casa/contas
 import { CASA_TABS } from "@/lib/casa/nav";
 import { activeRouteIndex } from "@/lib/arc-nav";
 import { billDeleteResult } from "@/lib/financas/bill-delete";
-import { billDeletePath, billReturnPath, casaContasPath, docReviewPath, flowOrigin, flowReturnPath } from "@/lib/financas/routes";
+import { billDeletePath, billReturnPath, casaContasPath, docDeletePath, docReviewPath, flowOrigin, flowReturnPath } from "@/lib/financas/routes";
 
 const HH = "11111111-1111-4111-8111-111111111111";
 const ID = "22222222-2222-4222-8222-222222222222";
@@ -218,6 +218,12 @@ describe("contas da casa (regras das Finanças)", () => {
     expect(docReviewPath(id)).toBe(`/financas/documentos/${id}`);
     expect(docReviewPath(id, null, "2026-12")).toBe(`/financas/documentos/${id}`);
     expect(docReviewPath(id, "https://exemplo.com", "2026-12")).toBe(`/financas/documentos/${id}`);
+    // Apagar o documento pela conferência da Casa também fica na Casa.
+    expect(docDeletePath(id, "casa", "2026-12")).toBe(`/casa/contas/documento/${id}/apagar?mes=2026-12`);
+    expect(docDeletePath(id, "casa", "2026-1")).toBe(`/casa/contas/documento/${id}/apagar`);
+    expect(docDeletePath(id)).toBe(`/financas/documentos/${id}/apagar`);
+    expect(docDeletePath(id, "//evil.com", "2026-12")).toBe(`/financas/documentos/${id}/apagar`);
+    expect(CASA_TABS[activeRouteIndex(CASA_TABS, docDeletePath(id, "casa").split("?")[0])].key).toBe("contas");
     const path = docReviewPath(id, "casa", "2026-12").split("?")[0];
     expect(CASA_TABS[activeRouteIndex(CASA_TABS, path)].key).toBe("contas");
   });

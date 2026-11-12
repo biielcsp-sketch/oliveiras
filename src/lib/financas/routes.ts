@@ -45,6 +45,12 @@ export const docReviewPath = (id: string, origem?: unknown, mes?: unknown) => {
   return typeof mes === "string" && MONTH_RE.test(mes) ? `${base}?mes=${mes}` : base;
 };
 
+/** Tela de confirmação para apagar o documento: pela Casa fica na Casa (mesmas regras de `docReviewPath`). */
+export const docDeletePath = (id: string, origem?: unknown, mes?: unknown) => {
+  const [path, query] = docReviewPath(id, origem, mes).split("?");
+  return `${path}/apagar${query ? `?${query}` : ""}`;
+};
+
 /** Tela de confirmação para excluir a conta fixa (id é validado como uuid na própria tela e na ação). */
 export const billDeletePath = (id: string, origem?: unknown, mes?: unknown) => {
   const q = new URLSearchParams();

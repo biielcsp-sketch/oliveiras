@@ -567,5 +567,6 @@ export async function deleteDocument(_: DocState, form: FormData): Promise<DocSt
     await db.from("fin_transactions").delete().eq("household_id", household.id).eq("id", plan.transactionId).eq("source", "documento");
   }
   refresh();
-  redirect("/financas/documentos");
+  // Apagado pela Casa: volta para Casa > Contas no mês (origem em lista fechada, mês por regex).
+  redirect(flowReturnPath(str(form, "origem"), "/financas/documentos", str(form, "mes")));
 }
