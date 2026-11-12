@@ -14,8 +14,9 @@ import { docsAiAllowedFor } from "@/lib/financas/documentos/access";
 import { cleanText, DOC_LIMITS, reconcile } from "@/lib/financas/documentos/schema";
 import { dailyLimitError, docStoragePath, DOC_BUCKET, isDocPath, planDocDelete, retry, sameBillMonthDocs, spDayStartIso, type DocRef } from "@/lib/financas/documentos/rules";
 import {
-  boletoEditConflict, duplicateBlock, editSaveError, readBarcode, validateBoletoEdit, validateBoletoForm, validateComprovanteEdit, validatePayLink,
+  boletoEditConflict, duplicateBlock, editSaveError, readBarcode, validateBoletoEdit, validateBoletoForm, validateComprovanteEdit,
 } from "@/lib/financas/documentos/input";
+import { BILL_KIND_REQUIRED, dueMonth, parseBillKind, parsePayTarget, validateOneOffInput } from "@/lib/financas/avulsas";
 import { runBaixaAutomatica } from "@/lib/financas/baixa-data";
 import { flowOrigin, flowReturnPath } from "@/lib/financas/routes";
 
@@ -42,15 +43,15 @@ async function loadDoc(db: Db, householdId: string, id: string) {
   if (!UUID_RE.test(id)) return null;
   const { data } = await db
     .from("fin_documents")
-    .select("id, status, kind, barcode, file_path, created_at")
+    .select("id, status, kind, barcode, file_path, created_at, one_off_bill_id")
     .eq("household_id", householdId)
     .eq("id", id)
     .maybeSingle();
-  return data as { id: string; status: string; kind: string; barcode: string | null; file_path: string; created_at: string } | null;
+  return data as { id: string; status: string; kind: string; barcode: string | null; file_path: string; created_at: string; one_off_bill_id: string | null } | null;
 }
 
 async function relatedDocs(db: Db, householdId: string, barcode: string | null, billId: string | null): Promise<DocRef[] | null> {
-  const cols = "id, kind, status, barcode, bill_id, bill_month";
+  const cols = "id, kind, status, barcode, bill_id, bill_month, one_off_bill_id";
   const [a, b] = await Promise.all([
     barcode ? db.from("fin_documents").select(cols).eq("household_id", householdId).eq("barcode", barcode) : Promise.resolve({ data: [], error: null }),
     billId ? db.from("fin_documents").select(cols).eq("household_id", householdId).eq("bill_id", billId) : Promise.resolve({ data: [], error: null }),
@@ -124,7 +125,7 @@ export async function uploadDocument(_: DocState, form: FormData): Promise<DocSt
   redirect(`/financas/documentos/${doc.id}${flowOrigin(str(form, "origem")) === "casa" ? `?origem=casa${/^\d{4}-(0[1-9]|1[0-2])$/.test(str(form, "mes")) ? `&mes=${str(form, "mes")}` : ""}` : ""}`);
 }
 
-/* ---------- Conferência: boleto → conta fixa ---------- */
+/* ---------- Conferência: boleto → conta fixa ou conta avulsa ---------- */
 
 export async function confirmBoleto(_: DocState, form: FormData): Promise<DocState> {
   const { household } = await getAppContext();
@@ -132,6 +133,10 @@ export async function confirmBoleto(_: DocState, form: FormData): Promise<DocSta
   const doc = await loadDoc(db, household.id, str(form, "id"));
   if (!doc) return { error: "Documento não encontrado." };
   if (doc.status !== "pendente") return { error: "Este documento já foi conferido." };
+  // O tipo é obrigatório e sem padrão escondido: boleto nenhum vira conta fixa sozinho.
+  const billKind = parseBillKind(str(form, "bill_kind"));
+  if (!billKind) return { error: BILL_KIND_REQUIRED };
+  if (billKind === "avulsa") return confirmBoletoAvulsa(db, household.id, doc, form);
 
   const v = validateBoletoForm(
     {
@@ -234,6 +239,7 @@ export async function confirmBoleto(_: DocState, form: FormData): Promise<DocSta
       barcode: val.barcode,
       bill_id: billId,
       bill_month: val.bill_month,
+      one_off_bill_id: null,
       transaction_id: null,
     })
     .eq("household_id", household.id)
@@ -249,6 +255,84 @@ export async function confirmBoleto(_: DocState, form: FormData): Promise<DocSta
   await runBaixaAutomatica([val.bill_month]);
   refresh();
   redirect(flowReturnPath(str(form, "origem"), `/financas/contas-fixas?mes=${val.bill_month}`, val.bill_month));
+}
+
+/**
+ * Boleto → conta avulsa (paga uma vez só). Cria a linha em fin_one_off_bills (da casa quando veio de
+ * Casa > Contas) e liga o documento a ela (one_off_bill_id; sem bill_id/bill_month). Se o documento não
+ * puder ser confirmado, a avulsa criada é apagada.
+ */
+async function confirmBoletoAvulsa(
+  db: Db,
+  householdId: string,
+  doc: NonNullable<Awaited<ReturnType<typeof loadDoc>>>,
+  form: FormData,
+): Promise<DocState> {
+  const v = validateOneOffInput({ name: str(form, "oneoff_name"), amount: str(form, "amount"), dueDate: str(form, "due_date") });
+  if (!v.ok) return { error: v.erro };
+  const code = readBarcode(str(form, "barcode"), refDate(doc.created_at));
+  if (!code.ok) return { error: code.erro };
+  const val = v.value;
+  const month = dueMonth(val.due_date)!;
+
+  const categoryId = optUuid(str(form, "category_id"));
+  const accountId = optUuid(str(form, "account_id"));
+  if (categoryId) {
+    const { data } = await db.from("fin_categories").select("id").eq("household_id", householdId).eq("id", categoryId).maybeSingle();
+    if (!data) return { error: "Categoria não encontrada." };
+  }
+  if (accountId) {
+    const { data } = await db.from("fin_accounts").select("id").eq("household_id", householdId).eq("id", accountId).maybeSingle();
+    if (!data) return { error: "Conta bancária não encontrada." };
+  }
+
+  const others = await relatedDocs(db, householdId, code.value, null);
+  if (!others) return { error: GENERIC };
+  const block = duplicateBlock({ current: { id: doc.id, barcode: code.value }, kind: "boleto", billId: null, billMonth: null, others, replaceSameMonth: false });
+  if (block) return { error: block };
+
+  const { data: created, error: createError } = await db
+    .from("fin_one_off_bills")
+    .insert({
+      household_id: householdId,
+      name: val.name,
+      amount: val.amount,
+      due_date: val.due_date,
+      category_id: categoryId,
+      account_id: accountId,
+      // Enviado por Casa > Contas: a avulsa também aparece lá.
+      is_home: flowOrigin(str(form, "origem")) === "casa",
+    })
+    .select("id")
+    .single();
+  if (createError || !created) return { error: "Não foi possível criar a conta avulsa." };
+
+  const { data: updated, error } = await db
+    .from("fin_documents")
+    .update({
+      kind: "boleto",
+      status: "confirmado",
+      payee: cleanText(str(form, "payee"), DOC_LIMITS.payee),
+      amount: val.amount,
+      due_date: val.due_date,
+      barcode: code.value,
+      bill_id: null,
+      bill_month: null,
+      one_off_bill_id: created.id,
+      transaction_id: null,
+    })
+    .eq("household_id", householdId)
+    .eq("id", doc.id)
+    .eq("status", "pendente")
+    .select("id");
+  if (error || !updated?.length) {
+    await db.from("fin_one_off_bills").delete().eq("household_id", householdId).eq("id", created.id);
+    return { error: error?.code === "23505" ? CONFLICT : GENERIC };
+  }
+  // O pagamento pode ter chegado no extrato antes do boleto: cruza agora (mesma sessão, RLS).
+  await runBaixaAutomatica([month]);
+  refresh();
+  redirect(flowReturnPath(str(form, "origem"), `/financas/contas-fixas?mes=${month}`, month));
 }
 
 /* ---------- Conferência: comprovante → lançamento (e conta paga) ---------- */
@@ -274,8 +358,9 @@ export async function confirmComprovante(_: DocState, form: FormData): Promise<D
   const tx = parsed.data;
   const code = readBarcode(str(form, "barcode"), refDate(doc.created_at));
   if (!code.ok) return { error: code.erro };
-  const link = validatePayLink(str(form, "pay_bill_id"), str(form, "pay_month"));
-  if (!link.ok) return { error: link.erro };
+  const target = parsePayTarget(str(form, "pay_bill_id"), str(form, "pay_month"));
+  if (!target.ok) return { error: target.erro };
+  const link = target.value?.kind === "fixa" ? { value: { billId: target.value.billId, month: target.value.month } } : { value: null };
 
   const [{ data: account }, category] = await Promise.all([
     db.from("fin_accounts").select("id, archived").eq("household_id", household.id).eq("id", tx.account_id).maybeSingle(),
@@ -299,6 +384,13 @@ export async function confirmComprovante(_: DocState, form: FormData): Promise<D
       .eq("month", link.value.month)
       .maybeSingle();
     if (paid) return { error: `${bill.name} já está paga em ${link.value.month.slice(5)}/${link.value.month.slice(0, 4)}. Desmarque a opção ou desfaça o pagamento antes.` };
+  }
+  let oneOff: { id: string; name: string } | null = null;
+  if (target.value?.kind === "avulsa") {
+    const { data } = await db.from("fin_one_off_bills").select("id, name, paid_on").eq("household_id", household.id).eq("id", target.value.id).maybeSingle();
+    if (!data) return { error: "Conta avulsa não encontrada." };
+    if (data.paid_on) return { error: `${data.name} já está paga. Desmarque a opção ou desfaça o pagamento antes.` };
+    oneOff = { id: data.id, name: data.name };
   }
 
   const others = await relatedDocs(db, household.id, code.value, null);
@@ -327,6 +419,29 @@ export async function confirmComprovante(_: DocState, form: FormData): Promise<D
     }
     paymentId = pay.id;
   }
+  // Avulsa: o pagamento fica na própria linha. Só grava se ainda estiver em aberto (outra pessoa pode ter pago).
+  const undoOneOff = async () => {
+    if (oneOff)
+      await db
+        .from("fin_one_off_bills")
+        .update({ paid_on: null, transaction_id: null, paid_auto: false })
+        .eq("household_id", household.id)
+        .eq("id", oneOff.id)
+        .eq("transaction_id", inserted.id);
+  };
+  if (oneOff) {
+    const { data: paidRows, error } = await db
+      .from("fin_one_off_bills")
+      .update({ paid_on: tx.date, transaction_id: inserted.id, paid_auto: false })
+      .eq("household_id", household.id)
+      .eq("id", oneOff.id)
+      .is("paid_on", null)
+      .select("id");
+    if (error || !paidRows?.length) {
+      await undoTx();
+      return { error: `${oneOff.name} já está paga ou não pôde ser marcada como paga.` };
+    }
+  }
 
   const { data: updated, error } = await db
     .from("fin_documents")
@@ -342,6 +457,7 @@ export async function confirmComprovante(_: DocState, form: FormData): Promise<D
       // são só do boleto: o índice único (um confirmado por conta+mês) não distingue o tipo.
       bill_id: null,
       bill_month: null,
+      one_off_bill_id: null,
     })
     .eq("household_id", household.id)
     .eq("id", doc.id)
@@ -349,6 +465,7 @@ export async function confirmComprovante(_: DocState, form: FormData): Promise<D
     .select("id");
   if (error || !updated?.length) {
     if (paymentId) await db.from("fin_bill_payments").delete().eq("household_id", household.id).eq("id", paymentId);
+    await undoOneOff();
     await undoTx();
     return { error: error?.code === "23505" ? CONFLICT : GENERIC };
   }
@@ -395,6 +512,8 @@ export async function editDocument(_: DocState, form: FormData): Promise<DocStat
   if (!doc) return { error: "Documento não encontrado." };
   if (doc.status !== "confirmado") return { error: "Só documentos confirmados podem ser editados." };
 
+  // Boleto de conta avulsa: valor, vencimento e nome se editam na própria conta avulsa.
+  if (doc.kind === "boleto" && doc.one_off_bill_id) return { error: "Este boleto é de uma conta avulsa: edite pela conta avulsa." };
   if (doc.kind === "boleto") {
     const v = validateBoletoEdit({ billId: str(form, "bill_id"), amount: str(form, "amount"), dueDate: str(form, "due_date"), billMonth: str(form, "bill_month") });
     if (!v.ok) return { error: v.erro };
@@ -486,6 +605,12 @@ export async function deleteDocument(_: DocState, form: FormData): Promise<DocSt
 
   if (plan.transactionId) {
     await db.from("fin_bill_payments").delete().eq("household_id", household.id).eq("transaction_id", plan.transactionId);
+    // Avulsa paga por este lançamento volta a ficar em aberto (o FK só zeraria o lançamento, deixando "paga").
+    await db
+      .from("fin_one_off_bills")
+      .update({ paid_on: null, transaction_id: null, paid_auto: false })
+      .eq("household_id", household.id)
+      .eq("transaction_id", plan.transactionId);
     await db.from("fin_transactions").delete().eq("household_id", household.id).eq("id", plan.transactionId).eq("source", "documento");
   }
   refresh();

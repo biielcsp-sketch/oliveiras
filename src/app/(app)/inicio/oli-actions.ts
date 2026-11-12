@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getAppContext } from "@/lib/data";
 import { getFinanceBase, getTransactions } from "@/lib/financas/data";
-import { getBillPayments, getBills, getTransactionsAround } from "@/lib/financas/planning-data";
+import { getBillPayments, getBills, getOpenOneOffBills, getTransactionsAround } from "@/lib/financas/planning-data";
 import { currentMonth } from "@/lib/financas/period";
 import { getConfirmedBillDocs } from "@/lib/financas/documentos/data";
 import { todaySP } from "@/lib/financas/today";
@@ -106,16 +106,17 @@ async function dispatch(name: OliToolName, args: unknown): Promise<OliToolResult
       const month = currentMonth();
       const { accounts, categories } = await getFinanceBase();
       const cards = accounts.filter((a) => a.kind === "cartao" && !a.archived && a.closing_day && a.due_day);
-      const [bills, payments, cardTxs, billDocs] = await Promise.all([
+      const [bills, payments, cardTxs, billDocs, oneOffs] = await Promise.all([
         getBills(),
         getBillPayments(month),
         getTransactionsAround(month, cards.map((c) => c.id)),
         getConfirmedBillDocs(month),
+        getOpenOneOffBills(month),
       ]);
       return {
         ok: true,
         tool: name,
-        data: buildContasAPagar({ month, today: todaySP(), bills, payments, accounts, categories, cardTxs, billDocs }),
+        data: buildContasAPagar({ month, today: todaySP(), bills, payments, accounts, categories, cardTxs, billDocs, oneOffs }),
       };
     }
     case "ultimos_lancamentos": {

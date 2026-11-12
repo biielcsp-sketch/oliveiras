@@ -35,7 +35,7 @@ export type SaldosData = {
   cartoes: { nome: string; saldo: number }[];
 };
 
-export type ContaAPagar = { nome: string; valor: number; vencimento: string; status: BillStatus; fatura: boolean };
+export type ContaAPagar = { nome: string; valor: number; vencimento: string; status: BillStatus; fatura: boolean; avulsa?: boolean };
 export type ContasData = { mes: string; mes_rotulo: string; total_pendente: number; contas: ContaAPagar[] };
 
 export type LancamentoItem = { data: string; descricao: string; valor: number; categoria: string | null; conta: string };
@@ -151,7 +151,10 @@ export function buildSaldos(accounts: Account[]): SaldosData {
   };
 }
 
-/** Contas fixas do mês (contas cadastradas + faturas), como na tela Contas fixas. */
+/**
+ * Contas fixas do mês (contas cadastradas + faturas), como na tela Contas fixas, e as contas avulsas
+ * em aberto que vencem até o fim do mês (inclui as atrasadas de meses anteriores), marcadas `avulsa`.
+ */
 export function buildContasAPagar(input: {
   month: string;
   today: string;
@@ -162,8 +165,10 @@ export function buildContasAPagar(input: {
   cardTxs: Transaction[];
   /** Boleto confirmado do mês por conta: valor e vencimento dele prevalecem (mesma regra da tela). */
   billDocs?: Map<string, { amount: number | null; due_date: string | null }>;
+  oneOffs?: { name: string; amount: number; due_date: string; paid_on: string | null }[];
 }): ContasData {
   const { month, today, bills, payments, accounts, categories, cardTxs, billDocs } = input;
+  const oneOffs = (input.oneOffs ?? []).filter((o) => !o.paid_on && o.due_date.slice(0, 7) <= month);
   const paymentByBill = new Map(payments.map((p) => [p.bill_id, p]));
   const transferIds = new Set(categories.filter((c) => c.kind === "transferencia").map((c) => c.id));
   const cards = accounts.filter((a) => a.kind === "cartao" && !a.archived && a.closing_day && a.due_day);
@@ -200,6 +205,14 @@ export function buildContasAPagar(input: {
         },
       ];
     }),
+    ...oneOffs.map((o) => ({
+      nome: o.name,
+      valor: o.amount,
+      vencimento: o.due_date,
+      status: billStatus(o.due_date, false, today),
+      fatura: false,
+      avulsa: true,
+    })),
   ].sort((a, b) => a.vencimento.localeCompare(b.vencimento));
 
   const pendente = contas.filter((c) => c.status !== "paga").reduce((s, c) => s + cents(c.valor), 0);

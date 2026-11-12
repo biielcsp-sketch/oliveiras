@@ -102,6 +102,9 @@ test("Finanças: leitura de boleto e comprovante com conferência", async ({ bro
     await expect(a.getByLabel("Valor (R$)")).toHaveValue("187,90");
     await expect(a.getByLabel("Vencimento")).toHaveValue("2026-12-10");
     await expect(a.getByLabel("Beneficiário")).toHaveValue("ENEL Distribuição - Luz");
+    // Sem tipo escolhido não há como confirmar: o usuário decide fixa ou avulsa.
+    await expect(a.getByRole("button", { name: "Confirmar conta fixa" })).toHaveCount(0);
+    await a.getByRole("radio", { name: "Conta fixa (todo mês)" }).click();
     await expect(a.getByLabel("Conta fixa").locator("option:checked")).toHaveText("Luz");
     await expect(a.getByLabel("Mês da conta")).toHaveValue("2026-12");
     // Mês é obrigatório no servidor também (o navegador não é confiável).
@@ -158,6 +161,7 @@ test("Finanças: leitura de boleto e comprovante com conferência", async ({ bro
   let boletoNovoId = "";
   await test.step("substituir o boleto do mês: o novo vale em Contas fixas e Pagar; o antigo fica descartado com o arquivo", async () => {
     boletoNovoId = await upload(a, "/financas/contas-fixas", pdfWith({ tipo: "boleto", beneficiario: "ENEL Luz", valor: 199, codigo: BOLETO_NOVO }, "novo"));
+    await a.getByRole("radio", { name: "Conta fixa (todo mês)" }).click();
     await expect(a.getByLabel("Conta fixa").locator("option:checked")).toHaveText("Luz");
     await expect(a.getByRole("alert").filter({ hasText: "Esta conta já tem um boleto confirmado em 12/2026" })).toBeVisible();
     // Sem marcar "substituir", o servidor recusa.
@@ -186,6 +190,7 @@ test("Finanças: leitura de boleto e comprovante com conferência", async ({ bro
   await test.step("boleto de água sem conta parecida: cria conta nova pré-preenchida", async () => {
     await upload(a, "/financas/documentos", pdfWith({ tipo: "boleto", beneficiario: "Sabesp", valor: 66.78, vencimento: "2026-12-15", codigo: AGUA }));
     // Sem conta parecida, nada vem escolhido: o usuário decide entre as existentes e uma nova.
+    await a.getByRole("radio", { name: "Conta fixa (todo mês)" }).click();
     await expect(a.getByLabel("Conta fixa").locator("option:checked")).toHaveText("Escolha…");
     await a.getByLabel("Conta fixa").selectOption({ label: "+ Criar nova conta" });
     await expect(a.getByLabel("Nome da conta")).toHaveValue("Sabesp");

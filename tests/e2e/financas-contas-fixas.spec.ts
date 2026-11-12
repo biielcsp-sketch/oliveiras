@@ -100,6 +100,7 @@ test("Contas fixas: rota antiga, editar/apagar documentos e baixa automática pe
   await test.step("boleto conferido à mão e editado (valor e vencimento)", async () => {
     boletoId = await upload(page, "boleto");
     await page.getByRole("radio", { name: "Boleto" }).click();
+    await page.getByRole("radio", { name: "Conta fixa (todo mês)" }).click();
     await page.getByLabel("Beneficiário").fill("ENEL Distribuição");
     await page.getByLabel("Valor (R$)").fill("187,90");
     await page.getByLabel("Vencimento").fill("2026-12-10");

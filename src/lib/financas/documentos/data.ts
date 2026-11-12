@@ -20,12 +20,13 @@ export type FinDocument = {
   bill_id: string | null;
   transaction_id: string | null;
   bill_month: string | null;
+  one_off_bill_id: string | null;
   created_at: string;
 };
 
 export const DOC_COLS =
-  "id, file_path, kind, status, file_mime, file_size, extracted, payee, amount, due_date, paid_on, barcode, bill_id, transaction_id, bill_month, created_at";
-const LIST_COLS = "id, kind, status, file_mime, payee, amount, due_date, paid_on, barcode, bill_id, transaction_id, bill_month, created_at";
+  "id, file_path, kind, status, file_mime, file_size, extracted, payee, amount, due_date, paid_on, barcode, bill_id, transaction_id, bill_month, one_off_bill_id, created_at";
+const LIST_COLS = "id, kind, status, file_mime, payee, amount, due_date, paid_on, barcode, bill_id, transaction_id, bill_month, one_off_bill_id, created_at";
 
 export type DocListItem = Omit<FinDocument, "extracted" | "file_size" | "file_path">;
 
@@ -55,7 +56,7 @@ export async function getDocument(id: string): Promise<FinDocument | null> {
 export async function getRelatedDocs(barcode: string | null, billIds: string[]): Promise<DocRef[]> {
   const { household } = await getAppContext();
   const supabase = await createClient();
-  const cols = "id, kind, status, barcode, bill_id, bill_month";
+  const cols = "id, kind, status, barcode, bill_id, bill_month, one_off_bill_id";
   const [byCode, byBill] = await Promise.all([
     barcode
       ? supabase.from("fin_documents").select(cols).eq("household_id", household.id).eq("barcode", barcode).limit(50)

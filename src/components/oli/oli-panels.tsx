@@ -157,7 +157,10 @@ export function PanelView({
               {d.contas.map((c, i) => (
                 <li key={i} className="flex items-center gap-3 py-2.5 text-[15px]">
                   <span className="w-11 shrink-0 text-[13px] tabular-nums text-muted">{shortDate(c.vencimento)}</span>
-                  <span className="min-w-0 flex-1 truncate">{c.nome}</span>
+                  <span className="min-w-0 flex-1 truncate">
+                    {c.nome}
+                    {c.avulsa && <span className="ml-1.5 text-[12px] text-muted">(avulsa)</span>}
+                  </span>
                   <StatusBadge status={c.status} />
                   {money(c.valor)}
                 </li>

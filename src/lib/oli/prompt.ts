@@ -104,7 +104,7 @@ export const OLI_TOOLS: Tool[] = [
       },
       {
         name: "contas_a_pagar",
-        description: "Contas fixas do mês atual (e faturas de cartão) com valor, vencimento e status.",
+        description: "Contas fixas do mês atual, faturas de cartão e contas avulsas em aberto (avulsa: true) com valor, vencimento e status.",
         parameters: { type: Type.OBJECT, properties: {} },
       },
       {

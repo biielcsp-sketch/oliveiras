@@ -64,7 +64,16 @@ export function suggestBill<T extends { id: string; name: string }>(payee: strin
   return best?.bill ?? null;
 }
 
-export type DocRef = { id: string; kind: DocKind; status: DocStatus; barcode: string | null; bill_id: string | null; bill_month: string | null };
+export type DocRef = {
+  id: string;
+  kind: DocKind;
+  status: DocStatus;
+  barcode: string | null;
+  bill_id: string | null;
+  bill_month: string | null;
+  /** Boleto de conta avulsa (0021); nunca junto com bill_id. */
+  one_off_bill_id?: string | null;
+};
 
 /** Outros documentos (não descartados) da família com o mesmo código e do mesmo tipo. */
 export function sameBarcodeDocs(current: { id: string; barcode: string | null }, kind: DocKind, others: DocRef[]) {

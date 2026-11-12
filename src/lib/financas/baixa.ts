@@ -12,6 +12,7 @@
  *    exatamente 1 conta candidata. Qualquer outro caso vira sugestão (o usuário confirma).
  * Conta já paga no mês e lançamento já ligado a outra conta ficam de fora (mesmos índices
  * únicos do banco: (bill_id, month) e (transaction_id)), então rodar de novo não duplica.
+ * Contas avulsas (0021) entram no mesmo casamento: ver planBaixasComAvulsas.
  */
 import { parseBoleto } from "./documentos/boleto";
 import { billForMonth } from "./documentos/rules";
@@ -105,7 +106,36 @@ export function descriptionMatches(description: string, names: (string | null | 
 
 /* ---------- Casamento ---------- */
 
-type Slot = { bill: BaixaBill; month: string; boleto: BaixaBoleto | undefined; expected: number; due: string };
+/**
+ * Conta avulsa no cruzamento (fin_one_off_bills). Entra como mais uma "conta" com valor e vencimento
+ * próprios; as já pagas só servem para saber quais lançamentos já estão ligados.
+ * `barcode`/`payee`: do boleto confirmado ligado a ela (fin_documents.one_off_bill_id), se houver.
+ */
+export type BaixaOneOff = {
+  id: string;
+  name: string;
+  amount: number;
+  due_date: string;
+  account_id: string | null;
+  paid_on: string | null;
+  transaction_id: string | null;
+  barcode?: string | null;
+  payee?: string | null;
+};
+
+export type OneOffMatch = {
+  one_off_bill_id: string;
+  transaction_id: string;
+  paid_on: string;
+  amount: number;
+  reason: "codigo" | "valor";
+};
+
+/** Chave do par avulsa+lançamento dispensado (fin_one_off_baixa_dismissals: unique household, avulsa, lançamento). */
+export const oneOffPairKey = (m: { one_off_bill_id: string; transaction_id: string }) => `${m.one_off_bill_id}:${m.transaction_id}`;
+
+type Ref = { kind: "fixa"; bill_id: string; month: string } | { kind: "avulsa"; id: string };
+type Slot = { key: string; ref: Ref; expected: number; due: string; accountId: string | null; names: (string | null | undefined)[] };
 
 /**
  * Planeja as baixas para os meses informados.
@@ -121,46 +151,88 @@ export function planBaixas(input: {
   payments: BaixaPayment[];
   ignored?: Set<string>;
 }): { auto: BaixaMatch[]; suggestions: BaixaMatch[] } {
+  const { auto, suggestions } = planBaixasComAvulsas(input);
+  return { auto, suggestions };
+}
+
+/**
+ * Mesmo casamento de planBaixas, com as contas avulsas em aberto como contas a mais. Fixas e avulsas
+ * disputam os mesmos lançamentos: a ambiguidade conta as duas (um lançamento que serve para uma fixa e
+ * para uma avulsa vira sugestão nas duas, nunca baixa automática), e um lançamento já ligado a qualquer
+ * conta (fixa ou avulsa) fica de fora. Assim um lançamento nunca paga duas contas.
+ * Avulsa entra pelo valor só se o vencimento cair num dos meses; pelo código, em qualquer mês.
+ */
+export function planBaixasComAvulsas(input: {
+  months: string[];
+  bills: BaixaBill[];
+  boletos: BaixaBoleto[];
+  txs: BaixaTx[];
+  payments: BaixaPayment[];
+  ignored?: Set<string>;
+  oneOffs?: BaixaOneOff[];
+  oneOffIgnored?: Set<string>;
+}): { auto: BaixaMatch[]; suggestions: BaixaMatch[]; oneOffAuto: OneOffMatch[]; oneOffSuggestions: OneOffMatch[] } {
   const ignored = input.ignored ?? new Set<string>();
-  const paid = new Set(input.payments.map((p) => `${p.bill_id}:${p.month}`));
-  const linked = new Set(input.payments.map((p) => p.transaction_id).filter((v): v is string => Boolean(v)));
+  const oneOffIgnored = input.oneOffIgnored ?? new Set<string>();
+  const oneOffs = input.oneOffs ?? [];
+  const paid = new Set(input.payments.map((p) => `f:${p.bill_id}:${p.month}`));
+  for (const o of oneOffs) if (o.paid_on) paid.add(`a:${o.id}`);
+  const linked = new Set(
+    [...input.payments.map((p) => p.transaction_id), ...oneOffs.map((o) => o.transaction_id)].filter((v): v is string => Boolean(v)),
+  );
   const billById = new Map(input.bills.map((b) => [b.id, b]));
   const outflows = input.txs.filter((t) => t.amount < 0 && !linked.has(t.id));
   const auto: BaixaMatch[] = [];
+  const oneOffAuto: OneOffMatch[] = [];
   const usedTx = new Set<string>();
   const usedSlot = new Set<string>();
-  const match = (bill_id: string, month: string, t: BaixaTx, reason: BaixaMatch["reason"]): BaixaMatch => ({
-    bill_id, month, transaction_id: t.id, paid_on: t.date, amount: cents(t.amount) / 100, reason,
-  });
+  const keyOf = (r: Ref) => (r.kind === "fixa" ? `f:${r.bill_id}:${r.month}` : `a:${r.id}`);
+  const isIgnored = (r: Ref, txId: string) =>
+    r.kind === "fixa"
+      ? ignored.has(pairKey({ bill_id: r.bill_id, transaction_id: txId }))
+      : oneOffIgnored.has(oneOffPairKey({ one_off_bill_id: r.id, transaction_id: txId }));
+  const push = (r: Ref, t: BaixaTx, reason: BaixaMatch["reason"], toAuto: boolean, fixedSugg?: BaixaMatch[], oneSugg?: OneOffMatch[]) => {
+    const base = { transaction_id: t.id, paid_on: t.date, amount: cents(t.amount) / 100, reason };
+    if (r.kind === "fixa") (toAuto ? auto : fixedSugg!).push({ bill_id: r.bill_id, month: r.month, ...base });
+    else (toAuto ? oneOffAuto : oneSugg!).push({ one_off_bill_id: r.id, ...base });
+  };
 
   // a) Código de barras: sempre automático (o código identifica o boleto).
-  const boletoByCode = new Map<string, BaixaBoleto>();
-  for (const b of input.boletos) if (b.barcode && billById.has(b.bill_id)) boletoByCode.set(b.barcode, b);
+  const refByCode = new Map<string, Ref>();
+  for (const o of oneOffs) if (o.barcode) refByCode.set(o.barcode, { kind: "avulsa", id: o.id });
+  for (const b of input.boletos) if (b.barcode && billById.has(b.bill_id)) refByCode.set(b.barcode, { kind: "fixa", bill_id: b.bill_id, month: b.bill_month });
   for (const t of outflows) {
     const code = t.barcode ? toBarcode44(t.barcode, t.date) : null;
-    const b = code ? boletoByCode.get(code) : undefined;
-    if (!b) continue;
-    const slot = `${b.bill_id}:${b.bill_month}`;
-    const m = match(b.bill_id, b.bill_month, t, "codigo");
-    if (paid.has(slot) || usedSlot.has(slot) || ignored.has(pairKey(m))) continue;
-    auto.push(m);
+    const r = code ? refByCode.get(code) : undefined;
+    if (!r) continue;
+    const slot = keyOf(r);
+    if (paid.has(slot) || usedSlot.has(slot) || isIgnored(r, t.id)) continue;
+    push(r, t, "codigo", true);
     usedTx.add(t.id);
     usedSlot.add(slot);
   }
 
   // b) Valor exato + janela de datas (+ descrição para ser automático).
   const boletoOf = new Map(input.boletos.map((b) => [`${b.bill_id}:${b.bill_month}`, b]));
+  const months = [...new Set(input.months)];
   const slots: Slot[] = [];
-  for (const month of [...new Set(input.months)]) {
+  for (const month of months) {
     for (const bill of input.bills) {
-      const key = `${bill.id}:${month}`;
+      const ref: Ref = { kind: "fixa", bill_id: bill.id, month };
+      const key = keyOf(ref);
       if (paid.has(key) || usedSlot.has(key)) continue;
-      const boleto = boletoOf.get(key);
+      const boleto = boletoOf.get(`${bill.id}:${month}`);
       // Conta pausada só entra se tiver boleto confirmado no mês (mesma regra da tela: aparece se tiver algo no mês).
       if (!bill.active && !boleto) continue;
       const { amount, due } = billForMonth(bill, month, boleto);
-      slots.push({ bill, month, boleto, expected: amount, due });
+      slots.push({ key, ref, expected: amount, due, accountId: bill.account_id, names: [bill.name, boleto?.payee] });
     }
+  }
+  for (const o of oneOffs) {
+    const ref: Ref = { kind: "avulsa", id: o.id };
+    const key = keyOf(ref);
+    if (paid.has(key) || usedSlot.has(key) || !months.includes(o.due_date.slice(0, 7))) continue;
+    slots.push({ key, ref, expected: o.amount, due: o.due_date, accountId: o.account_id, names: [o.name, o.payee] });
   }
 
   type Pair = { slot: Slot; tx: BaixaTx; similar: boolean };
@@ -170,33 +242,30 @@ export function planBaixas(input: {
     const to = addDays(slot.due, BAIXA_WINDOW_AFTER);
     for (const t of outflows) {
       if (usedTx.has(t.id)) continue;
-      if (slot.bill.account_id && t.account_id !== slot.bill.account_id) continue;
+      if (slot.accountId && t.account_id !== slot.accountId) continue;
       if (cents(t.amount) !== cents(slot.expected)) continue;
       if (t.date < from || t.date > to) continue;
-      const m = { bill_id: slot.bill.id, month: slot.month, transaction_id: t.id };
-      if (ignored.has(pairKey(m))) continue;
-      pairs.push({ slot, tx: t, similar: descriptionMatches(t.description, [slot.bill.name, slot.boleto?.payee]) });
+      if (isIgnored(slot.ref, t.id)) continue;
+      pairs.push({ slot, tx: t, similar: descriptionMatches(t.description, slot.names) });
     }
   }
 
   const bySlot = new Map<string, Pair[]>();
   const byTx = new Map<string, Pair[]>();
   for (const p of pairs) {
-    const k = `${p.slot.bill.id}:${p.slot.month}`;
-    bySlot.set(k, [...(bySlot.get(k) ?? []), p]);
+    bySlot.set(p.slot.key, [...(bySlot.get(p.slot.key) ?? []), p]);
     byTx.set(p.tx.id, [...(byTx.get(p.tx.id) ?? []), p]);
   }
 
   const suggestions: BaixaMatch[] = [];
+  const oneOffSuggestions: OneOffMatch[] = [];
   for (const p of pairs) {
-    const k = `${p.slot.bill.id}:${p.slot.month}`;
-    const unique = bySlot.get(k)!.length === 1 && byTx.get(p.tx.id)!.length === 1;
-    const m = match(p.slot.bill.id, p.slot.month, p.tx, "valor");
-    if (unique && p.similar) auto.push(m);
-    else suggestions.push(m);
+    const unique = bySlot.get(p.slot.key)!.length === 1 && byTx.get(p.tx.id)!.length === 1;
+    push(p.slot.ref, p.tx, "valor", unique && p.similar, suggestions, oneOffSuggestions);
   }
   suggestions.sort((a, b) => a.bill_id.localeCompare(b.bill_id) || a.paid_on.localeCompare(b.paid_on));
-  return { auto, suggestions };
+  oneOffSuggestions.sort((a, b) => a.one_off_bill_id.localeCompare(b.one_off_bill_id) || a.paid_on.localeCompare(b.paid_on));
+  return { auto, suggestions, oneOffAuto, oneOffSuggestions };
 }
 
 /** Meses em que um lançamento pode ser pagamento de conta fixa: o do lançamento e os vizinhos (janela de ±10 dias). */

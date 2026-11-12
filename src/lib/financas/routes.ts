@@ -40,3 +40,15 @@ export const billDeletePath = (id: string, origem?: unknown, mes?: unknown) => {
   const s = q.toString();
   return `${CONTAS_FIXAS}/${id}/excluir${s ? `?${s}` : ""}`;
 };
+
+/** Conta avulsa (0021): edição, pagamento e exclusão ficam sob Contas fixas (mesma aba do menu). */
+export const oneOffPath = (id: string) => `${CONTAS_FIXAS}/avulsa/${id}`;
+
+/** Tela de confirmação para apagar a conta avulsa (id validado como uuid na tela e na ação). */
+export const oneOffDeletePath = (id: string, origem?: unknown, mes?: unknown) => {
+  const q = new URLSearchParams();
+  if (flowOrigin(origem) === "casa") q.set("voltar", "casa");
+  if (typeof mes === "string" && MONTH_RE.test(mes)) q.set("mes", mes);
+  const s = q.toString();
+  return `${oneOffPath(id)}/excluir${s ? `?${s}` : ""}`;
+};
