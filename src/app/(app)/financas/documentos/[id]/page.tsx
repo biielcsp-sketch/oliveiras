@@ -13,6 +13,7 @@ import { UUID_RE } from "@/lib/financas/transaction-input";
 import { flowOrigin } from "@/lib/financas/routes";
 import { getDocument, getRelatedDocs } from "@/lib/financas/documentos/data";
 import { toLinhaDigitavel } from "@/lib/financas/documentos/boleto";
+import { docEditBlock, ORPHAN_BOLETO_EDIT } from "@/lib/financas/documentos/input";
 import { reconcile, storedExtracted } from "@/lib/financas/documentos/schema";
 import { DOC_BUCKET, isDocPath, KIND_LABEL, monthOf, sameBarcodeDocs, STATUS_LABEL, suggestBill } from "@/lib/financas/documentos/rules";
 import { DocReview } from "../../_components/doc-review";
@@ -53,6 +54,7 @@ export default async function ConferirDocumentoPage({ params, searchParams }: { 
           {doc.bill_id && (<><dt className="text-muted">Conta</dt><dd>{billName.get(doc.bill_id) ?? "—"}{doc.bill_month && ` (${doc.bill_month.slice(5)}/${doc.bill_month.slice(0, 4)})`}</dd></>)}
           {oneOff && (<><dt className="text-muted">Conta avulsa</dt><dd>{oneOff.name}{oneOff.paid_on ? ` · paga em ${br(oneOff.paid_on)}` : ""}</dd></>)}
         </dl>
+        {docEditBlock(doc) === ORPHAN_BOLETO_EDIT && <p className="mt-4 text-[15px] text-muted">{ORPHAN_BOLETO_EDIT}</p>}
         <div className="mt-5 flex flex-wrap gap-4 text-[15px] font-medium">
           {hasFile && (
             <a href={fileHref} target="_blank" rel="noopener" className="text-link">{isPdf ? "Abrir PDF" : "Abrir foto"}</a>
@@ -62,7 +64,7 @@ export default async function ConferirDocumentoPage({ params, searchParams }: { 
           {oneOff && <Link href={`/financas/contas-fixas?mes=${oneOff.due_date.slice(0, 7)}`} className="text-link">Ver em Contas avulsas</Link>}
         </div>
         <div className="mt-5 flex flex-wrap gap-4 text-sm">
-          {doc.status === "confirmado" && (doc.kind === "comprovante" || (doc.kind === "boleto" && !doc.one_off_bill_id)) && (
+          {docEditBlock(doc) === null && (
             <Link href={`/financas/documentos/${doc.id}/editar`} className="font-medium text-link">Editar documento</Link>
           )}
           {doc.status === "confirmado" && oneOff && (

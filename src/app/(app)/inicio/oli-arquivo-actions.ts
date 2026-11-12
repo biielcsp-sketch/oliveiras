@@ -4,8 +4,12 @@ import { createClient } from "@/lib/supabase/server";
 import { getAppContext } from "@/lib/data";
 import { oliAllowedFor } from "@/lib/oli/access";
 import { extractOliFile } from "@/lib/oli/arquivo-extract";
-import { financeExtracted, routeFor, sanitizeOliReading, type OliFileDest, type OliFileOptions, type OliFileReading } from "@/lib/oli/arquivo";
+import {
+  financeExtracted, oliFileLimitError, routeFor, sanitizeOliReading, type OliFileDest, type OliFileOptions, type OliFileReading,
+} from "@/lib/oli/arquivo";
 import { applyExtraction, readUploadedFile, revalidateDocPaths, storePendingDocument } from "@/lib/financas/documentos/store";
+import { spDayStartIso } from "@/lib/financas/documentos/rules";
+import { todaySP } from "@/lib/financas/today";
 
 /**
  * "+" do Oli. Ler NÃO grava nada: devolve a leitura validada, o destino da tabela fixa e as opções
@@ -20,10 +24,31 @@ export type OliFileReadResult =
 
 const NOT_ALLOWED = "O Oli ainda não está liberado para esta família.";
 
+/**
+ * Registra 1 leitura em oli_file_reads (só household_id; created_at/created_by vêm do banco e o usuário não
+ * apaga nem altera) e conta as da família desde a meia-noite de São Paulo, já com esta. Erro = recusa.
+ */
+async function checkDailyLimit(db: Awaited<ReturnType<typeof createClient>>, householdId: string): Promise<string | null> {
+  const { error: insertError } = await db.from("oli_file_reads").insert({ household_id: householdId });
+  if (insertError) return oliFileLimitError({ registered: false, countToday: null });
+  const { count, error } = await db
+    .from("oli_file_reads")
+    .select("id", { count: "exact", head: true })
+    .eq("household_id", householdId)
+    .gte("created_at", spDayStartIso(todaySP()));
+  return oliFileLimitError({ registered: true, countToday: error ? null : count });
+}
+
 export async function readOliFile(form: FormData): Promise<OliFileReadResult> {
   const ctx = await getAppContext(); // sessão via auth.getClaims(); sem login, vai para /login
   if (!oliAllowedFor(ctx.household.id)) return { ok: false, erro: NOT_ALLOWED };
   if (!(form instanceof FormData)) return { ok: false, erro: "Envio inválido." };
+
+  // Limite diário ANTES de ler o arquivo e de chamar a IA: registra a tentativa e conta as do dia (sessão, RLS).
+  const db = await createClient();
+  const limit = await checkDailyLimit(db, ctx.household.id);
+  if (limit) return { ok: false, erro: limit };
+
   const file = await readUploadedFile(form);
   if (!file.ok) return { ok: false, erro: file.error };
 
@@ -32,7 +57,6 @@ export async function readOliFile(form: FormData): Promise<OliFileReadResult> {
     return { ok: false, erro: r.motivo === "timeout" ? "A leitura demorou demais. Tente de novo." : "Não consegui ler o arquivo agora. Tente de novo." };
   }
 
-  const db = await createClient();
   const { data: pets } = await db.from("casa_pets").select("id, name").eq("household_id", ctx.household.id).order("name").limit(50);
   return {
     ok: true,

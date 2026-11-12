@@ -14,6 +14,7 @@ import { mod11Bancario, toLinhaDigitavel } from "@/lib/financas/documentos/bolet
 import { homeBillsForMonth } from "@/lib/casa/contas";
 import { buildContasAPagar } from "@/lib/oli/panels";
 import { oneOffDeletePath, oneOffPath } from "@/lib/financas/routes";
+import { docEditBlock, ONE_OFF_BOLETO_EDIT, ORPHAN_BOLETO_EDIT } from "@/lib/financas/documentos/input";
 
 const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const LUZ = U(1);
@@ -290,5 +291,36 @@ describe("mensagens de baixa automática: fixas + avulsas", () => {
       { bill: "IPVA (avulsa)", month: "2026-12" },
       { bill: "Conta (avulsa)", month: "2026-12" },
     ]);
+  });
+});
+
+describe("Editar documento: boleto de avulsa apagada não vira boleto de conta fixa", () => {
+  const BILL = "11111111-1111-4111-8111-111111111111";
+  const ONE = "22222222-2222-4222-8222-222222222222";
+  const doc = (over: Partial<Parameters<typeof docEditBlock>[0]> = {}) => ({
+    status: "confirmado", kind: "boleto", bill_id: BILL, bill_month: "2026-12", one_off_bill_id: null, ...over,
+  });
+
+  it("boleto de conta fixa e comprovante continuam editáveis", () => {
+    expect(docEditBlock(doc())).toBeNull();
+    expect(docEditBlock(doc({ kind: "comprovante", bill_id: null, bill_month: null }))).toBeNull();
+  });
+
+  it("boleto de conta fixa apagada (FK zera só bill_id, mês fica) continua editável para escolher outra conta", () => {
+    expect(docEditBlock(doc({ bill_id: null }))).toBeNull();
+  });
+
+  it("boleto de avulsa se edita pela avulsa", () => {
+    expect(docEditBlock(doc({ bill_id: null, bill_month: null, one_off_bill_id: ONE }))).toBe(ONE_OFF_BOLETO_EDIT);
+  });
+
+  it("avulsa apagada (sem bill_id, sem mês, sem one_off_bill_id): recusa com mensagem clara", () => {
+    expect(docEditBlock(doc({ bill_id: null, bill_month: null, one_off_bill_id: null }))).toBe(ORPHAN_BOLETO_EDIT);
+  });
+
+  it("pendente, descartado e 'outro' não se editam", () => {
+    expect(docEditBlock(doc({ status: "pendente" }))).toMatch(/confirmados/);
+    expect(docEditBlock(doc({ status: "descartado" }))).toMatch(/confirmados/);
+    expect(docEditBlock(doc({ kind: "outro", bill_id: null, bill_month: null }))).toMatch(/não tem dados/);
   });
 });

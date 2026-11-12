@@ -12,7 +12,7 @@ import { cleanText, DOC_LIMITS } from "@/lib/financas/documentos/schema";
 import { applyExtraction, readUploadedFile, revalidateDocPaths, storePendingDocument } from "@/lib/financas/documentos/store";
 import { DOC_BUCKET, isDocPath, planDocDelete, retry, sameBillMonthDocs, type DocRef } from "@/lib/financas/documentos/rules";
 import {
-  boletoEditConflict, duplicateBlock, editSaveError, readBarcode, validateBoletoEdit, validateBoletoForm, validateComprovanteEdit,
+  boletoEditConflict, docEditBlock, duplicateBlock, editSaveError, readBarcode, validateBoletoEdit, validateBoletoForm, validateComprovanteEdit,
 } from "@/lib/financas/documentos/input";
 import { BILL_KIND_REQUIRED, dueMonth, parseBillKind, parsePayTarget, validateOneOffInput } from "@/lib/financas/avulsas";
 import { runBaixaAutomatica } from "@/lib/financas/baixa-data";
@@ -36,11 +36,14 @@ async function loadDoc(db: Db, householdId: string, id: string) {
   if (!UUID_RE.test(id)) return null;
   const { data } = await db
     .from("fin_documents")
-    .select("id, status, kind, barcode, file_path, created_at, one_off_bill_id")
+    .select("id, status, kind, barcode, file_path, created_at, bill_id, bill_month, one_off_bill_id")
     .eq("household_id", householdId)
     .eq("id", id)
     .maybeSingle();
-  return data as { id: string; status: string; kind: string; barcode: string | null; file_path: string; created_at: string; one_off_bill_id: string | null } | null;
+  return data as {
+    id: string; status: string; kind: string; barcode: string | null; file_path: string; created_at: string;
+    bill_id: string | null; bill_month: string | null; one_off_bill_id: string | null;
+  } | null;
 }
 
 async function relatedDocs(db: Db, householdId: string, barcode: string | null, billId: string | null): Promise<DocRef[] | null> {
@@ -461,10 +464,9 @@ export async function editDocument(_: DocState, form: FormData): Promise<DocStat
   const db = await createClient();
   const doc = await loadDoc(db, household.id, str(form, "id"));
   if (!doc) return { error: "Documento não encontrado." };
-  if (doc.status !== "confirmado") return { error: "Só documentos confirmados podem ser editados." };
-
-  // Boleto de conta avulsa: valor, vencimento e nome se editam na própria conta avulsa.
-  if (doc.kind === "boleto" && doc.one_off_bill_id) return { error: "Este boleto é de uma conta avulsa: edite pela conta avulsa." };
+  // Boleto de avulsa (edita pela avulsa) ou de avulsa apagada (sem conta): recusa antes de validar o formulário.
+  const blocked = docEditBlock(doc);
+  if (blocked) return { error: blocked };
   if (doc.kind === "boleto") {
     const v = validateBoletoEdit({ billId: str(form, "bill_id"), amount: str(form, "amount"), dueDate: str(form, "due_date"), billMonth: str(form, "bill_month") });
     if (!v.ok) return { error: v.erro };

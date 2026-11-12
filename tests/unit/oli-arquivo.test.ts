@@ -17,6 +17,9 @@ import {
   OLI_FILE_KINDS,
   OLI_FILE_LIMITS,
   OLI_FILE_ROUTE,
+  OLI_DAILY_FILE_LIMIT,
+  OLI_FILE_LIMIT_FAIL,
+  oliFileLimitError,
   parseOliReading,
   pickOption,
   prefillFor,
@@ -25,6 +28,7 @@ import {
   type OliFileOptions,
   type OliFileReading,
 } from "@/lib/oli/arquivo";
+import { DAILY_DOC_LIMIT } from "@/lib/financas/documentos/rules";
 import { OLI_FILE_INSTRUCTION, OLI_FILE_SCHEMA } from "@/lib/oli/arquivo-schema";
 import { extractOliFile } from "@/lib/oli/arquivo-extract";
 import { readUploadedFile } from "@/lib/financas/documentos/store";
@@ -316,5 +320,26 @@ describe("Oli arquivo: painel", () => {
     expect(html).toContain("Um folheto.");
     expect(html).toContain("Fechar sem guardar");
     expect(html).not.toContain("Confirmar");
+  });
+});
+
+describe("Oli arquivo: limite diário de leituras (antes da IA)", () => {
+  it("mesmo teto de Finanças: 30 por família por dia", () => {
+    expect(OLI_DAILY_FILE_LIMIT).toBe(30);
+    expect(OLI_DAILY_FILE_LIMIT).toBe(DAILY_DOC_LIMIT);
+  });
+
+  it("a contagem já inclui a leitura registrada: até 30 passa, a 31ª é recusada", () => {
+    expect(oliFileLimitError({ registered: true, countToday: 1 })).toBeNull();
+    expect(oliFileLimitError({ registered: true, countToday: 30 })).toBeNull();
+    expect(oliFileLimitError({ registered: true, countToday: 31 })).toMatch(/Limite de 30 leituras de arquivo por dia/);
+    expect(oliFileLimitError({ registered: true, countToday: 500 })).toMatch(/Limite de 30/);
+    expect(oliFileLimitError({ registered: true, countToday: 3 }, 2)).toMatch(/Limite de 2/);
+  });
+
+  it("falha no registro ou na contagem recusa (fail closed)", () => {
+    expect(oliFileLimitError({ registered: false, countToday: 0 })).toBe(OLI_FILE_LIMIT_FAIL);
+    expect(oliFileLimitError({ registered: true, countToday: null })).toBe(OLI_FILE_LIMIT_FAIL);
+    expect(oliFileLimitError({ registered: true, countToday: Number.NaN })).toBe(OLI_FILE_LIMIT_FAIL);
   });
 });

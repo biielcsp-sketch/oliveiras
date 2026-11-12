@@ -124,6 +124,25 @@ test("Oli: + lê o arquivo e guarda no lugar certo só depois de Confirmar", asy
     expect(data![0].file_path).toMatch(new RegExp(`^${hh}/docs/[0-9a-f-]{36}\\.pdf$`));
   });
 
+  await test.step("limite diário: cada envio é registrado; passou de 30 no dia, recusa sem chamar a IA", async () => {
+    // 6 envios acima (inclusive o arquivo falso: o registro vem antes de ler o arquivo).
+    const { count: sent } = await admin.from("oli_file_reads").select("id", { count: "exact", head: true }).eq("household_id", hh);
+    expect(sent).toBe(6);
+    const { error } = await admin.from("oli_file_reads").insert(Array.from({ length: 30 }, () => ({ household_id: hh })));
+    expect(error).toBeNull();
+    await page.goto("/inicio");
+    const panels = page.getByRole("group", { name: "Arquivo lido pelo Oli" });
+    const before = await panels.count();
+    // Se a IA fosse chamada, o mock devolveria a leitura e um painel novo apareceria.
+    await sendFile(page, pdfWith({ tipo: "exame", nome: "Hemograma", resumo: "Não deveria ser lido." }, "limite"));
+    await expect(page.getByText("Limite de 30 leituras de arquivo por dia atingido.", { exact: false })).toBeVisible();
+    await expect(page.getByText("Não deveria ser lido.")).toHaveCount(0);
+    await expect(panels).toHaveCount(before);
+    // A tentativa recusada também fica registrada (contar e recusar não reabre a cota).
+    const { count: after } = await admin.from("oli_file_reads").select("id", { count: "exact", head: true }).eq("household_id", hh);
+    expect(after).toBe(37);
+  });
+
   // Nenhum erro de JS nem violação de CSP no caminho todo.
   expect(problems).toEqual([]);
   await ctx.close();

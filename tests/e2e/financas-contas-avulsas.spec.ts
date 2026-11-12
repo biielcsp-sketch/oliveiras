@@ -213,5 +213,20 @@ test("Conta avulsa: boleto pela Casa vira avulsa, aparece em Casa e Finanças (f
     if (day > 1) await expect(page.getByTestId("resumo-contas")).toContainText("1 atrasada");
   });
 
+  await test.step("apagar a avulsa: o boleto fica em Documentos sem conta e não vira boleto de conta fixa pela edição", async () => {
+    await page.goto(`/financas/contas-fixas/avulsa/${oneOffId}/excluir`);
+    await page.getByRole("button", { name: "Apagar conta avulsa" }).click();
+    await expect(page).toHaveURL(/\/financas\/contas-fixas(\?.*)?$/);
+    expect((await admin.from("fin_one_off_bills").select("id", { count: "exact", head: true }).eq("id", oneOffId)).count).toBe(0);
+    const { data: doc } = await admin.from("fin_documents").select("status, kind, bill_id, bill_month, one_off_bill_id").eq("id", docId).single();
+    expect(doc).toEqual({ status: "confirmado", kind: "boleto", bill_id: null, bill_month: null, one_off_bill_id: null });
+    await page.goto(`/financas/documentos/${docId}`);
+    await expect(page.getByText("Este boleto era de uma conta avulsa que foi apagada")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Editar documento" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Apagar documento" })).toBeVisible();
+    // Pela API (mesma sessão): a página 404 padrão do Next aplica estilo inline e acusaria CSP no navegador.
+    expect((await page.request.get(`/financas/documentos/${docId}/editar`)).status()).toBe(404);
+  });
+
   expect(problems.filter((p) => /Content Security Policy|Refused to/i.test(p))).toEqual([]);
 });

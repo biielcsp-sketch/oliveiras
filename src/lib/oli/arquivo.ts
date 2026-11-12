@@ -120,6 +120,24 @@ export const OLI_FILE_LIMITS = {
   rawChars: 20_000,
 } as const;
 
+/* ---------- Limite diário de leituras (cada leitura chama o Gemini, pago) ---------- */
+
+/** Leituras do "+" por família por dia (fuso de São Paulo). Mesmo valor do DAILY_DOC_LIMIT de Finanças. */
+export const OLI_DAILY_FILE_LIMIT = 30;
+export const OLI_FILE_LIMIT_FAIL = "Não consegui conferir o limite de leituras agora. Tente de novo em instantes.";
+
+/**
+ * Decide se a leitura pode chamar a IA. O servidor registra a tentativa (oli_file_reads) ANTES e conta as
+ * do dia JÁ INCLUINDO esta: passa enquanto o total for ≤ limite (a 31ª é recusada). Registro ou contagem
+ * que falhou recusa (fail closed): sem prova de que está dentro do limite, a IA não é chamada.
+ */
+export function oliFileLimitError(r: { registered: boolean; countToday: number | null }, limit = OLI_DAILY_FILE_LIMIT): string | null {
+  if (!r.registered || r.countToday === null || !Number.isFinite(r.countToday)) return OLI_FILE_LIMIT_FAIL;
+  return r.countToday > limit
+    ? `Limite de ${limit} leituras de arquivo por dia atingido. Amanhã o Oli lê mais; hoje dá para guardar pelo próprio módulo.`
+    : null;
+}
+
 const oneOf = <T extends string>(list: readonly T[], v: unknown): T | null => ((list as readonly unknown[]).includes(v) ? (v as T) : null);
 
 /** Valida campo a campo um objeto já decodificado; desconhecidos são descartados. */
