@@ -91,7 +91,7 @@ export type OliToolResult =
   | { ok: true; tool: "criar_consulta"; data: ConsultaPreview }
   | { ok: true; tool: "consultar_financas" | "consultar_saude" | "consultar_casa" | "consultar_pet" | "consultar_igreja" | "buscar_no_app"; data: ConsultaData }
   | { ok: true; tool: "ler_arquivo"; data: LerArquivoData }
-  | { ok: true; tool: "alterar_casa" | "alterar_pet" | "alterar_igreja"; data: AlteracaoPreview }
+  | { ok: true; tool: "alterar_casa" | "alterar_pet" | "alterar_igreja" | "alterar_saude" | "alterar_agenda" | "alterar_financas"; data: AlteracaoPreview }
   | { ok: false; erro: string };
 
 const err = (erro: string): OliToolResult => ({ ok: false, erro });
@@ -298,7 +298,10 @@ async function dispatch(name: OliToolName, args: unknown): Promise<OliToolResult
     }
     case "alterar_casa":
     case "alterar_pet":
-    case "alterar_igreja": {
+    case "alterar_igreja":
+    case "alterar_saude":
+    case "alterar_agenda":
+    case "alterar_financas": {
       // Só prepara e mostra o painel: grava em confirmOliAlteracao, depois do toque do usuário.
       const a = parseAlterarArgs(name.slice("alterar_".length) as AlterarAba, args);
       if (!a.ok) return err(a.erro);
@@ -472,7 +475,7 @@ export async function confirmOliConsulta(preview: ConsultaPreview): Promise<Cons
 export type AlteracaoConfirmResult = { ok: true; aviso?: string } | { ok: false; erro: string };
 
 /**
- * Casa, Pet e Igreja: grava depois do toque em Confirmar. O cliente não é confiável: os args voltam a ser
+ * Casa, Pet, Igreja, Saúde, Agenda e Finanças: grava depois do toque em Confirmar. O cliente não é confiável: os args voltam a ser
  * validados, a linha é lida de novo do banco (sessão/RLS) e o painel recalculado precisa ser IGUAL ao que a
  * pessoa viu (senão nada é gravado). A gravação usa as server actions das telas (mesma validação e regras).
  */

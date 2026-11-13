@@ -497,7 +497,7 @@ describe("Oli: ferramentas da Agenda", () => {
     const eventos: OliPanel = {
       id: "p1",
       kind: "eventos",
-      data: { de: "2026-11-08", ate: "2026-11-15", pessoa: null, total: 1, itens: [{ dia: "2026-11-08", hora: "19:00 – 21:00", titulo: evil, local: null, agenda: "A", pessoa: "Você", cor: "red;background:url(x)" }] },
+      data: { de: "2026-11-08", ate: "2026-11-15", pessoa: null, total: 1, itens: [{ id: "e1", editavel: true, dia: "2026-11-08", hora: "19:00 – 21:00", titulo: evil, local: null, agenda: "A", pessoa: "Você", cor: "red;background:url(x)" }] },
     };
     const html = renderToStaticMarkup(createElement(PanelView, { panel: eventos, onConfirm: () => {}, onCancel: () => {} }));
     expect(html).not.toContain("<img");

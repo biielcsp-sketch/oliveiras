@@ -37,7 +37,7 @@ export type ConsultaItem = {
   detalhes: string[];
   /** Referência para ler_arquivo ("exame:uuid"); null se não há arquivo. */
   arquivo: string | null;
-  /** Id do item (Casa, Pet e Igreja): para alterar_<aba> e para abrir a aula do Carisma. */
+  /** Id do item: para alterar_<aba> (Casa, Pet, Igreja, Saúde, Finanças) e para abrir a aula do Carisma. */
   id?: string;
 };
 export type ConsultaGrupo = { titulo: string; total: number; itens: ConsultaItem[] };
@@ -162,9 +162,15 @@ export function buildFinPeriodo(input: {
   );
   const lanc = txs.map((t) =>
     item(t.description, {
+      id: t.id,
       data: t.date,
       valor: t.amount,
-      detalhes: [det("Categoria", t.category_id ? catById.get(t.category_id)?.name : "Sem categoria"), det("Conta", accById.get(t.account_id))],
+      detalhes: [
+        det("Categoria", t.category_id ? catById.get(t.category_id)?.name : "Sem categoria"),
+        det("Conta", accById.get(t.account_id)),
+        // O Oli nunca edita nem apaga lançamento do Open Finance: avisa já na leitura.
+        t.source === "openfinance" ? "Origem: Open Finance (o Oli não altera nem apaga)" : null,
+      ],
     }),
   );
   return consulta(
@@ -184,6 +190,7 @@ export function buildFinMetas(goals: Goal[], accounts: Account[], today: string)
     const a = g.account_id ? acc.get(g.account_id) : undefined;
     const p = goalProgress(a?.balance ?? 0, g.target, g.target_date, today);
     return item(g.name, {
+      id: g.id,
       data: g.target_date,
       valor: g.target,
       status: p.remaining === 0 ? "atingida" : `${Math.round(p.pct * 100)}%`,
@@ -226,19 +233,20 @@ export function buildFinOrcamento(month: string, rows: BudgetRow[], txs: Transac
 
 export function buildFinContasFixas(
   month: string,
-  contas: { nome: string; valor: number; vencimento: string; status: BillStatus; fatura: boolean }[],
+  contas: { id?: string; nome: string; valor: number; vencimento: string; status: BillStatus; fatura: boolean }[],
 ): ConsultaData {
-  const itens = contas.map((c) => item(c.fatura ? `Fatura ${c.nome}` : c.nome, { data: c.vencimento, valor: c.valor, status: BILL_STATUS_LABEL[c.status] }));
+  const itens = contas.map((c) => item(c.fatura ? `Fatura ${c.nome}` : c.nome, { id: c.id, data: c.vencimento, valor: c.valor, status: BILL_STATUS_LABEL[c.status] }));
   return consulta("financas", "contas_fixas", `Contas fixas de ${monthLabel(month)}`, [grupo("Contas", itens, 25)], { periodo: month });
 }
 
 export function buildFinAvulsas(
   month: string,
-  list: { name: string; amount: number; due_date: string; paid_on: string | null; is_home?: boolean }[],
+  list: { id?: string; name: string; amount: number; due_date: string; paid_on: string | null; is_home?: boolean }[],
   today: string,
 ): ConsultaData {
   const itens = list.map((o) =>
     item(o.name, {
+      id: o.id,
       data: o.due_date,
       valor: o.amount,
       status: BILL_STATUS_LABEL[billStatus(o.due_date, Boolean(o.paid_on), today)],
@@ -295,6 +303,7 @@ export function saudeItens(rows: SaudeRows, names: Names, busca?: string) {
       .filter((c) => matches(busca, c.specialty, c.doctor, c.place, c.notes))
       .map((c) =>
         item([c.kind === "retorno" ? "Retorno" : "Consulta", c.specialty].filter(Boolean).join(" · "), {
+          id: c.id,
           data: toSpDate(c.starts_at),
           pessoa: who(c.member_id),
           status: APPT_STATUS[c.status] ?? null,
@@ -305,6 +314,7 @@ export function saudeItens(rows: SaudeRows, names: Names, busca?: string) {
       .filter((e) => matches(busca, e.name, e.lab, e.requested_by, e.result_summary))
       .map((e) =>
         item(e.name, {
+          id: e.id,
           data: e.exam_date,
           pessoa: who(e.member_id),
           detalhes: [det("Laboratório", e.lab), det("Pedido por", e.requested_by), det("Resultado anotado", e.result_summary)],
@@ -315,6 +325,7 @@ export function saudeItens(rows: SaudeRows, names: Names, busca?: string) {
       .filter((v) => matches(busca, v.name, v.place))
       .map((v) =>
         item(v.name, {
+          id: v.id,
           data: v.applied_on,
           pessoa: who(v.member_id),
           detalhes: [det("Dose", v.dose_label), v.next_dose_on ? `Próxima dose: ${brDate(v.next_dose_on)}` : null, det("Local", v.place)],
@@ -325,6 +336,7 @@ export function saudeItens(rows: SaudeRows, names: Names, busca?: string) {
       .filter((p) => matches(busca, p.name, p.place, p.doctor, p.notes))
       .map((p) =>
         item(p.name, {
+          id: p.id,
           data: p.performed_on,
           pessoa: who(p.member_id),
           detalhes: [det("Local", p.place), det("Médico", p.doctor), det("Observações", p.notes)],
@@ -335,6 +347,7 @@ export function saudeItens(rows: SaudeRows, names: Names, busca?: string) {
       .filter((m) => matches(busca, m.name, m.prescribed_by))
       .map((m) =>
         item(m.name, {
+          id: m.id,
           data: m.started_on,
           pessoa: who(m.member_id),
           status: m.active ? "em uso" : "encerrado",
@@ -351,6 +364,7 @@ export function saudeItens(rows: SaudeRows, names: Names, busca?: string) {
       .filter((c) => matches(busca, c.operator, c.plan_name))
       .map((c) =>
         item(c.operator, {
+          id: c.id,
           pessoa: who(c.member_id),
           data: c.valid_until,
           detalhes: [det("Plano", c.plan_name), det("Número", maskCardNumber(c.card_number)), c.valid_until ? `Validade: ${brDate(c.valid_until)}` : null],

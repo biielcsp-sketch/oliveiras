@@ -1,12 +1,26 @@
 /**
- * Escrita do Oli nas abas Casa, Pet e Igreja (etapa 2). Funções PURAS: validam os argumentos do modelo,
+ * Escrita do Oli nas abas Casa, Pet, Igreja (etapa 2) e Saúde, Agenda e Finanças (etapa 3). Funções PURAS: validam os argumentos do modelo,
  * montam os valores do formulário da tela (mesmas chaves dos <input name>) e o painel de confirmação.
  * Nada é gravado aqui: a gravação acontece no Confirmar, pelas server actions das próprias telas, com os
  * valores recalculados no servidor a partir do banco (o cliente não é confiável).
  */
-import { brDate } from "@/lib/agenda/dates";
+import { brDate, toSpDate, toSpLocal } from "@/lib/agenda/dates";
+import { validateEventInput } from "@/lib/agenda/input";
+import { txPayConflict, validateOneOffInput } from "@/lib/financas/avulsas";
 import { formatBRL, parseBRL } from "@/lib/financas/money";
-import { UUID_RE } from "@/lib/financas/transaction-input";
+import { monthLabel } from "@/lib/financas/period";
+import { MAX_AMOUNT, UUID_RE, validDate, validateManualTransaction } from "@/lib/financas/transaction-input";
+import {
+  endDateFor,
+  KIND_LABEL,
+  STATUS_LABEL,
+  validateAppointmentInput,
+  validateCardInput,
+  validateExamInput,
+  validateMedicationInput,
+  validateProcedureInput,
+  validateVaccineInput,
+} from "@/lib/saude/input";
 import {
   validateChoreInput,
   validateDocumentInput,
@@ -33,11 +47,21 @@ import { matchByName, normalizeName } from "./tool-args";
 
 export const ALTERAR_ACOES = ["criar", "editar", "apagar", "concluir", "acrescentar"] as const;
 export type AlterarAcao = (typeof ALTERAR_ACOES)[number];
-export type AlterarAba = "casa" | "pet" | "igreja";
+export type AlterarAba = "casa" | "pet" | "igreja" | "saude" | "agenda" | "financas";
 
 export const CASA_ALTERAR = ["tarefas", "compras", "manutencao", "documentos", "cardapio", "prestadores"] as const;
 export const PET_ALTERAR = ["saude", "veterinario", "cuidados", "peso", "racao"] as const;
 export const IGREJA_ALTERAR = ["palavras", "promessas", "oracoes", "propositos", "carisma"] as const;
+export const SAUDE_ALTERAR = ["consultas", "exames", "vacinas", "procedimentos", "medicamentos", "carteirinhas"] as const;
+export const AGENDA_ALTERAR = ["eventos"] as const;
+export const FINANCAS_ALTERAR = ["contas_fixas", "contas_avulsas", "metas", "orcamento", "lancamentos"] as const;
+export const ABAS_ALTERAR = ["casa", "pet", "igreja", "saude", "agenda", "financas"] as const;
+
+/** Origens de lançamento que o Oli pode editar/apagar (as telas as editam). Open Finance e qualquer origem nova ficam de fora. */
+export const ORIGENS_EDITAVEIS = ["manual", "ofx", "csv", "documento"] as const;
+export const OPEN_FINANCE_RECUSA = "Esse lançamento veio do Open Finance (banco): o Oli não edita nem apaga lançamento do banco. Se precisar, faça pela tela de Finanças.";
+export const ORIGEM_DESCONHECIDA = "Não consegui confirmar a origem desse lançamento, então o Oli não altera nem apaga. Use a tela de Finanças.";
+const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 /** Tamanho máximo de um texto vindo do modelo (o validador da tela aplica o limite exato de cada campo). */
 export const MAX_ARG_TEXT = 10_000;
@@ -48,8 +72,43 @@ export const MAX_FRASE = 2000;
 export type Raw = Record<string, string | string[]>;
 export type Row = Record<string, unknown>;
 
-type Kind = "texto" | "data" | "dinheiro" | "decimal" | "inteiro" | "opcao" | "dias" | "pessoas" | "linhas" | "pet" | "sim_nao";
+type Kind =
+  | "texto"
+  | "data"
+  | "dinheiro"
+  | "decimal"
+  | "inteiro"
+  | "opcao"
+  | "dias"
+  | "pessoas"
+  | "linhas"
+  | "pet"
+  | "sim_nao"
+  | "pessoa1"
+  | "datahora"
+  | "marca"
+  | "horas"
+  | "conta"
+  | "categoria"
+  | "agenda";
 type Campo = { arg: string; key: string; label: string; kind: Kind; opcoes?: Record<string, string> };
+
+type TxRef = { id: string; date: string; amount: number; description: string };
+type TxUses = { fixed: { bill_id: string; month: string }[]; oneOff: { id: string }[] };
+
+/** Dados lidos do banco pelo servidor (sessão/RLS) que as regras puras precisam; ausente = não deu para conferir. */
+export type AlterarExtra = {
+  /** Agenda: o evento é de uma agenda minha e gravável? */
+  evento?: { editavel: boolean; dono: string };
+  /** Finanças, "marcar paga"/"desfazer": estado atual do pagamento e do lançamento escolhido. */
+  pag?: {
+    /** Conta fixa: mês consultado (AAAA-MM); avulsa: null. */
+    mes: string | null;
+    pagamento: { id: string; auto: boolean; paid_on: string; amount: number } | null;
+    tx: TxRef | null;
+    usos: TxUses;
+  };
+};
 
 export type AlterarLookup = {
   uid: string;
@@ -57,6 +116,12 @@ export type AlterarLookup = {
   members: { id: string; name: string; user_id: string | null }[];
   pets: { id: string; name: string }[];
   today: string;
+  /** Finanças: contas bancárias ativas e categorias da família. */
+  accounts?: { id: string; name: string }[];
+  categories?: { id: string; name: string; kind: string }[];
+  /** Agenda: agendas minhas onde posso gravar. */
+  calendars?: { id: string; summary: string; primary: boolean }[];
+  extra?: AlterarExtra;
 };
 
 type Check = { ok: true } | { ok: false; erro: string };
@@ -74,19 +139,27 @@ export type Spec = {
   rowToRaw: (row: Row) => Raw;
   defaults?: (lk: AlterarLookup) => Raw;
   validate: (raw: Raw, lk: AlterarLookup) => Check;
-  titulo: (raw: Raw) => string;
+  titulo: (raw: Raw, lk?: AlterarLookup) => string;
   /** Campo do formulário que recebe a frase em "acrescentar" (o texto atual é mantido). */
   acrescentar?: string;
   /** Igreja: só o dono altera ou apaga (item compartilhado pelo cônjuge não). */
   dono?: boolean;
   /** Args que não mudam na edição (a tela não permite). */
   fixos?: string[];
-  /** Filtro da linha (palavra x promessa na mesma tabela). */
-  rowOk?: (row: Row) => string | null;
+  /** Filtro da linha (palavra x promessa na mesma tabela; origem do lançamento; dono do evento). */
+  rowOk?: (row: Row, lk: AlterarLookup) => string | null;
+  /** O item não tem id próprio na conversa (orçamento): é achado pela categoria; criar/editar/apagar sem id. */
+  semId?: boolean;
+  /** Acerta valores derivados do raw (orçamento: mês só vale com escopo "mes"). Roda depois dos padrões/linha e depois dos args. */
+  ajustar?: (raw: Raw, lk: AlterarLookup) => void;
+  /** Chaves que não entram no painel (ex.: o mês de um orçamento de todos os meses). */
+  ocultar?: (raw: Raw) => string[];
+  /** Formulário da tela quando as chaves do raw não são as dos <input name> (evento). */
+  formEntries?: (raw: Raw) => [string, string][];
   /** "concluir": o "Feita"/"Comprado" da tela. Campos próprios (data, custo...) e o painel a partir da linha atual. */
   concluir?: {
     campos: Campo[];
-    plan: (row: Row, raw: Raw, lk: AlterarLookup) => { ok: true; campos: AlteracaoCampo[]; raw: Raw } | { ok: false; erro: string };
+    plan: (row: Row, raw: Raw, lk: AlterarLookup) => { ok: true; campos: AlteracaoCampo[]; raw: Raw; aviso?: string | null } | { ok: false; erro: string };
   };
 };
 
@@ -163,6 +236,30 @@ function toForm(c: Campo, v: unknown, lk: AlterarLookup): { ok: true; value: str
       }
       return { ok: true, value: ids };
     }
+    case "marca":
+      if (typeof v === "boolean") return { ok: true, value: v ? "on" : "" };
+      if (typeof v === "string" && /^(true|false|sim|nao|não)$/i.test(v.trim())) return { ok: true, value: /^(true|sim)$/i.test(v.trim()) ? "on" : "" };
+      return bad;
+    case "datahora":
+      return typeof v === "string" ? { ok: true, value: v.trim() } : bad;
+    case "horas":
+      return { ok: true, value: listOf(v).map((x) => s(x).trim()).filter(Boolean) };
+    case "pessoa1": {
+      if (typeof v !== "string") return bad;
+      const m = EU.test(v.trim()) ? lk.me : matchByName(lk.members, v);
+      if (!m) return { ok: false, erro: `Pessoa não encontrada ou ambígua. Opções: ${lk.members.map((x) => x.name).join(", ")}.` };
+      return { ok: true, value: m.id };
+    }
+    case "conta":
+    case "categoria":
+    case "agenda": {
+      if (typeof v !== "string") return bad;
+      const list =
+        c.kind === "conta" ? (lk.accounts ?? []) : c.kind === "categoria" ? (lk.categories ?? []) : (lk.calendars ?? []).map((x) => ({ id: x.id, name: x.summary }));
+      const m = matchByName(list, v);
+      if (!m) return { ok: false, erro: `${c.label} não encontrada(o) ou ambígua(o). Opções: ${list.map((x) => x.name).join(", ") || "nenhuma"}.` };
+      return { ok: true, value: m.id };
+    }
     case "pet": {
       if (typeof v !== "string") return bad;
       const p = matchByName(lk.pets, v);
@@ -175,8 +272,24 @@ function toForm(c: Campo, v: unknown, lk: AlterarLookup): { ok: true; value: str
 /** Valor do formulário → texto do painel (sempre texto simples; o React escapa). */
 function show(c: Campo, raw: Raw, lk: AlterarLookup): string | null {
   const v = raw[c.key];
+  // Caixa de marcar: "" (desmarcada) só aparece se o campo existe no formulário (edição); criar sem o campo não mostra.
+  if (c.kind === "marca") return v === undefined ? null : v === "on" ? "Sim" : "Não";
   if (v === undefined || v === "" || (Array.isArray(v) && v.length === 0)) return null;
   switch (c.kind) {
+    case "datahora": {
+      const t = str(raw, c.key);
+      return t.length > 10 ? `${brDate(t.slice(0, 10))} ${t.slice(11)}` : /^\d{4}-\d{2}-\d{2}$/.test(t) ? brDate(t) : t;
+    }
+    case "horas":
+      return (Array.isArray(v) ? v : [v]).join(", ");
+    case "pessoa1":
+      return lk.members.find((m) => m.id === v)?.name ?? "alguém que saiu da família";
+    case "conta":
+      return lk.accounts?.find((x) => x.id === v)?.name ?? "Conta";
+    case "categoria":
+      return lk.categories?.find((x) => x.id === v)?.name ?? "Categoria";
+    case "agenda":
+      return lk.calendars?.find((x) => x.id === v)?.summary ?? "Agenda";
     case "data":
       return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? brDate(v) : str(raw, c.key);
     case "dinheiro": {
@@ -241,6 +354,199 @@ function doneWithNext(
       raw: { ...r, done_on: v.value.done_on, ...extra(row) },
     };
   };
+}
+
+
+/* ---------- Saúde, Agenda e Finanças (etapa 3): ajudantes ---------- */
+
+const PESSOA: Campo = { arg: "pessoa", key: "member_id", label: "Pessoa", kind: "pessoa1" };
+const DINHEIRO = (arg: string, key: string, label: string): Campo => ({ arg, key, label, kind: "dinheiro" });
+const money = (v: unknown) => (v === null || v === undefined || v === "" ? "" : Number(v).toFixed(2).replace(".", ","));
+/** Com uma só pessoa na família, é ela; com mais de uma, o Oli precisa perguntar (nada de chutar). */
+const soUm = (lk: AlterarLookup): Raw => (lk.members.length === 1 ? { member_id: lk.members[0].id } : {});
+
+function saudeValidate(raw: Raw, lk: AlterarLookup, fn: (raw: Record<string, unknown>, memberIds: string[]) => { ok: boolean; erro?: string }): Check {
+  if (!str(raw, "member_id")) return { ok: false, erro: `Pergunte para quem é. Opções: ${lk.members.map((m) => m.name).join(", ")}.` };
+  return okv(fn(raw, lk.members.map((m) => m.id)));
+}
+
+/** Mesmas regras de saveBill (planning-actions.ts); o Confirmar roda a action, que valida de novo. */
+function validarContaFixa(raw: Raw, lk: AlterarLookup): Check {
+  const name = str(raw, "name").trim();
+  const amount = parseBRL(str(raw, "amount"));
+  const dueDay = Number(str(raw, "due_day"));
+  if (!name || name.length > 60) return { ok: false, erro: "Dê um nome à conta (até 60 letras)." };
+  if (amount === null || amount <= 0 || amount > MAX_AMOUNT) return { ok: false, erro: "Valor inválido." };
+  if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) return { ok: false, erro: "Dia de vencimento entre 1 e 31." };
+  if (str(raw, "account_id") && !lk.accounts?.some((a) => a.id === str(raw, "account_id"))) return { ok: false, erro: "Conta bancária não encontrada." };
+  return { ok: true };
+}
+
+/** Mesmas regras de saveGoal. */
+function validarMeta(raw: Raw, lk: AlterarLookup): Check {
+  const name = str(raw, "name").trim();
+  const target = parseBRL(str(raw, "target"));
+  const date = str(raw, "target_date");
+  if (!name || name.length > 60) return { ok: false, erro: "Dê um nome à meta (até 60 letras)." };
+  if (target === null || target <= 0 || target > 100_000_000) return { ok: false, erro: "Valor da meta inválido." };
+  if (date && !validDate(date)) return { ok: false, erro: "Data inválida." };
+  if (!str(raw, "account_id")) return { ok: false, erro: `Pergunte em qual conta o dinheiro da meta fica guardado. Opções: ${(lk.accounts ?? []).map((a) => a.name).join(", ")}.` };
+  return { ok: true };
+}
+
+/** Mesmas regras de saveBudget: valor 0 a 10 milhões, só categoria de despesa, mês AAAA-MM. */
+function validarOrcamento(raw: Raw, lk: AlterarLookup): Check {
+  const cat = lk.categories?.find((c) => c.id === str(raw, "category_id"));
+  if (!cat) return { ok: false, erro: "Categoria inválida." };
+  if (cat.kind !== "despesa") return { ok: false, erro: "Orçamento só vale para categorias de despesa." };
+  if (!MONTH_RE.test(str(raw, "month"))) return { ok: false, erro: "Mês inválido. Use AAAA-MM." };
+  const amount = parseBRL(str(raw, "amount"));
+  if (amount === null || amount < 0 || amount > MAX_AMOUNT) return { ok: false, erro: "Valor inválido." };
+  return { ok: true };
+}
+
+/** validateManualTransaction (a mesma da tela e do criar_lancamento) + a regra categoria x direção do formulário. */
+function validarLancamento(raw: Raw, lk: AlterarLookup): Check {
+  if (!str(raw, "account_id")) return { ok: false, erro: `Pergunte em qual conta é. Opções: ${(lk.accounts ?? []).map((a) => a.name).join(", ")}.` };
+  if (!lk.accounts?.some((a) => a.id === str(raw, "account_id"))) return { ok: false, erro: "Conta não encontrada." };
+  const notes = str(raw, "notes");
+  if (notes.length > 500) return { ok: false, erro: "Observações muito longas (máximo 500)." };
+  // O sinal vem só do tipo (entrada/saída), como no formulário: valor negativo é ambíguo e não é convertido.
+  const valorBruto = parseBRL(str(raw, "amount"));
+  if (valorBruto !== null && valorBruto < 0) return { ok: false, erro: "Valor inválido." };
+  const v = validateManualTransaction({
+    accountId: str(raw, "account_id"),
+    description: str(raw, "description"),
+    value: parseBRL(str(raw, "amount")),
+    date: str(raw, "date"),
+    direction: str(raw, "direction"),
+    categoryId: str(raw, "category_id"),
+    memberId: str(raw, "member_id"),
+    notes,
+  });
+  if ("error" in v) return { ok: false, erro: v.error ?? "Dados inválidos." };
+  const catId = str(raw, "category_id");
+  if (catId) {
+    const cat = lk.categories?.find((c) => c.id === catId);
+    if (!cat) return { ok: false, erro: "Categoria não encontrada." };
+    const entrada = str(raw, "direction") === "entrada";
+    if (cat.kind === "receita" && !entrada) return { ok: false, erro: `A categoria ${cat.name} é de receita: o lançamento tem que ser uma Entrada.` };
+    if (cat.kind === "despesa" && entrada) return { ok: false, erro: `A categoria ${cat.name} é de despesa: o lançamento tem que ser uma Saída.` };
+  }
+  return { ok: true };
+}
+
+const CONFERIR_FALHOU = "Não consegui conferir o pagamento agora. Nada foi alterado: tente de novo.";
+
+/**
+ * "Marcar paga" / "desfazer pagamento" de conta fixa (um mês) ou avulsa. O estado atual (pagamento, lançamento
+ * escolhido e onde ele já está ligado) vem do servidor em lk.extra.pag; sem ele, recusa.
+ * Um lançamento não paga conta fixa e avulsa ao mesmo tempo (txPayConflict, a regra da tela).
+ */
+function planPagamento(tipo: "fixa" | "avulsa", row: Row, raw: Raw, lk: AlterarLookup) {
+  const erro = (e: string) => ({ ok: false as const, erro: e });
+  const nome = s(row.name);
+  const pag = lk.extra?.pag;
+  const desfazer = raw.pago === "false";
+  let mes: string | null = null;
+  if (tipo === "fixa") {
+    mes = str(raw, "month") || lk.today.slice(0, 7);
+    if (!MONTH_RE.test(mes)) return erro("Mês inválido. Use AAAA-MM.");
+  }
+  if (!pag || pag.mes !== mes) return erro(CONFERIR_FALHOU);
+  const quando = mes ? ` em ${monthLabel(mes)}` : "";
+
+  const atual = tipo === "fixa" ? pag.pagamento : row.paid_on ? { id: s(row.id), auto: row.paid_auto === true, paid_on: s(row.paid_on), amount: Number(row.amount) } : null;
+  if (desfazer) {
+    if (!atual) return erro(`${nome} não tem pagamento registrado${quando}.`);
+    const campos: AlteracaoCampo[] = [
+      ...(mes ? [{ rotulo: "Mês", antes: null, depois: monthLabel(mes) }] : []),
+      { rotulo: "Situação", antes: "Paga", depois: "Em aberto" },
+      { rotulo: "Pagamento desfeito", antes: null, depois: `${formatBRL(atual.amount)} em ${brDate(atual.paid_on)}` },
+    ];
+    return {
+      ok: true as const,
+      campos,
+      raw: { desfazer: "true", id: atual.id, month: mes ?? "", auto: atual.auto ? "true" : "false" } as Raw,
+      aviso: desfazerAviso(nome, mes ? monthLabel(mes) : null, atual.auto),
+    };
+  }
+  if (atual) return erro(`${nome} já está paga${quando}. Para trocar, desfaça o pagamento antes.`);
+
+  const txId = str(raw, "transaction_id");
+  let tx: TxRef | null = null;
+  if (txId) {
+    if (!UUID_RE.test(txId)) return erro("Lançamento inválido: use o id que veio da consulta.");
+    tx = pag.tx;
+    if (!tx || tx.id !== txId.toLowerCase()) return erro("Lançamento não encontrado nesta família.");
+    if (tx.amount >= 0) return erro("Escolha um lançamento de saída desta família.");
+    const conflito = txPayConflict(tipo === "fixa" ? { kind: "fixa", billId: s(row.id), month: mes! } : { kind: "avulsa", id: s(row.id) }, pag.usos);
+    if (conflito) return erro(conflito);
+  }
+  const pagoEm = str(raw, "paid_on") || (tx ? tx.date : lk.today);
+  const valor = str(raw, "amount") || money(row.amount);
+  if (!tx) {
+    if (!validDate(pagoEm)) return erro("Data do pagamento inválida.");
+    if (tipo === "fixa") {
+      const v = parseBRL(valor);
+      if (v === null || v <= 0 || v > MAX_AMOUNT) return erro("Valor pago inválido.");
+    }
+  }
+  const campos: AlteracaoCampo[] = [
+    ...(mes ? [{ rotulo: "Mês", antes: null, depois: monthLabel(mes) }] : []),
+    { rotulo: "Situação", antes: "Em aberto", depois: "Paga" },
+    tx
+      ? { rotulo: "Lançamento", antes: null, depois: `${tx.description} · ${formatBRL(Math.abs(tx.amount))} · ${brDate(tx.date)}` }
+      : { rotulo: "Pago em", antes: null, depois: brDate(pagoEm) },
+    ...(!tx && tipo === "fixa" ? [{ rotulo: "Valor pago", antes: null, depois: formatBRL(parseBRL(valor)!) }] : []),
+  ];
+  return {
+    ok: true as const,
+    campos,
+    raw: { desfazer: "false", id: s(row.id), month: mes ?? "", transaction_id: tx ? tx.id : "sem", paid_on: pagoEm, amount: valor } as Raw,
+    aviso: null,
+  };
+}
+
+/** Aviso (alerta vermelho) de desfazer pagamento. */
+export function desfazerAviso(nome: string, mesRotulo: string | null, auto: boolean): string {
+  const base = `Desfazer o pagamento de ${nome}${mesRotulo ? ` em ${mesRotulo}` : ""}: a conta volta a ficar em aberto.`;
+  const auto2 = auto ? " Foi uma baixa automática pelo extrato: o app guarda a recusa e não refaz essa baixa sozinho." : "";
+  return `${base}${auto2} O lançamento do extrato, se houver, não é apagado.`;
+}
+
+/** Aviso (alerta vermelho) de apagar lançamento: efeito no saldo, nos relatórios e nas contas que ele pagou. */
+export function lancamentoApagarAviso(l: { valor: number; conta: string; data: string }, usos: { fixas: number; avulsas: number }): string {
+  const mes = l.data.length >= 7 ? monthLabel(l.data.slice(0, 7)) : l.data;
+  const base = `Apaga o lançamento de ${formatBRL(Math.abs(l.valor))} (${brDate(l.data)}): o saldo de ${l.conta} e os relatórios de ${mes} passam a ser calculados sem ele.`;
+  const n = usos.fixas + usos.avulsas;
+  if (n === 0) return base;
+  const quais = [usos.fixas ? `${usos.fixas} conta${usos.fixas > 1 ? "s" : ""} fixa${usos.fixas > 1 ? "s" : ""}` : "", usos.avulsas ? `${usos.avulsas} conta${usos.avulsas > 1 ? "s" : ""} avulsa${usos.avulsas > 1 ? "s" : ""}` : ""].filter(Boolean).join(" e ");
+  return `${base} Ele deu baixa em ${quais}: ${n > 1 ? "continuam marcadas" : "continua marcada"} como ${n > 1 ? "pagas" : "paga"}, mas sem ligação com o extrato.`;
+}
+
+/** Aviso de apagar conta fixa com pagamentos registrados (somem junto; o extrato não é tocado). */
+export function contaFixaApagarAviso(pagamentos: number): string | null {
+  return pagamentos > 0 ? `${pagamentos === 1 ? "O pagamento registrado" : `Os ${pagamentos} pagamentos registrados`} desta conta também ${pagamentos === 1 ? "é apagado" : "são apagados"}. Os lançamentos do extrato ficam.` : null;
+}
+
+/** Aviso de apagar evento: some do Google Calendar de verdade (não só do app). */
+export function eventoApagarAviso(agenda: string | null, consultasLigadas: number): string {
+  const onde = agenda ? `da agenda “${agenda}” do Google Calendar` : "do Google Calendar";
+  const consulta = consultasLigadas > 0 ? ` Ele é o evento de ${consultasLigadas === 1 ? "uma consulta" : `${consultasLigadas} consultas`} de Saúde: ${consultasLigadas === 1 ? "a consulta continua" : "as consultas continuam"} em Saúde, sem evento.` : "";
+  return `Este evento será apagado de verdade ${onde}: ele some do Google, não só do app.${consulta}`;
+}
+
+/**
+ * Consulta de Saúde espelhada na Agenda (agenda_event_id): apagar ou cancelar tira o evento do Google Calendar;
+ * editar (ainda agendada) atualiza o evento. Sem evento ligado ou com a Agenda desligada, sem aviso.
+ */
+export function consultaAgendaAviso(a: { acao: AlterarAcao; temEvento: boolean; agendaLigada: boolean; statusAntes: string; statusDepois: string }): string | null {
+  if (!a.temEvento || !a.agendaLigada) return null;
+  const sai = a.acao === "apagar" || (a.statusDepois === "cancelada" && a.statusAntes !== "cancelada");
+  if (sai) return "Esta consulta está na Agenda: o evento dela também será apagado do Google Calendar.";
+  if ((a.acao === "editar" || a.acao === "acrescentar") && a.statusDepois === "agendada") return "Esta consulta está na Agenda: o evento dela no Google Calendar também será atualizado.";
+  return null;
 }
 
 const SPECS: Record<AlterarAba, Record<string, Spec>> = {
@@ -635,13 +941,392 @@ const SPECS: Record<AlterarAba, Record<string, Spec>> = {
       dono: true,
     },
   },
+  saude: {
+    consultas: {
+      aba: "saude",
+      secao: "consultas",
+      rotulo: "Consulta",
+      table: "health_appointments",
+      cols: "id, member_id, kind, specialty, doctor, place, starts_at, status, notes, return_of, agenda_event_id",
+      acoes: ["criar", "editar", "apagar", "concluir", "acrescentar"],
+      campos: [
+        PESSOA,
+        { arg: "tipo", key: "kind", label: "Tipo", kind: "opcao", opcoes: KIND_LABEL },
+        TEXTO("especialidade", "specialty", "Especialidade"),
+        TEXTO("medico", "doctor", "Médico"),
+        TEXTO("local", "place", "Local"),
+        { arg: "inicio", key: "starts_at", label: "Data e hora", kind: "datahora" },
+        { arg: "situacao", key: "status", label: "Situação", kind: "opcao", opcoes: STATUS_LABEL },
+        TEXTO("notas", "notes", "Observações"),
+      ],
+      rowToRaw: (r) => ({
+        member_id: s(r.member_id),
+        kind: s(r.kind),
+        specialty: s(r.specialty),
+        doctor: s(r.doctor),
+        place: s(r.place),
+        starts_at: typeof r.starts_at === "string" ? toSpLocal(r.starts_at) : "",
+        status: s(r.status),
+        notes: s(r.notes),
+        return_of: s(r.return_of),
+      }),
+      defaults: (lk) => ({ kind: "consulta", status: "agendada", ...soUm(lk) }),
+      validate: (raw, lk) => saudeValidate(raw, lk, validateAppointmentInput),
+      titulo: (r) => [KIND_LABEL[str(r, "kind") as keyof typeof KIND_LABEL] ?? "Consulta", str(r, "specialty")].filter(Boolean).join(" · "),
+      acrescentar: "notes",
+      concluir: {
+        // "Marcar realizada/cancelada" da tela (setAppointmentStatus): só a situação muda.
+        campos: [{ arg: "situacao", key: "status", label: "Situação", kind: "opcao", opcoes: STATUS_LABEL }],
+        plan: (row, raw) => {
+          const alvo = str(raw, "status") || "realizada";
+          const atual = s(row.status);
+          if (alvo === atual) return { ok: false, erro: `Essa consulta já está ${STATUS_LABEL[atual as keyof typeof STATUS_LABEL]?.toLowerCase() ?? atual}.` };
+          return {
+            ok: true,
+            campos: [{ rotulo: "Situação", antes: STATUS_LABEL[atual as keyof typeof STATUS_LABEL] ?? atual, depois: STATUS_LABEL[alvo as keyof typeof STATUS_LABEL] ?? alvo }],
+            raw: { status: alvo },
+          };
+        },
+      },
+    },
+    exames: {
+      aba: "saude",
+      secao: "exames",
+      rotulo: "Exame",
+      table: "health_exams",
+      cols: "id, member_id, name, exam_date, lab, requested_by, result_summary, file_path",
+      acoes: ["criar", "editar", "apagar", "acrescentar"],
+      campos: [PESSOA, TEXTO("nome", "name", "Exame"), DATA("data", "exam_date", "Data"), TEXTO("laboratorio", "lab", "Laboratório"), TEXTO("pedido_por", "requested_by", "Pedido por"), TEXTO("resultado", "result_summary", "Resultado anotado")],
+      rowToRaw: (r) => ({ member_id: s(r.member_id), name: s(r.name), exam_date: s(r.exam_date), lab: s(r.lab), requested_by: s(r.requested_by), result_summary: s(r.result_summary) }),
+      defaults: soUm,
+      validate: (raw, lk) => saudeValidate(raw, lk, validateExamInput),
+      titulo: (r) => str(r, "name"),
+      acrescentar: "result_summary",
+    },
+    vacinas: {
+      aba: "saude",
+      secao: "vacinas",
+      rotulo: "Vacina",
+      table: "health_vaccines",
+      cols: "id, member_id, name, dose_label, applied_on, next_dose_on, place, lot, notes, file_path",
+      acoes: ["criar", "editar", "apagar", "acrescentar"],
+      campos: [
+        PESSOA,
+        TEXTO("nome", "name", "Vacina"),
+        TEXTO("dose", "dose_label", "Dose"),
+        DATA("data", "applied_on", "Aplicada em"),
+        DATA("proxima", "next_dose_on", "Próxima dose"),
+        TEXTO("local", "place", "Local"),
+        TEXTO("lote", "lot", "Lote"),
+        TEXTO("notas", "notes", "Observações"),
+      ],
+      rowToRaw: (r) => ({ member_id: s(r.member_id), name: s(r.name), dose_label: s(r.dose_label), applied_on: s(r.applied_on), next_dose_on: s(r.next_dose_on), place: s(r.place), lot: s(r.lot), notes: s(r.notes) }),
+      defaults: soUm,
+      validate: (raw, lk) => saudeValidate(raw, lk, validateVaccineInput),
+      titulo: (r) => str(r, "name"),
+      acrescentar: "notes",
+    },
+    procedimentos: {
+      aba: "saude",
+      secao: "procedimentos",
+      rotulo: "Procedimento",
+      table: "health_procedures",
+      cols: "id, member_id, name, performed_on, place, doctor, notes, file_path",
+      acoes: ["criar", "editar", "apagar", "acrescentar"],
+      campos: [PESSOA, TEXTO("nome", "name", "Procedimento"), DATA("data", "performed_on", "Data"), TEXTO("local", "place", "Local"), TEXTO("medico", "doctor", "Médico"), TEXTO("notas", "notes", "Observações")],
+      rowToRaw: (r) => ({ member_id: s(r.member_id), name: s(r.name), performed_on: s(r.performed_on), place: s(r.place), doctor: s(r.doctor), notes: s(r.notes) }),
+      defaults: soUm,
+      validate: (raw, lk) => saudeValidate(raw, lk, validateProcedureInput),
+      titulo: (r) => str(r, "name"),
+      acrescentar: "notes",
+    },
+    medicamentos: {
+      aba: "saude",
+      secao: "medicamentos",
+      rotulo: "Medicamento",
+      table: "health_medications",
+      cols: "id, member_id, name, dosage, frequency, started_on, ended_on, active, prescribed_by, notes, reminder_times",
+      acoes: ["criar", "editar", "apagar", "concluir", "acrescentar"],
+      campos: [
+        PESSOA,
+        TEXTO("nome", "name", "Medicamento"),
+        TEXTO("dosagem", "dosage", "Dosagem"),
+        TEXTO("frequencia", "frequency", "Frequência"),
+        DATA("inicio", "started_on", "Início"),
+        DATA("fim", "ended_on", "Término"),
+        TEXTO("prescrito_por", "prescribed_by", "Prescrito por"),
+        { arg: "horarios", key: "reminder_times", label: "Horários dos avisos", kind: "horas" },
+        TEXTO("notas", "notes", "Observações"),
+      ],
+      rowToRaw: (r) => ({
+        member_id: s(r.member_id),
+        name: s(r.name),
+        dosage: s(r.dosage),
+        frequency: s(r.frequency),
+        started_on: s(r.started_on),
+        ended_on: s(r.ended_on),
+        prescribed_by: s(r.prescribed_by),
+        notes: s(r.notes),
+        reminder_times: Array.isArray(r.reminder_times) ? r.reminder_times.map((t) => String(t).slice(0, 5)) : [],
+      }),
+      defaults: soUm,
+      validate: (raw, lk) => saudeValidate(raw, lk, validateMedicationInput),
+      titulo: (r) => str(r, "name"),
+      acrescentar: "notes",
+      concluir: {
+        // Encerrar (ativo false) ou voltar a usar (ativo true): setMedicationActive, como o botão da tela.
+        campos: [{ arg: "ativo", key: "active", label: "Em uso", kind: "sim_nao" }],
+        plan: (row, raw, lk) => {
+          if (raw.active !== "true" && raw.active !== "false") return { ok: false, erro: "Diga se é para encerrar (ativo false) ou voltar a usar (ativo true)." };
+          const alvo = raw.active === "true";
+          if ((row.active === true) === alvo) return { ok: false, erro: alvo ? "Esse medicamento já está em uso." : "Esse medicamento já está encerrado." };
+          const fim = alvo ? null : endDateFor(typeof row.started_on === "string" ? row.started_on : null, lk.today);
+          const campos: AlteracaoCampo[] = [{ rotulo: "Situação", antes: alvo ? "Encerrado" : "Em uso", depois: alvo ? "Em uso" : "Encerrado" }];
+          campos.push({ rotulo: "Término", antes: typeof row.ended_on === "string" ? brDate(row.ended_on) : null, depois: fim ? brDate(fim) : "removido" });
+          return { ok: true, campos, raw: { active: alvo ? "true" : "false" } };
+        },
+      },
+    },
+    carteirinhas: {
+      aba: "saude",
+      secao: "carteirinhas",
+      rotulo: "Carteirinha",
+      table: "health_insurance_cards",
+      cols: "id, member_id, operator, card_number, plan_name, valid_until, notes, file_path",
+      // Criar exige o PDF/foto da carteirinha (a tela pede o arquivo): o Oli só edita e apaga.
+      acoes: ["editar", "apagar", "acrescentar"],
+      campos: [PESSOA, TEXTO("operadora", "operator", "Operadora"), TEXTO("numero", "card_number", "Número"), TEXTO("plano", "plan_name", "Plano"), DATA("validade", "valid_until", "Validade"), TEXTO("notas", "notes", "Observações")],
+      rowToRaw: (r) => ({ member_id: s(r.member_id), operator: s(r.operator), card_number: s(r.card_number), plan_name: s(r.plan_name), valid_until: s(r.valid_until), notes: s(r.notes) }),
+      validate: (raw, lk) => saudeValidate(raw, lk, validateCardInput),
+      titulo: (r) => str(r, "operator"),
+      acrescentar: "notes",
+    },
+  },
+  agenda: {
+    eventos: {
+      aba: "agenda",
+      secao: "eventos",
+      rotulo: "Evento",
+      table: "cal_events",
+      cols: "id, calendar_ref, title, description, location, all_day, starts_at, ends_at",
+      acoes: ["criar", "editar", "apagar"],
+      campos: [
+        TEXTO("titulo", "title", "Título"),
+        { arg: "dia_inteiro", key: "all_day", label: "Dia inteiro", kind: "marca" },
+        { arg: "inicio", key: "start", label: "Início", kind: "datahora" },
+        { arg: "fim", key: "end", label: "Fim", kind: "datahora" },
+        TEXTO("local", "location", "Local"),
+        TEXTO("descricao", "description", "Descrição"),
+        { arg: "agenda", key: "calendar_id", label: "Agenda", kind: "agenda" },
+      ],
+      // Dia inteiro: início e fim são dias (fim inclusivo, como o formulário); senão, horário de São Paulo.
+      rowToRaw: (r) => {
+        const allDay = r.all_day === true;
+        const sMs = Date.parse(s(r.starts_at));
+        const eMs = Date.parse(s(r.ends_at));
+        const first = toSpDate(sMs);
+        return {
+          title: s(r.title),
+          all_day: on(allDay),
+          start: allDay ? first : toSpLocal(sMs),
+          end: allDay ? (eMs > sMs ? toSpDate(eMs - 1) : first) : toSpLocal(eMs),
+          location: s(r.location),
+          description: s(r.description),
+          calendar_id: s(r.calendar_ref),
+        };
+      },
+      defaults: (lk): Raw => {
+        const cals = lk.calendars ?? [];
+        const primarias = cals.filter((c) => c.primary);
+        const cal = primarias.length === 1 ? primarias[0] : cals.length === 1 ? cals[0] : null;
+        return cal ? { calendar_id: cal.id } : {};
+      },
+      validate: (raw, lk) => {
+        const cals = lk.calendars ?? [];
+        if (cals.length === 0) return { ok: false, erro: "Nenhuma agenda sua conectada. Conecte o Google na tela Agenda." };
+        if (!str(raw, "calendar_id")) return { ok: false, erro: `Pergunte em qual agenda criar. Opções: ${cals.map((c) => c.summary).join(", ")}.` };
+        if (!cals.some((c) => c.id === str(raw, "calendar_id"))) return { ok: false, erro: "Agenda não encontrada." };
+        const v = validateEventInput({ title: str(raw, "title"), allDay: raw.all_day === "on", start: str(raw, "start"), end: str(raw, "end"), location: str(raw, "location"), description: str(raw, "description") });
+        return v.ok ? { ok: true } : { ok: false, erro: v.erro };
+      },
+      titulo: (r) => str(r, "title"),
+      // A agenda do evento não muda na edição (o Google não move o evento entre agendas aqui).
+      fixos: ["agenda"],
+      rowOk: (_row, lk) => {
+        const ev = lk.extra?.evento;
+        if (!ev) return "Não consegui conferir de quem é o evento. Nada foi alterado: tente de novo.";
+        return ev.editavel ? null : `Esse evento está na agenda de ${ev.dono}: só quem é dono da agenda pode alterar ou apagar.`;
+      },
+      formEntries: (raw) => {
+        const allDay = raw.all_day === "on";
+        const out: [string, string][] = [["title", str(raw, "title")]];
+        if (allDay) out.push(["all_day", "on"], ["start_date", str(raw, "start").slice(0, 10)], ["end_date", (str(raw, "end") || str(raw, "start")).slice(0, 10)]);
+        else out.push(["start", str(raw, "start")], ["end", str(raw, "end")]);
+        out.push(["location", str(raw, "location")], ["description", str(raw, "description")], ["calendar_id", str(raw, "calendar_id")]);
+        return out;
+      },
+    },
+  },
+  financas: {
+    contas_fixas: {
+      aba: "financas",
+      secao: "contas_fixas",
+      rotulo: "Conta fixa",
+      table: "fin_bills",
+      cols: "id, name, amount, due_day, category_id, account_id, active, is_home",
+      acoes: ["criar", "editar", "apagar", "concluir"],
+      campos: [
+        TEXTO("nome", "name", "Conta"),
+        DINHEIRO("valor", "amount", "Valor"),
+        { arg: "dia_vencimento", key: "due_day", label: "Dia do vencimento", kind: "inteiro" },
+        { arg: "categoria", key: "category_id", label: "Categoria", kind: "categoria" },
+        { arg: "conta", key: "account_id", label: "Conta bancária", kind: "conta" },
+        { arg: "inativa", key: "inactive", label: "Inativa", kind: "marca" },
+        { arg: "da_casa", key: "is_home", label: "Conta da casa", kind: "marca" },
+      ],
+      rowToRaw: (r) => ({
+        name: s(r.name),
+        amount: money(r.amount),
+        due_day: s(r.due_day),
+        category_id: s(r.category_id),
+        account_id: s(r.account_id),
+        inactive: on(r.active === false),
+        is_home: on(r.is_home),
+      }),
+      validate: (raw, lk) => validarContaFixa(raw, lk),
+      titulo: (r) => str(r, "name"),
+      concluir: {
+        // "Marcar paga" (payBill) ou "desfazer pagamento" (undoPayment) de um mês, como a tela Contas fixas.
+        campos: [
+          { arg: "mes", key: "month", label: "Mês", kind: "texto" },
+          { arg: "pago", key: "pago", label: "Pago", kind: "sim_nao" },
+          { arg: "lancamento", key: "transaction_id", label: "Lançamento", kind: "texto" },
+          DATA("data", "paid_on", "Pago em"),
+          DINHEIRO("valor", "amount", "Valor pago"),
+        ],
+        plan: (row, raw, lk) => planPagamento("fixa", row, raw, lk),
+      },
+    },
+    contas_avulsas: {
+      aba: "financas",
+      secao: "contas_avulsas",
+      rotulo: "Conta avulsa",
+      table: "fin_one_off_bills",
+      cols: "id, name, amount, due_date, account_id, category_id, paid_on, transaction_id, paid_auto, is_home",
+      // A tela só edita avulsa existente (ela nasce da conferência do boleto/comprovante): o Oli não cria.
+      acoes: ["editar", "apagar", "concluir"],
+      campos: [
+        TEXTO("nome", "name", "Conta"),
+        DINHEIRO("valor", "amount", "Valor"),
+        DATA("vencimento", "due_date", "Vencimento"),
+        { arg: "categoria", key: "category_id", label: "Categoria", kind: "categoria" },
+        { arg: "conta", key: "account_id", label: "Conta bancária", kind: "conta" },
+        { arg: "da_casa", key: "is_home", label: "Conta da casa", kind: "marca" },
+      ],
+      rowToRaw: (r) => ({ name: s(r.name), amount: money(r.amount), due_date: s(r.due_date), category_id: s(r.category_id), account_id: s(r.account_id), is_home: on(r.is_home) }),
+      validate: (raw) => {
+        const v = validateOneOffInput({ name: str(raw, "name"), amount: str(raw, "amount"), dueDate: str(raw, "due_date") });
+        return v.ok ? { ok: true } : { ok: false, erro: v.erro };
+      },
+      titulo: (r) => str(r, "name"),
+      concluir: {
+        campos: [
+          { arg: "pago", key: "pago", label: "Pago", kind: "sim_nao" },
+          { arg: "lancamento", key: "transaction_id", label: "Lançamento", kind: "texto" },
+          DATA("data", "paid_on", "Pago em"),
+        ],
+        plan: (row, raw, lk) => planPagamento("avulsa", row, raw, lk),
+      },
+    },
+    metas: {
+      aba: "financas",
+      secao: "metas",
+      rotulo: "Meta",
+      table: "fin_goals",
+      cols: "id, name, target, account_id, target_date",
+      acoes: ["criar", "editar", "apagar"],
+      campos: [
+        TEXTO("nome", "name", "Meta"),
+        DINHEIRO("valor", "target", "Valor da meta"),
+        DATA("prazo", "target_date", "Prazo"),
+        { arg: "conta", key: "account_id", label: "Conta onde fica guardado", kind: "conta" },
+      ],
+      rowToRaw: (r) => ({ name: s(r.name), target: money(r.target), target_date: s(r.target_date), account_id: s(r.account_id) }),
+      defaults: (lk): Raw => (lk.accounts?.length === 1 ? { account_id: lk.accounts[0].id } : {}),
+      validate: (raw, lk) => validarMeta(raw, lk),
+      titulo: (r) => str(r, "name"),
+    },
+    orcamento: {
+      aba: "financas",
+      secao: "orcamento",
+      rotulo: "Orçamento",
+      // Sem id: o orçamento é da categoria (todos os meses ou só um mês). O servidor acha a linha pela categoria.
+      table: "fin_budgets",
+      cols: "id, category_id, month, amount",
+      acoes: ["criar", "editar", "apagar"],
+      semId: true,
+      campos: [
+        { arg: "categoria", key: "category_id", label: "Categoria", kind: "categoria" },
+        { arg: "escopo", key: "scope", label: "Vale para", kind: "opcao", opcoes: { todos: "Todos os meses", mes: "Só um mês" } },
+        { arg: "mes", key: "month", label: "Mês", kind: "texto" },
+        DINHEIRO("valor", "amount", "Valor"),
+      ],
+      rowToRaw: (r) => ({ category_id: s(r.category_id), scope: r.month ? "mes" : "todos", month: s(r.month), amount: money(r.amount) }),
+      defaults: (lk) => ({ scope: "todos", month: lk.today.slice(0, 7) }),
+      // A tela manda sempre um mês; para "todos os meses" ele é ignorado pela action (scope != mes).
+      ajustar: (raw, lk) => {
+        if (str(raw, "scope") !== "mes" || !str(raw, "month")) raw.month = lk.today.slice(0, 7);
+      },
+      ocultar: (raw) => (str(raw, "scope") === "mes" ? [] : ["month"]),
+      validate: (raw, lk) => validarOrcamento(raw, lk),
+      titulo: (r, lk) => lk?.categories?.find((c) => c.id === str(r, "category_id"))?.name ?? "Orçamento",
+      // Categoria, escopo e mês dizem QUAL orçamento (o servidor acha a linha por eles).
+    },
+    lancamentos: {
+      aba: "financas",
+      secao: "lancamentos",
+      rotulo: "Lançamento",
+      table: "fin_transactions",
+      cols: "id, account_id, date, description, amount, category_id, member_id, notes, source",
+      acoes: ["criar", "editar", "apagar", "acrescentar"],
+      campos: [
+        TEXTO("descricao", "description", "Descrição"),
+        DINHEIRO("valor", "amount", "Valor"),
+        { arg: "tipo", key: "direction", label: "Tipo", kind: "opcao", opcoes: { saida: "Saída", entrada: "Entrada" } },
+        DATA("data", "date", "Data"),
+        { arg: "conta", key: "account_id", label: "Conta", kind: "conta" },
+        { arg: "categoria", key: "category_id", label: "Categoria", kind: "categoria" },
+        TEXTO("notas", "notes", "Observações"),
+      ],
+      // Mesma regra da tela: valor positivo + Entrada/Saída; o sinal gravado vem da direção (validateManualTransaction).
+      rowToRaw: (r) => ({
+        description: s(r.description),
+        amount: money(Math.abs(Number(r.amount))),
+        direction: Number(r.amount) > 0 ? "entrada" : "saida",
+        date: s(r.date),
+        account_id: s(r.account_id),
+        category_id: s(r.category_id),
+        member_id: s(r.member_id),
+        notes: s(r.notes),
+      }),
+      defaults: (lk): Raw => ({ direction: "saida", date: lk.today, member_id: lk.me?.id ?? "", ...(lk.accounts?.length === 1 ? { account_id: lk.accounts[0].id } : {}) }),
+      validate: (raw, lk) => validarLancamento(raw, lk),
+      titulo: (r) => str(r, "description"),
+      acrescentar: "notes",
+      rowOk: (row) => {
+        const origem = row.source;
+        if (origem === "openfinance") return OPEN_FINANCE_RECUSA;
+        return (ORIGENS_EDITAVEIS as readonly unknown[]).includes(origem) ? null : ORIGEM_DESCONHECIDA;
+      },
+    },
+  },
 };
 
 export function specFor(aba: AlterarAba, secao: string): Spec | null {
   return SPECS[aba]?.[secao] ?? null;
 }
 
-export const SECOES_ALTERAR: Record<AlterarAba, readonly string[]> = { casa: CASA_ALTERAR, pet: PET_ALTERAR, igreja: IGREJA_ALTERAR };
+export const SECOES_ALTERAR: Record<AlterarAba, readonly string[]> = { casa: CASA_ALTERAR, pet: PET_ALTERAR, igreja: IGREJA_ALTERAR, saude: SAUDE_ALTERAR, agenda: AGENDA_ALTERAR, financas: FINANCAS_ALTERAR };
 
 /** Args aceitos por aba (para a declaração da ferramenta). */
 export function argsDaAba(aba: AlterarAba): string[] {
@@ -672,18 +1357,23 @@ function simpleValue(v: unknown): boolean {
 
 /** alterar_casa/alterar_pet/alterar_igreja: ação e seção conhecidas, id para o que mexe num item, só campos da seção. */
 export function parseAlterarArgs(aba: unknown, args: unknown): { ok: true; value: AlterarArgs } | { ok: false; erro: string } {
-  if (aba !== "casa" && aba !== "pet" && aba !== "igreja") return { ok: false, erro: "Aba inválida." };
+  if (typeof aba !== "string" || !(ABAS_ALTERAR as readonly string[]).includes(aba)) return { ok: false, erro: "Aba inválida." };
+  const abaOk = aba as AlterarAba;
   const a = args && typeof args === "object" && !Array.isArray(args) ? (args as Record<string, unknown>) : {};
   const acao = typeof a.acao === "string" ? normalizeName(a.acao) : "";
   if (!(ALTERAR_ACOES as readonly string[]).includes(acao)) return { ok: false, erro: `Ação inválida. Use: ${ALTERAR_ACOES.join(", ")}.` };
   const secaoRaw = typeof a.secao === "string" ? normalizeName(a.secao).replace(/[\s-]+/g, "_") : "";
-  const spec = specFor(aba, secaoRaw);
-  if (!spec) return { ok: false, erro: `Seção inválida. Use: ${SECOES_ALTERAR[aba].join(", ")}.` };
+  const spec = specFor(abaOk, secaoRaw);
+  if (!spec) return { ok: false, erro: `Seção inválida. Use: ${SECOES_ALTERAR[abaOk].join(", ")}.` };
   const act = acao as AlterarAcao;
   if (!spec.acoes.includes(act)) return { ok: false, erro: `Em ${spec.secao} dá para: ${spec.acoes.join(", ")}.` };
 
   let id: string | null = null;
-  if (act === "criar") {
+  if (spec.semId) {
+    // Orçamento: sem id; quem identifica é a categoria (e o escopo/mês).
+    if (present(a.id)) return { ok: false, erro: `${spec.rotulo} não usa id: diga a categoria.` };
+    if (!present(a.categoria)) return { ok: false, erro: "Diga a categoria do orçamento." };
+  } else if (act === "criar") {
     if (present(a.id)) return { ok: false, erro: "Para criar não use id." };
   } else {
     if (typeof a.id !== "string" || !UUID_RE.test(a.id.trim())) return { ok: false, erro: "Informe o id do item (use a consulta da aba para achar)." };
@@ -705,10 +1395,12 @@ export function parseAlterarArgs(aba: unknown, args: unknown): { ok: true; value
     if (!simpleValue(v)) return { ok: false, erro: `Campo ${k} inválido.` };
     valores[k] = v;
   }
-  if ((act === "apagar" || act === "acrescentar") && Object.keys(valores).length > 0)
+  if (spec.semId && act === "apagar" && "valor" in valores) return { ok: false, erro: "Para apagar o orçamento não mande valor." };
+  if (spec.semId && (act === "criar" || act === "editar") && !("valor" in valores)) return { ok: false, erro: "Diga o valor do orçamento." };
+  if (!spec.semId && (act === "apagar" || act === "acrescentar") && Object.keys(valores).length > 0)
     return { ok: false, erro: `Para ${act}, mande só o id${act === "acrescentar" ? " e a frase" : ""}.` };
   if (act === "editar" && Object.keys(valores).length === 0) return { ok: false, erro: "Diga o que mudar." };
-  return { ok: true, value: { aba, acao: act, secao: spec.secao, id, frase, valores } };
+  return { ok: true, value: { aba: abaOk, acao: act, secao: spec.secao, id, frase, valores } };
 }
 
 /** Forma plana dos args (vai no painel e volta no Confirmar, onde é validada de novo). */
@@ -751,21 +1443,24 @@ export const NAO_E_SEU = (nome: string) => `Esse item é de ${nome} (compartilha
 export function planAlteracao(a: AlterarArgs, row: Row | null, lk: AlterarLookup): PlanResult {
   const spec = specFor(a.aba, a.secao);
   if (!spec) return { ok: false, erro: "Seção inválida." };
+  if (a.acao === "criar" && spec.semId && row) return { ok: false, erro: `Já existe ${spec.rotulo.toLowerCase()} para essa categoria: use editar.` };
   if (a.acao !== "criar") {
-    if (!row) return { ok: false, erro: `${spec.rotulo} não encontrada(o).` };
-    const bad = spec.rowOk?.(row);
+    if (!row) return { ok: false, erro: `${spec.rotulo} não encontrada(o).${spec.semId ? " Para criar, use acao criar." : ""}` };
+    const bad = spec.rowOk?.(row, lk);
     if (bad) return { ok: false, erro: bad };
     if (spec.dono && !canEdit({ owner_id: s(row.owner_id), shared: row.shared === true }, lk.uid)) return { ok: false, erro: NAO_E_SEU(donoNome(row, lk)) };
   }
   const base: Raw = a.acao === "criar" ? (spec.defaults?.(lk) ?? {}) : spec.rowToRaw(row!);
   const raw: Raw = { ...base };
+  spec.ajustar?.(raw, lk);
+  const campoVisivel = (c: Campo) => !spec.ocultar?.(raw).includes(c.key);
   const preview = (campos: AlteracaoCampo[], anexo: AlteracaoPreview["anexo"] = null): AlteracaoPreview => ({
     aba: a.aba,
     secao: spec.secao,
     acao: a.acao,
     id: a.id,
     rotulo: spec.rotulo,
-    titulo: spec.titulo(raw) || spec.rotulo,
+    titulo: spec.titulo(raw, lk) || spec.rotulo,
     campos,
     anexo,
     aviso: null,
@@ -773,7 +1468,7 @@ export function planAlteracao(a: AlterarArgs, row: Row | null, lk: AlterarLookup
   });
 
   if (a.acao === "apagar") {
-    const campos = spec.campos.map((c) => ({ rotulo: c.label, antes: show(c, raw, lk), depois: null })).filter((c) => c.antes !== null);
+    const campos = spec.campos.filter(campoVisivel).map((c) => ({ rotulo: c.label, antes: show(c, raw, lk), depois: null })).filter((c) => c.antes !== null);
     return { ok: true, plan: { preview: preview(campos), raw, spec } };
   }
 
@@ -790,6 +1485,7 @@ export function planAlteracao(a: AlterarArgs, row: Row | null, lk: AlterarLookup
     if (!r.ok) return r;
     // raw = só os campos do "Feita" (a linha atual fica como está; a action da tela recalcula a próxima data).
     const p = preview(r.campos);
+    if (r.aviso) p.aviso = r.aviso;
     return { ok: true, plan: { preview: p, raw: r.raw, spec } };
   }
 
@@ -816,13 +1512,15 @@ export function planAlteracao(a: AlterarArgs, row: Row | null, lk: AlterarLookup
   if (spec.aba === "pet" && !raw.pet_id) {
     return { ok: false, erro: lk.pets.length ? `Pergunte de qual pet. Opções: ${lk.pets.map((x) => x.name).join(", ")}.` : "Nenhum pet cadastrado." };
   }
+  spec.ajustar?.(raw, lk);
   const v = spec.validate(raw, lk);
   if (!v.ok) return v;
   if (a.acao === "criar") {
-    const campos = spec.campos.map((c) => ({ rotulo: c.label, antes: null, depois: show(c, raw, lk) })).filter((c) => c.depois !== null);
+    const campos = spec.campos.filter(campoVisivel).map((c) => ({ rotulo: c.label, antes: null, depois: show(c, raw, lk) })).filter((c) => c.depois !== null);
     return { ok: true, plan: { preview: preview(campos), raw, spec } };
   }
   const campos = spec.campos
+    .filter(campoVisivel)
     .map((c) => ({ rotulo: c.label, antes: show(c, base, lk), depois: show(c, raw, lk) }))
     .filter((c) => c.antes !== c.depois);
   if (campos.length === 0) return { ok: false, erro: "Nada muda: os valores já são esses." };
@@ -838,6 +1536,7 @@ export function previewFingerprint(p: Pick<AlteracaoPreview, "aba" | "secao" | "
 export function planToFormEntries(plan: AlteracaoPlan): [string, string][] {
   const out: [string, string][] = [];
   if (plan.preview.id && plan.preview.acao !== "criar") out.push(["id", plan.preview.id]);
+  if (plan.spec.formEntries) return [...out, ...plan.spec.formEntries(plan.raw)];
   for (const [k, v] of Object.entries(plan.raw)) {
     if (Array.isArray(v)) for (const x of v) out.push([k, x]);
     else out.push([k, v]);

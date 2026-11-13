@@ -517,6 +517,140 @@ test("Oli: cria, edita e apaga em Casa, Pet e Igreja só depois de Confirmar, re
   await ctx.close();
 });
 
+/**
+ * Escrita (etapa 3): Saúde e Finanças pelo Oli (Agenda: ver o teste de recusa; a família da Agenda é outra, ver limitações).
+ * Propor não grava; Confirmar grava pelas actions das telas; painel antigo não grava (ITEM_MUDOU); Open Finance é intocável.
+ */
+test("Oli: Saúde e Finanças só gravam depois de Confirmar; Open Finance nunca é alterado", async ({ browser }) => {
+  test.setTimeout(240_000);
+  const admin = adminClient();
+  const hh = E2E_OLI_HOUSEHOLD_ID;
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  const email = uniqueEmail("oli-escrita3");
+  const mudou = { ok: false, erro: "O item mudou desde que o Oli mostrou o painel. Nada foi gravado: peça de novo para conferir." };
+  const contaId = randomUUID();
+  const catMercado = randomUUID();
+  const pluggyTx = randomUUID();
+  let gabrielMember = "";
+
+  await test.step("família do Oli com conta, categoria, lançamento manual e lançamento do Open Finance", async () => {
+    await createFamilyWithId(hh, email, PASSWORD);
+    const { data: ms } = await admin.from("members").select("id").eq("household_id", hh);
+    gabrielMember = ms![0].id;
+    for (const [table, rows] of [
+      ["fin_accounts", [{ id: contaId, household_id: hh, name: "Conta Itaú", kind: "corrente" }]],
+      ["fin_categories", [{ id: catMercado, household_id: hh, name: "Mercado", kind: "despesa" }]],
+      [
+        "fin_transactions",
+        [
+          { id: pluggyTx, household_id: hh, account_id: contaId, date: "2026-11-05", description: "PIX PLUGGY", amount: -42.5, source: "openfinance" },
+          { id: randomUUID(), household_id: hh, account_id: contaId, date: "2026-11-06", description: "Padaria manual", amount: -10, source: "manual" },
+        ],
+      ],
+      ["fin_bills", [{ household_id: hh, name: "Luz", amount: 100, due_day: 10 }]],
+      ["health_medications", [{ household_id: hh, member_id: gabrielMember, name: "Losartana", started_on: "2026-10-01", active: true }]],
+    ] as const) {
+      const { error } = await admin.from(table).insert(rows as unknown as Record<string, unknown>[]);
+      expect(error, table).toBeNull();
+    }
+    await page.goto("/login");
+    await page.getByLabel("E-mail").fill(email);
+    await page.getByLabel("Senha").fill(PASSWORD);
+    await page.locator("form").getByRole("button", { name: "Entrar" }).click();
+    await expect(page).toHaveURL(/\/inicio$/);
+  });
+
+  const confirm = (p: Preview) => callOliAction(page, "confirmOliAlteracao", [p]);
+  const lanc = async (desc: string) => (await admin.from("fin_transactions").select("id, amount, category_id, source").eq("household_id", hh).eq("description", desc)).data ?? [];
+
+  await test.step("Saúde: medicamento encerra só com Confirmar; consulta é criada pela action da tela", async () => {
+    const id = itemId(await callOliTool(page, "consultar_saude", { secao: "medicamentos" }), "Losartana");
+    const p = previewOf(await callOliTool(page, "alterar_saude", { acao: "concluir", secao: "medicamentos", id, ativo: false }));
+    const ativo = async () => (await admin.from("health_medications").select("active").eq("id", id).single()).data!.active;
+    expect(await ativo()).toBe(true);
+    expect(await confirm(p)).toEqual({ ok: true });
+    expect(await ativo()).toBe(false);
+
+    const c = previewOf(await callOliTool(page, "alterar_saude", { acao: "criar", secao: "consultas", especialidade: "Dentista", inicio: "2026-12-10T09:30" }));
+    expect((await admin.from("health_appointments").select("id").eq("household_id", hh)).data).toEqual([]);
+    expect(await confirm(c)).toEqual({ ok: true });
+    expect((await admin.from("health_appointments").select("specialty").eq("household_id", hh)).data).toEqual([{ specialty: "Dentista" }]);
+  });
+
+  await test.step("Finanças: lançamento criado e editado só com Confirmar; sinal vem do tipo", async () => {
+    const p = previewOf(await callOliTool(page, "alterar_financas", { acao: "criar", secao: "lancamentos", descricao: "Feira", valor: 80, tipo: "saida", categoria: "Mercado", data: "2026-11-12" }));
+    expect(await lanc("Feira")).toEqual([]);
+    expect(await confirm(p)).toEqual({ ok: true });
+    const [feira] = await lanc("Feira");
+    expect(feira).toMatchObject({ amount: -80, category_id: catMercado, source: "manual" });
+
+    const id = itemId(await callOliTool(page, "consultar_financas", { secao: "periodo" }), "Feira");
+    const e = previewOf(await callOliTool(page, "alterar_financas", { acao: "editar", secao: "lancamentos", id, valor: 95 }));
+    expect((await lanc("Feira"))[0].amount).toBe(-80);
+    // item mudou depois do painel: não grava por cima
+    expect((await admin.from("fin_transactions").update({ amount: -81 }).eq("id", id)).error).toBeNull();
+    expect(await confirm(e)).toEqual(mudou);
+    expect((await lanc("Feira"))[0].amount).toBe(-81);
+    const e2 = previewOf(await callOliTool(page, "alterar_financas", { acao: "editar", secao: "lancamentos", id, valor: 95 }));
+    expect(await confirm(e2)).toEqual({ ok: true });
+    expect((await lanc("Feira"))[0].amount).toBe(-95);
+  });
+
+  await test.step("Finanças: apagar lançamento tem alerta e só some no Confirmar", async () => {
+    const id = itemId(await callOliTool(page, "consultar_financas", { secao: "periodo" }), "Padaria manual");
+    const p = previewOf(await callOliTool(page, "alterar_financas", { acao: "apagar", secao: "lancamentos", id }));
+    expect(p.aviso).toContain("Apaga o lançamento de");
+    expect(await lanc("Padaria manual")).toHaveLength(1);
+    expect(await confirm(p)).toEqual({ ok: true });
+    expect(await lanc("Padaria manual")).toEqual([]);
+  });
+
+  await test.step("Finanças: Open Finance é recusado na proposta e no Confirmar forjado; nada muda", async () => {
+    const antes = await lanc("PIX PLUGGY");
+    expect(await callOliTool(page, "alterar_financas", { acao: "apagar", secao: "lancamentos", id: pluggyTx })).toMatchObject({ ok: false, erro: expect.stringContaining("Open Finance") });
+    expect(await callOliTool(page, "alterar_financas", { acao: "editar", secao: "lancamentos", id: pluggyTx, descricao: "Outro" })).toMatchObject({ ok: false, erro: expect.stringContaining("Open Finance") });
+    const forged = { aba: "financas", secao: "lancamentos", acao: "apagar", id: pluggyTx, rotulo: "Lançamento", titulo: "PIX PLUGGY", campos: [], anexo: null, aviso: null, args: { acao: "apagar", secao: "lancamentos", id: pluggyTx } };
+    expect(await confirm(forged as unknown as Preview)).toMatchObject({ ok: false, erro: expect.stringContaining("Open Finance") });
+    expect(await lanc("PIX PLUGGY")).toEqual(antes);
+    expect(antes).toHaveLength(1);
+  });
+
+  await test.step("Finanças: marcar conta fixa paga e desfazer (alerta vermelho)", async () => {
+    const id = itemId(await callOliTool(page, "consultar_financas", { secao: "contas_fixas" }), "Luz");
+    const pagamentos = async () => (await admin.from("fin_bill_payments").select("id").eq("bill_id", id)).data ?? [];
+    const p = previewOf(await callOliTool(page, "alterar_financas", { acao: "concluir", secao: "contas_fixas", id }));
+    expect(await pagamentos()).toEqual([]);
+    expect(await confirm(p)).toEqual({ ok: true });
+    expect(await pagamentos()).toHaveLength(1);
+    const u = previewOf(await callOliTool(page, "alterar_financas", { acao: "concluir", secao: "contas_fixas", id, pago: false }));
+    expect(u.aviso).toContain("a conta volta a ficar em aberto");
+    expect(await pagamentos()).toHaveLength(1);
+    expect(await confirm(u)).toEqual({ ok: true });
+    expect(await pagamentos()).toEqual([]);
+  });
+
+  await test.step("Finanças: orçamento e meta", async () => {
+    const o = previewOf(await callOliTool(page, "alterar_financas", { acao: "criar", secao: "orcamento", categoria: "Mercado", valor: 1500 }));
+    const orc = async () => (await admin.from("fin_budgets").select("amount, month").eq("household_id", hh)).data ?? [];
+    expect(await orc()).toEqual([]);
+    expect(await confirm(o)).toEqual({ ok: true });
+    expect(await orc()).toEqual([{ amount: 1500, month: null }]);
+    const d = previewOf(await callOliTool(page, "alterar_financas", { acao: "apagar", secao: "orcamento", categoria: "Mercado" }));
+    expect(await confirm(d)).toEqual({ ok: true });
+    expect(await orc()).toEqual([]);
+    const m = previewOf(await callOliTool(page, "alterar_financas", { acao: "criar", secao: "metas", nome: "Viagem", valor: 3000 }));
+    expect(await confirm(m)).toEqual({ ok: true });
+    expect((await admin.from("fin_goals").select("name, target").eq("household_id", hh)).data).toEqual([{ name: "Viagem", target: 3000 }]);
+  });
+
+  await test.step("Agenda: família do Oli sem Agenda liberada recusa a proposta", async () => {
+    expect(await callOliTool(page, "alterar_agenda", { acao: "criar", secao: "eventos", titulo: "Dentista", inicio: "2026-12-10T09:00" })).toEqual({ ok: false, erro: "A Agenda não está liberada para esta família." });
+  });
+
+  await ctx.close();
+});
+
 test("Oli: ferramentas em família não liberada são recusadas no servidor", async ({ page }) => {
   await signUp(page, uniqueEmail("oli-leitura-x"));
   await page.getByLabel("Seu nome").fill("Gabriel");
@@ -531,6 +665,9 @@ test("Oli: ferramentas em família não liberada são recusadas no servidor", as
   }
   // Escrita: nem o painel nem os Confirmar (chamados direto, sem passar pela ferramenta) funcionam.
   expect(await callOliTool(page, "alterar_casa", { acao: "criar", secao: "compras", nome: "Bloqueado" })).toEqual({ ok: false, erro: "O Oli ainda não está liberado para esta família." });
+  for (const name of ["alterar_saude", "alterar_agenda", "alterar_financas"]) {
+    expect(await callOliTool(page, name, { acao: "apagar", secao: name === "alterar_saude" ? "exames" : name === "alterar_agenda" ? "eventos" : "lancamentos", id: randomUUID() }), name).toEqual({ ok: false, erro: "O Oli ainda não está liberado para esta família." });
+  }
   const id = randomUUID();
   const nome = `Bloqueado ${id}`;
   for (const [action, arg] of [

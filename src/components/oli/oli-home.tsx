@@ -118,6 +118,9 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
         case "alterar_casa":
         case "alterar_pet":
         case "alterar_igreja":
+        case "alterar_saude":
+        case "alterar_agenda":
+        case "alterar_financas":
           return new Promise((resolve) => {
             pending.current.set(id, { resolve });
             add({ id, kind: "confirmar_alteracao", data: res.data, status: "pendente" });

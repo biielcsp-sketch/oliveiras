@@ -643,9 +643,13 @@ function ArquivoLidoPanel({ data: d }: { data: LerArquivoData }) {
   );
 }
 
-/* ---------- Escrita em Casa, Pet e Igreja (sempre com Confirmar) ---------- */
+/* ---------- Escrita em Casa, Pet, Igreja, Saúde, Agenda e Finanças (sempre com Confirmar) ---------- */
 
-const ABA_LABEL: Record<AlteracaoPreview["aba"], string> = { casa: "Casa", pet: "Pet", igreja: "Igreja" };
+const ABA_LABEL: Record<AlteracaoPreview["aba"], string> = { casa: "Casa", pet: "Pet", igreja: "Igreja", saude: "Saúde", agenda: "Agenda", financas: "Finanças" };
+
+/** Desfazer pagamento de conta: ação que não é "apagar" mas também pede o botão de perigo. */
+const desfazPagamento = (d: AlteracaoPreview) =>
+  d.acao === "concluir" && (d.secao === "contas_fixas" || d.secao === "contas_avulsas") && d.campos.some((c) => c.rotulo === "Situação" && c.depois === "Em aberto");
 
 function alteracaoTitle(acao: AlterarAcao, rotulo: string, d: AlteracaoPreview) {
   const r = rotulo.toLowerCase();
@@ -657,6 +661,9 @@ function alteracaoTitle(acao: AlterarAcao, rotulo: string, d: AlteracaoPreview) 
     case "apagar":
       return `Apagar ${r}?`;
     case "concluir":
+      if (d.secao === "contas_fixas" || d.secao === "contas_avulsas") return desfazPagamento(d) ? "Desfazer o pagamento da conta?" : "Marcar a conta como paga?";
+      if (d.secao === "consultas") return "Mudar a situação da consulta?";
+      if (d.secao === "medicamentos") return d.campos[0]?.depois === "Em uso" ? "Voltar a usar o medicamento?" : "Encerrar o medicamento?";
       if (d.secao === "compras") return d.campos[0]?.depois === "Pendente" ? "Voltar o item para a lista?" : "Marcar como comprado?";
       if (d.secao === "manutencao") return "Registrar manutenção feita?";
       if (d.secao === "cuidados") return "Registrar cuidado feito?";
@@ -689,7 +696,7 @@ function AlteracaoPanel({
       title={alteracaoTitle(d.acao, d.rotulo, d)}
       status={status}
       erro={erro}
-      danger={d.acao === "apagar"}
+      danger={d.acao === "apagar" || desfazPagamento(d)}
       doneText={{ criado: aviso ? `${ALTERAR_DONE[d.acao]} ${aviso}` : ALTERAR_DONE[d.acao], cancelado: "Nada foi alterado." }}
       onConfirm={onConfirm}
       onCancel={onCancel}
@@ -732,7 +739,7 @@ function AlteracaoPanel({
       )}
       {d.acao === "apagar" && (
         <p role="note" className="mt-3 rounded-2xl bg-danger/10 px-3 py-2 text-sm font-medium text-danger">
-          Isto apaga o item de vez do app. Não dá para desfazer.
+          {d.aba === "agenda" ? "Isto apaga o evento de vez, inclusive no Google Calendar. Não dá para desfazer." : "Isto apaga o item de vez do app. Não dá para desfazer."}
         </p>
       )}
       {d.aviso && (

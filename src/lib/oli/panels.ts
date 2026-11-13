@@ -42,7 +42,7 @@ export type SaldosData = {
   cartoes: { nome: string; saldo: number }[];
 };
 
-export type ContaAPagar = { nome: string; valor: number; vencimento: string; status: BillStatus; fatura: boolean; avulsa?: boolean };
+export type ContaAPagar = { id?: string; nome: string; valor: number; vencimento: string; status: BillStatus; fatura: boolean; avulsa?: boolean };
 export type ContasData = {
   mes: string;
   mes_rotulo: string;
@@ -75,6 +75,10 @@ export type MemoriasData = { busca: string; itens: MemoriaData[] };
 export type MemoriaPreview = { conteudo: string; categoria: MemoryCategory };
 
 export type EventoItem = {
+  /** Id do evento (para alterar_agenda). */
+  id: string;
+  /** Só o dono da agenda altera ou apaga. */
+  editavel: boolean;
   dia: string;
   hora: string;
   titulo: string;
@@ -193,7 +197,7 @@ export function buildContasAPagar(input: {
   cardTxs: Transaction[];
   /** Boleto confirmado do mês por conta: valor e vencimento dele prevalecem (mesma regra da tela). */
   billDocs?: Map<string, { amount: number | null; due_date: string | null }>;
-  oneOffs?: { name: string; amount: number; due_date: string; paid_on: string | null }[];
+  oneOffs?: { id?: string; name: string; amount: number; due_date: string; paid_on: string | null }[];
   /** Os lançamentos dos cartões vieram incompletos (teto ou falha). */
   cardTxsIncomplete?: boolean;
 }): ContasData {
@@ -210,6 +214,7 @@ export function buildContasAPagar(input: {
         const { amount, due } = billForMonth(b, month, billDocs?.get(b.id));
         const payment = paymentByBill.get(b.id);
         return {
+          id: b.id,
           nome: b.name,
           valor: payment?.amount ?? amount,
           vencimento: due,
@@ -236,6 +241,7 @@ export function buildContasAPagar(input: {
       ];
     }),
     ...oneOffs.map((o) => ({
+      id: o.id,
       nome: o.name,
       valor: o.amount,
       vencimento: o.due_date,
@@ -332,6 +338,8 @@ export function buildEventos(events: AgendaEvent[], de: string, ate: string, pes
     .filter((x) => x !== null)
     .sort((a, b) => a.dia.localeCompare(b.dia) || Number(b.e.allDay) - Number(a.e.allDay) || a.e.startsAt.localeCompare(b.e.startsAt))
     .map(({ e, dia }) => ({
+      id: e.id,
+      editavel: e.editable,
       dia,
       hora: timeLabel(e, dia),
       titulo: untitled(e.title),
