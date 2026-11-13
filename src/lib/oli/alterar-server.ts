@@ -311,13 +311,26 @@ const SAVE: Record<string, SaveFn> = {
  * (NEXT_REDIRECT) e só acontece depois do sucesso: aqui ela vale como "salvou" e NÃO sai da função (senão
  * a tela navegaria e o painel nunca receberia a resposta). Qualquer outra exceção segue para o chamador.
  */
+/**
+ * Só vale como sucesso o redirect para uma tela de Finanças (destino das actions depois de gravar). getAppContext/getUser
+ * também chamam redirect("/login") e redirect("/bem-vindo") ANTES de gravar (sessão expirada, família que sumiu):
+ * esses e qualquer outro destino viram erro, nunca "salvo".
+ */
+function redirectOk(e: unknown): boolean {
+  if (!isRedirectError(e)) return false;
+  const dest = String((e as { digest?: unknown }).digest ?? "").split(";")[2] ?? "";
+  return /^\/financas(\/|\?|$)/.test(dest);
+}
+const REDIRECT_RECUSADO = "Não consegui gravar: a sessão expirou ou a família mudou. Entre de novo e peça outra vez. Nada foi alterado.";
+
 async function rodar(run: () => Promise<{ ok?: boolean; error?: string } | null | void>, falha: string): Promise<{ ok: true } | { ok: false; erro: string }> {
   try {
     const r = await run();
     if (r && r.ok) return { ok: true };
     return { ok: false, erro: (r && r.error) || falha };
   } catch (e) {
-    if (isRedirectError(e)) return { ok: true };
+    if (redirectOk(e)) return { ok: true };
+    if (isRedirectError(e)) return { ok: false, erro: REDIRECT_RECUSADO };
     throw e;
   }
 }
@@ -337,6 +350,7 @@ async function apagarConferindo(table: string, id: string, run: () => Promise<{ 
     const r = await run();
     if (r && r.error) return { ok: false, erro: r.error };
   } catch (e) {
+    if (isRedirectError(e) && !redirectOk(e)) return { ok: false, erro: REDIRECT_RECUSADO };
     if (!isRedirectError(e)) throw e;
   }
   const db = await createClient();
@@ -408,7 +422,18 @@ export async function executarAlteracao(prep: Extract<Prepared, { ok: true }>): 
   switch (plan.preview.acao) {
     case "apagar": {
       // Orçamento: a tela remove salvando o valor vazio.
-      if (key === "financas/orcamento") return rodar(() => saveBudget(null, form({ category_id: String(plan.raw.category_id), scope: String(plan.raw.scope), month: String(plan.raw.month), amount: "" })), "Não foi possível apagar.");
+      if (key === "financas/orcamento") {
+        // saveBudget ignora o erro do delete e devolve ok: relê a linha e só dá ok se ela sumiu.
+        const r = await rodar(() => saveBudget(null, form({ category_id: String(plan.raw.category_id), scope: String(plan.raw.scope), month: String(plan.raw.month), amount: "" })), "Não foi possível apagar.");
+        if (!r.ok) return r;
+        const db = await createClient();
+        // A linha foi achada no preparo (RLS da família); relê por categoria e mês, com a sessão.
+        let q = db.from("fin_budgets").select("id").eq("category_id", String(plan.raw.category_id));
+        q = plan.raw.scope === "mes" ? q.eq("month", String(plan.raw.month)) : q.is("month", null);
+        const { data, error } = await q.maybeSingle();
+        if (error) return { ok: false, erro: "Não consegui conferir se foi apagado. Confira na tela." };
+        return data ? { ok: false, erro: "Não foi possível apagar." } : { ok: true };
+      }
       const r = await DELETE[key](id!);
       return r.ok ? { ok: true, ...(r.aviso ? { aviso: r.aviso } : {}) } : { ok: false, erro: r.erro ?? "Não foi possível apagar." };
     }

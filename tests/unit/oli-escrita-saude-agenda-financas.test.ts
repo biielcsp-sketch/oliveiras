@@ -23,8 +23,8 @@ import { OliPanels } from "@/components/oli/oli-panels";
 vi.mock("server-only", () => ({}));
 
 /* ---------- Actions das telas simuladas ---------- */
-const calls = vi.hoisted(() => ({ list: [] as { fn: string; arg: unknown }[], redirect: false, saveResult: { ok: true } as { ok?: boolean; error?: string } }));
-const redirectError = () => Object.assign(new Error("NEXT_REDIRECT"), { digest: "NEXT_REDIRECT;push;/financas;307;" });
+const calls = vi.hoisted(() => ({ list: [] as { fn: string; arg: unknown }[], redirect: false as boolean | string, saveResult: { ok: true } as { ok?: boolean; error?: string } }));
+const redirectError = () => Object.assign(new Error("NEXT_REDIRECT"), { digest: `NEXT_REDIRECT;push;${typeof calls.redirect === "string" ? calls.redirect : "/financas/lancamentos"};307;` });
 const rec = (fn: string, redirects = false) => async (...a: unknown[]) => {
   const last = a[a.length - 1];
   calls.list.push({ fn, arg: last instanceof FormData ? [...last.entries()] : a.length === 1 ? a[0] : a });
@@ -799,10 +799,65 @@ describe("Oli escrita (etapa 3): servidor, gravação pelas actions das telas", 
 
   it("orçamento: salvar manda categoria/escopo/mês/valor; apagar manda o valor vazio (como a tela)", async () => {
     db.rows.fin_budgets = { id: U(19), category_id: CAT_MERCADO.id, month: null, amount: 1500 };
-    expect(await exec("financas", { acao: "apagar", secao: "orcamento", categoria: "Mercado" })).toEqual({ ok: true });
+    const { executarAlteracao } = await import("@/lib/oli/alterar-server");
+    const p = await prep("financas", { acao: "apagar", secao: "orcamento", categoria: "Mercado" });
+    if (!p.ok) throw new Error(p.erro);
+    db.removed.add("fin_budgets"); // a action apagou
+    expect(await executarAlteracao(p)).toEqual({ ok: true });
+    db.removed.delete("fin_budgets");
     expect(await exec("financas", { acao: "editar", secao: "orcamento", categoria: "Mercado", valor: 1700 })).toEqual({ ok: true });
     expect(calls.list[0]).toEqual({ fn: "saveBudget", arg: [["category_id", CAT_MERCADO.id], ["scope", "todos"], ["month", "2026-11"], ["amount", ""]] });
     expect(calls.list[1]).toEqual({ fn: "saveBudget", arg: [["category_id", CAT_MERCADO.id], ["scope", "todos"], ["month", "2026-11"], ["amount", "1700,00"]] });
+  });
+});
+
+describe("Oli escrita (etapa 3): revisão, delete que falha e redirect fora de Finanças", () => {
+  beforeEach(() => {
+    calls.list = [];
+    calls.redirect = false;
+    calls.saveResult = { ok: true };
+    db.rows = {};
+    db.counts = {};
+    db.errors = {};
+    db.removed = new Set();
+    fx.agendaOn = true;
+    fx.writable = CALS;
+    fx.fin = { accounts: [CONTA, CARTAO], categories: [CAT_MERCADO, CAT_SALARIO, CAT_LAZER] };
+  });
+
+  it("apagar orçamento: saveBudget devolve ok mesmo se o banco recusou; linha ainda presente => ok:false", async () => {
+    db.rows.fin_budgets = { id: U(19), category_id: CAT_MERCADO.id, month: null, amount: 1500 };
+    const { executarAlteracao } = await import("@/lib/oli/alterar-server");
+    const p = await prep("financas", { acao: "apagar", secao: "orcamento", categoria: "Mercado" });
+    if (!p.ok) throw new Error(p.erro);
+    expect(await executarAlteracao(p)).toEqual({ ok: false, erro: "Não foi possível apagar." });
+    db.errors.fin_budgets = true; // não dá para conferir: também não diz "apagado"
+    expect(await executarAlteracao(p)).toMatchObject({ ok: false });
+  });
+
+  it("redirect para /login ou /bem-vindo (sessão expirada, família sumiu) NÃO vale como salvo", async () => {
+    const { executarAlteracao } = await import("@/lib/oli/alterar-server");
+    db.rows.fin_transactions = LANC;
+    db.counts.fin_bill_payments = 0;
+    db.counts.fin_one_off_bills = 0;
+    const msg = "Não consegui gravar: a sessão expirou ou a família mudou. Entre de novo e peça outra vez. Nada foi alterado.";
+    for (const dest of ["/login", "/bem-vindo", "/outra"]) {
+      calls.redirect = dest;
+      const p = await prep("financas", { acao: "editar", secao: "lancamentos", id: U(15), valor: 300 });
+      if (!p.ok) throw new Error(p.erro);
+      expect(await executarAlteracao(p), dest).toEqual({ ok: false, erro: msg });
+      const d = await prep("financas", { acao: "apagar", secao: "lancamentos", id: U(15) });
+      if (!d.ok) throw new Error(d.erro);
+      db.removed.add("fin_transactions"); // mesmo se a linha "sumisse", o destino errado recusa
+      expect(await executarAlteracao(d), dest).toEqual({ ok: false, erro: msg });
+      db.removed.delete("fin_transactions");
+    }
+    const g = await prep("financas", { acao: "criar", secao: "metas", nome: "Carro", valor: 100, conta: "Itaú" });
+    if (!g.ok) throw new Error(g.erro);
+    calls.redirect = "/login";
+    expect(await executarAlteracao(g)).toEqual({ ok: false, erro: msg });
+    calls.redirect = "/financas/metas"; // destino de sucesso continua valendo
+    expect(await executarAlteracao(g)).toEqual({ ok: true });
   });
 });
 
