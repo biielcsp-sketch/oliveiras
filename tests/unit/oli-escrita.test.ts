@@ -111,7 +111,7 @@ describe("Oli escrita: argumentos por seção", () => {
   it("ação, seção, id e campos conhecidos", () => {
     expect(parseAlterarArgs("casa", { acao: "sumir", secao: "tarefas" })).toMatchObject({ ok: false, erro: expect.stringContaining("Ação inválida") });
     expect(parseAlterarArgs("casa", { acao: "criar", secao: "garagem" })).toMatchObject({ ok: false, erro: expect.stringContaining("Seção inválida") });
-    expect(parseAlterarArgs("financas", { acao: "criar", secao: "tarefas" })).toEqual({ ok: false, erro: "Aba inválida." });
+    expect(parseAlterarArgs("garagem", { acao: "criar", secao: "tarefas" })).toEqual({ ok: false, erro: "Aba inválida." });
     expect(parseAlterarArgs("casa", { acao: "editar", secao: "tarefas", nome: "x" })).toMatchObject({ ok: false, erro: expect.stringContaining("id do item") });
     expect(parseAlterarArgs("casa", { acao: "criar", secao: "tarefas", id: U(9), nome: "x" })).toEqual({ ok: false, erro: "Para criar não use id." });
     expect(parseAlterarArgs("casa", { acao: "criar", secao: "compras", nome: "Leite", rodizio: ["Karen"] })).toMatchObject({ ok: false, erro: expect.stringContaining("Campo rodizio não existe em compras") });
