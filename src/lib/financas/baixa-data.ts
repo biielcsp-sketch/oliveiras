@@ -85,8 +85,19 @@ async function chunked<T>(ids: string[], size: number, run: (part: string[]) => 
 const ONE_OFF_COLS = "id, name, amount, due_date, account_id, paid_on, transaction_id";
 type OneOffRow = { id: string; name: string; amount: number | string; due_date: string; account_id: string | null; paid_on: string | null; transaction_id: string | null };
 
-/** Monta a entrada do casamento para os meses (e os boletos dos códigos informados). */
+/** Extrato do período passou do teto ou falhou na leitura: sem a lista inteira, não há cruzamento. */
+const EXTRATO_INCOMPLETO = "extrato_incompleto" as const;
+
+/**
+ * Monta a entrada do casamento para os meses (e os boletos dos códigos informados).
+ * null = nada a cruzar ou extrato incompleto (nesse caso não há baixa automática nem sugestão).
+ */
 export async function loadBaixaInput(months: string[], codes: TxCode[] = []) {
+  const r = await loadBaixaInputOrIncomplete(months, codes);
+  return r === EXTRATO_INCOMPLETO ? null : r;
+}
+
+async function loadBaixaInputOrIncomplete(months: string[], codes: TxCode[]) {
   const { household } = await getAppContext();
   const db: Db = await createClient();
   const sorted = [...new Set(months)].sort();
@@ -134,7 +145,7 @@ export async function loadBaixaInput(months: string[], codes: TxCode[] = []) {
   // Não dá baixa automática nem sugere nada nesse caso.
   if (incomplete) {
     console.error("Baixa automática: extrato incompleto (teto de lançamentos ou falha na leitura); cruzamento pulado.");
-    return null;
+    return EXTRATO_INCOMPLETO;
   }
   const codeOf = new Map(codes.map((c) => [`${c.account_id}|${c.external_id}`, c.barcode]));
   const txs: BaixaTx[] = txRows.map((t) => ({
@@ -282,13 +293,23 @@ export async function getBaixaSuggestions(month: string): Promise<BaixaMatch[]> 
   return (await getAllBaixaSuggestions(month)).fixed;
 }
 
-/** Sugestões do mês, das fixas e das avulsas (vencimento no mês). Abrir a página não grava nada. */
-export async function getAllBaixaSuggestions(month: string): Promise<{ fixed: BaixaMatch[]; oneOff: OneOffMatch[] }> {
-  const input = await loadBaixaInput([month]);
-  if (!input) return { fixed: [], oneOff: [] };
+/**
+ * Sugestões do mês, das fixas e das avulsas (vencimento no mês). Abrir a página não grava nada.
+ * `incomplete` = extrato grande demais (ou falha na leitura): sem sugestões, e a tela explica o porquê.
+ */
+export async function getAllBaixaSuggestions(
+  month: string,
+): Promise<{ fixed: BaixaMatch[]; oneOff: OneOffMatch[]; incomplete: boolean }> {
+  const input = await loadBaixaInputOrIncomplete([month], []);
+  if (input === EXTRATO_INCOMPLETO) return { fixed: [], oneOff: [], incomplete: true };
+  if (!input) return { fixed: [], oneOff: [], incomplete: false };
   const { auto, suggestions, oneOffAuto, oneOffSuggestions } = planBaixasComAvulsas(input);
   // Na tela, até o que seria automático só aparece como sugestão.
-  return { fixed: [...auto, ...suggestions].filter((m) => m.month === month), oneOff: [...oneOffAuto, ...oneOffSuggestions] };
+  return {
+    fixed: [...auto, ...suggestions].filter((m) => m.month === month),
+    oneOff: [...oneOffAuto, ...oneOffSuggestions],
+    incomplete: false,
+  };
 }
 
 export type PaymentTx = { id: string; source: string; description: string; date: string };

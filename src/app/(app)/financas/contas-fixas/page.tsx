@@ -65,6 +65,9 @@ export default async function ContasFixasPage({ searchParams }: { searchParams: 
       <IncompleteNotice show={cardTxs.incomplete}>
         Lançamentos dos cartões incompletos (lançamentos demais no período ou falha na leitura): os valores das faturas são parciais.
       </IncompleteNotice>
+      <IncompleteNotice show={allSuggestions.incomplete}>
+        Sugestões de pagamento indisponíveis: extrato grande demais (ou falha na leitura). Marque as contas pagas à mão.
+      </IncompleteNotice>
 
       {(activeBills.length > 0 || oneOffs.length > 0) && (
         <form action={searchStatementPayments} className="flex flex-wrap items-center gap-3">

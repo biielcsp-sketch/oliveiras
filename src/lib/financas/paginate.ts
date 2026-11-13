@@ -21,6 +21,8 @@ export function markList<T>(rows: T[], incomplete: boolean): TxList<T> {
 
 /**
  * Lê todas as páginas de `fetchPage(from, to)` (intervalo inclusivo, como `.range()`).
+ * Avança pelo número de linhas realmente recebidas e só para com página vazia: se o servidor tiver um
+ * `max_rows` menor que a página pedida, uma página "curta" não é tomada como fim da lista.
  * `incomplete` = passou do teto ou alguma página falhou: os dados lidos voltam, mas não são o total.
  */
 export async function fetchAllPages<T>(
@@ -32,12 +34,12 @@ export async function fetchAllPages<T>(
   const rows: T[] = [];
   while (rows.length < maxRows) {
     const from = rows.length;
-    const size = Math.min(pageSize, maxRows - from);
-    const { data, error } = await fetchPage(from, from + size - 1);
+    const to = Math.min(from + pageSize, maxRows) - 1;
+    const { data, error } = await fetchPage(from, to);
     if (error) return { rows, incomplete: true };
-    const page = data ?? [];
+    const page = (data ?? []).slice(0, to - from + 1);
+    if (page.length === 0) return { rows, incomplete: false };
     rows.push(...page);
-    if (page.length < size) return { rows, incomplete: false };
   }
   // Chegou no teto: confere se ainda havia mais lançamentos depois dele.
   const { data, error } = await fetchPage(maxRows, maxRows);

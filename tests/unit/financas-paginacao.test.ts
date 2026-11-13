@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-const MAX_ROWS = 1000;
+let MAX_ROWS = 1000;
 let table: { id: string; amount: string; date: string }[] = [];
 let failAtFrom: number | null = null;
 const calls: { method: string; args: unknown[] }[] = [];
@@ -61,6 +61,7 @@ const makeRows = (n: number) =>
 beforeEach(() => {
   calls.length = 0;
   failAtFrom = null;
+  MAX_ROWS = 1000;
 });
 
 describe("getTransactions (paginado)", () => {
@@ -85,6 +86,30 @@ describe("getTransactions (paginado)", () => {
     expect(JSON.parse(JSON.stringify(txs))).toHaveLength(2);
     expect(Object.keys(txs)).toEqual(["0", "1"]);
     expect("incomplete" in txs.slice(0, 1)).toBe(false);
+  });
+});
+
+describe("servidor com max_rows menor que a página (500)", () => {
+  it("getTransactions não toma a página curta como fim: devolve os 1205", async () => {
+    MAX_ROWS = 500;
+    table = makeRows(1205);
+    const txs = await getTransactions({ month: "2026-11" });
+    expect(txs).toHaveLength(1205);
+    expect(new Set(txs.map((t) => t.id)).size).toBe(1205);
+    expect(txs.incomplete).toBe(false);
+  });
+
+  it("fetchAllPages avança pelo recebido e respeita o teto mesmo com páginas curtas", async () => {
+    MAX_ROWS = 500;
+    table = makeRows(1300);
+    const pager = (from: number, to: number) =>
+      (fakeQuery().range as (a: number, b: number) => unknown)(from, to) as PromiseLike<{ data: unknown[] | null; error: unknown }>;
+    const all = await fetchAllPages(pager);
+    expect(all.rows).toHaveLength(1300);
+    expect(all.incomplete).toBe(false);
+    const capped = await fetchAllPages(pager, { maxRows: 1200 });
+    expect(capped.rows).toHaveLength(1200);
+    expect(capped.incomplete).toBe(true);
   });
 });
 
