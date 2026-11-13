@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { CARD_COLS, type HealthCard } from "@/lib/saude/types";
 import type { OfflineCard } from "@/lib/saude/offline-cards";
 import { OfflineCardsSync } from "@/components/offline-cards";
+import { ModuleHeroCard, SectionGrid } from "@/components/module-home";
 import { CardsView, type CardVM } from "./_components/cards-view";
 
 export const metadata = { title: "Saúde" };
@@ -36,10 +37,18 @@ export default async function Page() {
     updatedAt: c.updated_at,
   }));
 
+  // Raiz da Saúde: destaque + grade com todas as seções + Carteirinhas (que continuam nesta URL).
   return (
-    <>
-      <OfflineCardsSync userId={ctx.user.id} cards={offline} />
-      <CardsView people={people} cards={cards} defaultMember={ctx.me?.id ?? people[0]?.id ?? ""} />
-    </>
+    <div className="flex flex-col gap-6">
+      <ModuleHeroCard title="Cuide do que mais importa" subtitle="Sua saúde em dia, sempre." image="/ilustracoes/saude.webp" />
+      <SectionGrid module="saude" hrefOverride={{ carteirinhas: "#carteirinhas" }} />
+      <section id="carteirinhas" aria-labelledby="carteirinhas-titulo" className="flex scroll-mt-4 flex-col gap-3">
+        <h2 id="carteirinhas-titulo" className="text-[17px] font-bold tracking-tight">
+          Carteirinhas
+        </h2>
+        <OfflineCardsSync userId={ctx.user.id} cards={offline} />
+        <CardsView people={people} cards={cards} defaultMember={ctx.me?.id ?? people[0]?.id ?? ""} />
+      </section>
+    </div>
   );
 }

@@ -247,7 +247,7 @@ test("Agenda: conectar Google, sincronizar nas duas vias e ver a agenda do cônj
   });
 
   await test.step("calendário do topo: pontinhos e lista do dia", async () => {
-    await page.goto("/agenda");
+    await page.goto("/inicio");
     await page.getByRole("button", { name: "Agenda", exact: true }).click();
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByTestId("ponto-evento").first()).toBeVisible();

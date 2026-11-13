@@ -1,13 +1,10 @@
-import { ModuleHero } from "@/components/module-hero";
+import { ModuleTop } from "@/components/module-top";
 import { RefreshOnFocus } from "../casa/_components/refresh-on-focus";
-import { IgrejaSubnav } from "./_components/subnav";
 
 export default function IgrejaLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
-      <ModuleHero title="Igreja">
-        <IgrejaSubnav />
-      </ModuleHero>
+      <ModuleTop module="ministerio" />
       <RefreshOnFocus />
       {children}
     </>

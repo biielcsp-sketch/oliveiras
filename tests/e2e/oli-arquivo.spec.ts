@@ -48,6 +48,7 @@ test("Oli: + lê o arquivo e guarda no lugar certo só depois de Confirmar", asy
     await page.getByLabel("Senha").fill(PASSWORD);
     await page.locator("form").getByRole("button", { name: "Entrar" }).click();
     await expect(page).toHaveURL(/\/inicio$/);
+    await page.goto("/assistente");
   });
 
   // Veio do open-finance.spec.ts (que agora tem família só da Pluggy): família autorizada do Oli sem GEMINI_API_KEY → 503.
@@ -139,7 +140,7 @@ test("Oli: + lê o arquivo e guarda no lugar certo só depois de Confirmar", asy
     expect(sent).toBe(6);
     const { error } = await admin.from("oli_file_reads").insert(Array.from({ length: 30 }, () => ({ household_id: hh })));
     expect(error).toBeNull();
-    await page.goto("/inicio");
+    await page.goto("/assistente");
     const panels = page.getByRole("group", { name: "Arquivo lido pelo Oli" });
     const before = await panels.count();
     // Se a IA fosse chamada, o mock devolveria a leitura e um painel novo apareceria.
@@ -162,6 +163,7 @@ test("Oli: + em família não liberada avisa e não chama a IA", async ({ page }
   await page.getByLabel("Seu nome").fill("Gabriel");
   await page.locator("form").getByRole("button", { name: "Criar família" }).click();
   await expect(page).toHaveURL(/\/inicio$/);
+  await page.goto("/assistente");
   await sendFile(page, pdfWith({ tipo: "exame", nome: "Hemograma" }));
   await expect(page.getByText("O Oli ainda não está liberado para esta família.")).toBeVisible();
   await expect(page.getByRole("group", { name: "Arquivo lido pelo Oli" })).toHaveCount(0);

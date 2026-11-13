@@ -78,11 +78,11 @@ test("finanças: contas, lançamento manual, importação OFX/CSV sem duplicar e
   await test.step("resumo de novembro/2026 confere", async () => {
     await page.goto("/financas?mes=2026-11");
     const main = page.locator("main");
-    // Saldo das contas começa escondido e abre pela setinha da ponta do cabeçalho
-    const seta = page.getByRole("button", { name: "Mostrar detalhes de Finanças" });
+    // Saldo das contas começa escondido e abre pelo botão "Saldo das contas"
+    const seta = page.getByRole("button", { name: "Mostrar saldo das contas" });
     await expect(seta).toHaveAttribute("aria-expanded", "false");
     await seta.click();
-    await expect(page.getByRole("button", { name: "Ocultar detalhes de Finanças" })).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByRole("button", { name: "Ocultar saldo das contas" })).toHaveAttribute("aria-expanded", "true");
     await expect(page.getByText("Disponível nas contas")).toBeVisible();
     // Conta: 1000 − 150,50 − 152,30 + 3500 − 89,90 = 4.107,30
     await expect(main).toContainText("R$ 4.107,30", { useInnerText: true });
@@ -93,6 +93,21 @@ test("finanças: contas, lançamento manual, importação OFX/CSV sem duplicar e
     expect(brl(await main.innerText())).toContain("R$ 3.500,00");
     expect(brl(await main.innerText())).toContain("-R$ 417,70");
     expect(brl(await main.innerText())).toContain("R$ 3.082,30");
+  });
+
+  await test.step("Início mostra o mesmo saldo do mês e o olho só esconde na tela", async () => {
+    await page.goto("/inicio?mes=2026-11");
+    const saldo = page.getByTestId("saldo-do-mes");
+    await expect(saldo).toContainText("3.082,30");
+    expect(brl(await page.locator("main").innerText())).toContain("-R$ 417,70");
+    await page.getByRole("button", { name: "Ocultar valores" }).click();
+    await expect(saldo).not.toContainText("3.082");
+    await expect(page.locator("main")).not.toContainText("3.500,00");
+    await page.getByRole("button", { name: "Mostrar valores" }).click();
+    await expect(saldo).toContainText("3.082,30");
+    // Seletor de mês do Início troca o mês na URL
+    await page.getByRole("link", { name: "Mês anterior" }).click();
+    await expect(page).toHaveURL(/\/inicio\?mes=2026-10$/);
   });
 
   await test.step("edita e exclui lançamento", async () => {

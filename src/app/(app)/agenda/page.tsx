@@ -1,6 +1,7 @@
 import { getAppContext } from "@/lib/data";
 import { createClient } from "@/lib/supabase/server";
-import { EmptyState, PageHeader } from "@/components/ui";
+import { EmptyState } from "@/components/ui";
+import { PageTop } from "@/components/page-top";
 import { todaySP } from "@/lib/financas/today";
 import { addDays, isDate, shortDayLabel } from "@/lib/agenda/dates";
 import { groupByDay } from "@/lib/agenda/view";
@@ -29,7 +30,7 @@ export default async function AgendaPage({ searchParams }: { searchParams: Promi
   if (!agendaEnabled(ctx.household.id)) {
     return (
       <div>
-        <PageHeader title="Agenda" subtitle="Agendas do casal integradas ao Google" />
+        <PageTop title="Calendário" backHref="/inicio" backLabel="Voltar para o Início" />
         <EmptyState title="A Agenda ainda não está liberada para esta família." />
       </div>
     );
@@ -65,10 +66,13 @@ export default async function AgendaPage({ searchParams }: { searchParams: Promi
   const owners = users.filter((m) => accounts.some((a) => a.member_id === m.id));
 
   return (
-    <div className="flex flex-col gap-8">
-      <PageHeader title="Agenda" subtitle="Agendas do casal integradas ao Google" />
+    <div className="flex flex-col gap-6">
+      <div>
+        <PageTop title="Calendário" backHref="/inicio" backLabel="Voltar para o Início" />
+        <p className="-mt-2 text-center text-[13px] text-muted">Agendas do casal integradas ao Google</p>
+      </div>
       {notice && (
-        <p role="status" className={notice.tone === "ok" ? "-mt-4 text-sm text-primary" : "-mt-4 text-sm text-danger"}>
+        <p role="status" className={notice.tone === "ok" ? "-mt-2 text-sm text-primary" : "-mt-2 text-sm text-danger"}>
           {notice.text}
         </p>
       )}

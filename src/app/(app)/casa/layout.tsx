@@ -1,13 +1,10 @@
-import { ModuleHero } from "@/components/module-hero";
-import { CasaSubnav } from "./_components/subnav";
+import { ModuleTop } from "@/components/module-top";
 import { RefreshOnFocus } from "./_components/refresh-on-focus";
 
 export default function CasaLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
-      <ModuleHero title="Casa">
-        <CasaSubnav />
-      </ModuleHero>
+      <ModuleTop module="casa" />
       <RefreshOnFocus />
       {children}
     </>

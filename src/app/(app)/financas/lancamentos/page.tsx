@@ -63,7 +63,7 @@ export default async function LancamentosPage({ searchParams }: { searchParams: 
       <IncompleteNotice show={transactions.incomplete} />
 
       <p className="text-sm text-muted">
-        {transactions.length} lançamentos · entradas <span className="tabular-nums text-olive">{formatBRL(income)}</span> ·
+        {transactions.length} lançamentos · entradas <span className="tabular-nums text-success">{formatBRL(income)}</span> ·
         saídas <span className="tabular-nums">{formatBRL(-expense)}</span>
       </p>
 

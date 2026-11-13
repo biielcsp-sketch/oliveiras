@@ -75,19 +75,19 @@ export function AgendaView({
 
   return (
     <section aria-label="Eventos" className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-2">
-        <Link href={prevHref} aria-label="Semana anterior" className="grid size-11 place-items-center rounded-full bg-surface-2 transition hover:bg-accent-soft">
+      <div className="glass-card flex items-center justify-between gap-2 rounded-[20px] px-2 py-1.5">
+        <Link href={prevHref} aria-label="Semana anterior" className="grid size-11 place-items-center rounded-full text-deep transition hover:bg-accent-soft">
           <ChevronLeft size={20} aria-hidden />
         </Link>
         <div className="text-center">
-          <p className="text-[15px] font-semibold">{rangeLabel}</p>
+          <p className="text-[15.5px] font-bold">{rangeLabel}</p>
           {todayHref && (
             <Link href={todayHref} className="text-[13px] font-medium text-link">
               Voltar para hoje
             </Link>
           )}
         </div>
-        <Link href={nextHref} aria-label="Próxima semana" className="grid size-11 place-items-center rounded-full bg-surface-2 transition hover:bg-accent-soft">
+        <Link href={nextHref} aria-label="Próxima semana" className="grid size-11 place-items-center rounded-full text-deep transition hover:bg-accent-soft">
           <ChevronRight size={20} aria-hidden />
         </Link>
       </div>
@@ -118,9 +118,9 @@ export function AgendaView({
           if (!events.length && !isToday) return null;
           return (
             <li key={day} aria-current={isToday ? "date" : undefined}>
-              <div className={clsx("glass rounded-[24px] border p-4 shadow-card", isToday ? "border-primary/60 ring-2 ring-primary/30" : "border-line/70")}>
+              <div className={clsx("glass-card rounded-[20px] p-4", isToday && "ring-2 ring-primary/40")}>
                 <h3 className="mb-2 flex items-center gap-2 text-[15px] font-semibold">
-                  {isToday && <span className="rounded-full bg-hero px-2.5 py-1 text-[12px] font-medium leading-none text-on-primary">Hoje</span>}
+                  {isToday && <span className="rounded-full bg-hero px-2.5 py-1 text-[12px] font-semibold leading-none text-white shadow-[0_4px_10px_rgb(10_85_190/0.35)]">Hoje</span>}
                   {longDayLabel(day)}
                 </h3>
                 {events.length === 0 ? (

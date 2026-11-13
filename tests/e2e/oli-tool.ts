@@ -23,14 +23,14 @@ function oliActionId(exportedName: string) {
 
 export type ToolResult = { ok: true; tool: string; data: Record<string, unknown> & { grupos?: { titulo: string; total: number; itens: { titulo: string; pessoa: string | null; arquivo: string | null }[] }[]; aviso?: string | null } } | { ok: false; erro: string };
 
-/** POST da server action na página /inicio (mesma origem e cookies da página). */
+/** POST da server action na página /assistente (tela do Oli) (mesma origem e cookies da página). */
 export async function callOliTool(page: Page, name: string, args: Record<string, unknown> = {}): Promise<ToolResult> {
   return (await callOliAction(page, "runOliTool", [name, args])) as ToolResult;
 }
 
 /** Qualquer action de oli-actions.ts, como a tela chama (ex.: confirmOliAlteracao com o painel recebido). */
 export async function callOliAction(page: Page, exportedName: string, args: unknown[]): Promise<unknown> {
-  const res = await page.request.post("/inicio", {
+  const res = await page.request.post("/assistente", {
     headers: { "Next-Action": oliActionId(exportedName), "Content-Type": "text/plain;charset=UTF-8", Accept: "text/x-component" },
     data: JSON.stringify(args),
     maxRedirects: 0,

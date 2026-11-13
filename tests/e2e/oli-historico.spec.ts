@@ -12,6 +12,7 @@ test("Oli: histórico persiste ao recarregar, é privado por pessoa e pode ser l
   await page.getByLabel("Seu nome").fill("Gabriel");
   await page.locator("form").getByRole("button", { name: "Criar família" }).click();
   await expect(page).toHaveURL(/\/inicio$/);
+  await page.goto("/assistente");
 
   const admin = adminClient();
   const { data: users } = await admin.auth.admin.listUsers({ perPage: 1000 });
@@ -41,6 +42,7 @@ test("Oli: histórico persiste ao recarregar, é privado por pessoa e pode ser l
     await other.getByLabel("Seu nome").fill("Outra");
     await other.locator("form").getByRole("button", { name: "Criar família" }).click();
     await expect(other).toHaveURL(/\/inicio$/);
+    await other.goto("/assistente");
     await other.getByRole("button", { name: "Ver conversa" }).click();
     await expect(other.getByText("Marca dentista para sexta")).toHaveCount(0);
     await ctx.close();

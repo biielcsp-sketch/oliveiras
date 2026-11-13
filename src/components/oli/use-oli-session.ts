@@ -12,7 +12,7 @@ import {
   rms,
 } from "@/lib/oli/audio-utils";
 import { saveOliMessages } from "@/app/(app)/inicio/oli-history-actions";
-import type { OliState } from "./oli3d";
+import type { OliSphereState as OliState } from "./oli-sphere";
 
 /**
  * Sessão de voz/texto do Oli com o Gemini Live (porta do protótipo aprovado).

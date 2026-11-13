@@ -1,11 +1,14 @@
 import Link from "next/link";
 import { Plus, Upload, Wallet } from "lucide-react";
-import { Card, EmptyState, IncompleteNotice, LinkButton, SectionHeader, Tag } from "@/components/ui";
-import { HeroDrawer } from "@/components/hero-drawer";
+import { Card, EmptyState, IncompleteNotice, LinkButton, SectionHeader, SeeAll, Tag } from "@/components/ui";
+import { HeroDrawer, HeroDrawerButton } from "@/components/hero-drawer";
+import { MonthBalance } from "@/components/month-balance";
+import { BlockTitle, SectionGrid } from "@/components/module-home";
+import { donutSlices } from "@/lib/financas/donut";
 import { getFinanceBase, getTransactions } from "@/lib/financas/data";
 import { summarize } from "@/lib/financas/summary";
 import { formatBRL } from "@/lib/financas/money";
-import { parseMonth } from "@/lib/financas/period";
+import { monthLabel, parseMonth } from "@/lib/financas/period";
 import { getBillPayments, getBills, getBudgetRows, getTransactionsAround } from "@/lib/financas/planning-data";
 import { billStatus, dateInMonth, invoiceFor, invoiceTotals, resolveBudgets } from "@/lib/financas/planning";
 import { shortDate } from "@/lib/financas/period";
@@ -25,12 +28,18 @@ export default async function FinancasPage({ searchParams }: { searchParams: Pro
 
   if (accounts.length === 0) {
     return (
-      <EmptyState title="Comece cadastrando suas contas e cartões">
-        <p>Depois você lança gastos à mão ou importa o extrato em OFX/CSV.</p>
-        <LinkButton href="/financas/contas/nova" className="mt-4">
-          <Plus size={16} /> Nova conta
-        </LinkButton>
-      </EmptyState>
+      <div className="flex flex-col gap-6">
+        <EmptyState title="Comece cadastrando suas contas e cartões">
+          <p>Depois você lança gastos à mão ou importa o extrato em OFX/CSV.</p>
+          <LinkButton href="/financas/contas/nova" className="mt-4">
+            <Plus size={16} /> Nova conta
+          </LinkButton>
+        </EmptyState>
+        <section>
+          <BlockTitle>Seções</BlockTitle>
+          <SectionGrid module="financas" />
+        </section>
+      </div>
     );
   }
 
@@ -73,153 +82,163 @@ export default async function FinancasPage({ searchParams }: { searchParams: Pro
     budgetSpent += Math.round((spentBy.get(catId) ?? 0) * 100);
   });
   const catById = new Map(categories.map((c) => [c.id, c]));
-  const maxCat = expenseByCategory[0]?.total ?? 0;
+  const slices = donutSlices(expenseByCategory, (id) => (id ? catById.get(id)?.name ?? "Sem categoria" : "Sem categoria"));
 
   return (
-    <>
-      {/* Saldo das contas: escondido; abre pela setinha da ponta do cabeçalho */}
-      <HeroDrawer>
-        <div className="pb-8">
-          <Card tone="hero">
-            <div className="flex items-start justify-between">
-              <span className="grid size-12 place-items-center rounded-full border border-white/25">
-                <Wallet size={22} aria-hidden />
-              </span>
-              {cards.length > 0 && <Tag tone="info">{cards.length === 1 ? "1 cartão" : `${cards.length} cartões`}</Tag>}
-            </div>
-            <p className="mt-4 text-[15px] font-medium">Disponível nas contas</p>
-            <p className="mt-1 text-[32px] font-semibold tracking-tight tabular-nums">{formatBRL(available)}</p>
-            {cards.length > 0 && (
-              <p className="mt-1 text-[13px] text-white/85">
-                Cartões: <span className="tabular-nums">{formatBRL(cardDebt)}</span>
-              </p>
-            )}
-          </Card>
+    <div className="flex flex-col gap-6">
+      <MonthBalance
+        tone="hero"
+        result={formatBRL(result)}
+        income={formatBRL(income)}
+        expense={formatBRL(-expense)}
+        caption={monthLabel(month)}
+      />
+
+      <div className="flex flex-col gap-3">
+        <MonthSwitcher month={month} basePath="/financas" />
+        <div className="flex items-center justify-between gap-2">
+          <LinkButton href="/financas/importar" variant="ghost">
+            <Upload size={16} /> Importar
+          </LinkButton>
+          <LinkButton href="/financas/lancamentos/novo">
+            <Plus size={16} /> Lançar
+          </LinkButton>
         </div>
-      </HeroDrawer>
+      </div>
 
-      <div className="flex flex-col gap-8">
-        <div className="flex flex-col gap-3">
-          <MonthSwitcher month={month} basePath="/financas" />
-          <div className="flex items-center justify-between gap-2">
-            <LinkButton href="/financas/importar" variant="ghost">
-              <Upload size={16} /> Importar
-            </LinkButton>
-            <LinkButton href="/financas/lancamentos/novo">
-              <Plus size={16} /> Lançar
-            </LinkButton>
-          </div>
-        </div>
+      <IncompleteNotice show={transactions.incomplete || cardTxs.incomplete} />
 
-        <IncompleteNotice show={transactions.incomplete || cardTxs.incomplete} />
-
-        <section className="grid grid-cols-2 gap-5">
-          <Card className="p-4">
-            <p className="text-[13px] text-muted">Entradas</p>
-            <p className="mt-1 text-lg font-semibold tabular-nums text-primary">{formatBRL(income)}</p>
-          </Card>
-          <Card className="p-4">
-            <p className="text-[13px] text-muted">Saídas</p>
-            <p className="mt-1 text-lg font-semibold tabular-nums">{formatBRL(-expense)}</p>
-          </Card>
-          <Card className="col-span-2 flex items-center justify-between p-4">
-            <p className="text-[13px] text-muted">Resultado do mês</p>
-            <p className={`text-lg font-semibold tabular-nums ${result >= 0 ? "text-primary" : "text-danger"}`}>
-              {formatBRL(result)}
-            </p>
-          </Card>
-        </section>
-
-        {dues.length > 0 && (
-          <section>
-            <SectionHeader
-              title="A pagar neste mês"
-              count={dues.length}
-              href={`/financas/contas-fixas?mes=${month}`}
-              linkLabel="Ver contas"
-            />
-            <Card className="py-2">
-              <ul className="divide-y divide-line">
-                {dues.slice(0, 6).map((d) => (
-                  <li key={d.key} className="flex items-center gap-3 py-3 text-[15px]">
-                    <span className="w-11 shrink-0 text-[13px] tabular-nums text-muted">{shortDate(d.due)}</span>
-                    <span className="min-w-0 flex-1 truncate">{d.name}</span>
-                    <StatusBadge status={billStatus(d.due, false, today)} />
-                    <span className="tabular-nums">{formatBRL(d.amount)}</span>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          </section>
-        )}
-
-        {budgetTotal > 0 && (
-          <Link href={`/financas/orcamento?mes=${month}`} className="block rounded-[24px]">
-            <Card className="p-4 transition hover:bg-surface-2">
-              <div className="flex items-baseline justify-between text-sm">
-                <span className="text-muted">Orçamento</span>
-                <span className="tabular-nums">
-                  {formatBRL(budgetSpent / 100)} <span className="text-muted">de {formatBRL(budgetTotal / 100)}</span>
+      {/* Saldo das contas: escondido; abre pelo botão (o mesmo conteúdo que antes abria pela setinha do cabeçalho) */}
+      <div className="flex flex-col gap-3">
+        <HeroDrawerButton label="saldo das contas" title="Saldo das contas" />
+        <HeroDrawer>
+          <div className="pb-2">
+            <Card tone="hero">
+              <div className="flex items-start justify-between">
+                <span className="grid size-12 place-items-center rounded-full border border-white/25">
+                  <Wallet size={22} aria-hidden />
                 </span>
+                {cards.length > 0 && <Tag tone="info">{cards.length === 1 ? "1 cartão" : `${cards.length} cartões`}</Tag>}
               </div>
-              <div className="mt-3 h-2 rounded-full bg-surface-2">
-                <div
-                  className={`h-full rounded-full ${budgetSpent > budgetTotal ? "bg-danger" : "bg-hero"}`}
-                  style={{ width: `${Math.min(budgetSpent / budgetTotal, 1) * 100}%` }}
+              <p className="mt-4 text-[15px] font-medium">Disponível nas contas</p>
+              <p className="mt-1 text-[32px] font-bold tracking-tight tabular-nums">{formatBRL(available)}</p>
+              {cards.length > 0 && (
+                <p className="mt-1 text-[13px] text-info">
+                  Cartões: <span className="tabular-nums">{formatBRL(cardDebt)}</span>
+                </p>
+              )}
+            </Card>
+          </div>
+        </HeroDrawer>
+      </div>
+
+      {slices.length > 0 && (
+        <section>
+          <BlockTitle action={<SeeAll href={`/financas/orcamento?mes=${month}`}>Ver detalhes</SeeAll>}>Despesas por categoria</BlockTitle>
+          <div className="flex items-center gap-5">
+            <svg width="104" height="104" viewBox="0 0 42 42" aria-hidden="true" className="shrink-0 -rotate-90">
+              <circle cx="21" cy="21" r="15.9" fill="none" stroke="var(--surface-2)" strokeWidth="7" />
+              {slices.map((sl) => (
+                <circle
+                  key={sl.key}
+                  cx="21"
+                  cy="21"
+                  r="15.9"
+                  fill="none"
+                  stroke={sl.color}
+                  strokeWidth="7"
+                  strokeDasharray={sl.dash}
+                  strokeDashoffset={sl.offset}
                 />
-              </div>
-            </Card>
-          </Link>
-        )}
-
-        {expenseByCategory.length > 0 && (
-          <section>
-            <SectionHeader title="Gastos por categoria" />
-            <Card>
-              <ul className="flex flex-col gap-3">
-                {expenseByCategory.slice(0, 8).map(({ category_id, total }) => {
-                  const cat = category_id ? catById.get(category_id) : undefined;
-                  return (
-                    <li key={category_id ?? "sem"}>
+              ))}
+            </svg>
+            <ul className="flex min-w-0 flex-1 flex-col gap-1">
+              {slices.map((sl) => {
+                const row = (
+                  <>
+                    <span className="size-2.5 shrink-0 rounded-full" style={{ background: sl.color }} aria-hidden />
+                    <span className="min-w-0 flex-1 truncate">{sl.label}</span>
+                    <span className="sr-only">{formatBRL(sl.total)}, </span>
+                    <span className="font-bold tabular-nums">{sl.pct}%</span>
+                  </>
+                );
+                return (
+                  <li key={sl.key}>
+                    {sl.key === "outros" ? (
+                      <span className="flex min-h-9 items-center gap-2.5 text-[13.5px]">{row}</span>
+                    ) : (
                       <Link
-                        href={`/financas/lancamentos?mes=${month}&categoria=${category_id ?? "sem"}`}
-                        className="block"
+                        href={`/financas/lancamentos?mes=${month}&categoria=${sl.categoryId ?? "sem"}`}
+                        className="flex min-h-9 items-center gap-2.5 rounded-xl text-[13.5px] hover:text-primary"
                       >
-                        <div className="flex justify-between text-sm">
-                          <span>{cat?.name ?? "Sem categoria"}</span>
-                          <span className="tabular-nums text-muted">{formatBRL(total)}</span>
-                        </div>
-                        <div className="mt-1.5 h-2 rounded-full bg-surface-2">
-                          <div
-                            className="h-full rounded-full"
-                            style={{ width: `${Math.max(4, (total / maxCat) * 100)}%`, background: cat?.color ?? "var(--muted)" }}
-                          />
-                        </div>
+                        {row}
                       </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            </Card>
-          </section>
-        )}
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </section>
+      )}
 
+      <section>
+        <BlockTitle action={<SeeAll href={`/financas/lancamentos?mes=${month}`}>Ver todas</SeeAll>}>Últimas movimentações</BlockTitle>
+        <Card className="py-2">
+          {transactions.length > 0 ? (
+            <TxList transactions={transactions.slice(0, 6)} accounts={accounts} categories={categories} />
+          ) : (
+            <p className="py-3 text-sm text-muted">Nenhum lançamento neste mês.</p>
+          )}
+        </Card>
+      </section>
+
+      {dues.length > 0 && (
         <section>
           <SectionHeader
-            title="Últimos lançamentos"
-            count={transactions.length}
-            href={`/financas/lancamentos?mes=${month}`}
-            linkLabel="Ver todos"
+            title="A pagar neste mês"
+            count={dues.length}
+            href={`/financas/contas-fixas?mes=${month}`}
+            linkLabel="Ver contas"
           />
           <Card className="py-2">
-            {transactions.length > 0 ? (
-              <TxList transactions={transactions.slice(0, 6)} accounts={accounts} categories={categories} />
-            ) : (
-              <p className="py-3 text-sm text-muted">Nenhum lançamento neste mês.</p>
-            )}
+            <ul className="divide-y divide-line">
+              {dues.slice(0, 6).map((d) => (
+                <li key={d.key} className="flex items-center gap-3 py-3 text-[15px]">
+                  <span className="w-11 shrink-0 text-[13px] tabular-nums text-muted">{shortDate(d.due)}</span>
+                  <span className="min-w-0 flex-1 truncate">{d.name}</span>
+                  <StatusBadge status={billStatus(d.due, false, today)} />
+                  <span className="font-semibold tabular-nums text-danger">{formatBRL(d.amount)}</span>
+                </li>
+              ))}
+            </ul>
           </Card>
         </section>
-      </div>
-    </>
+      )}
+
+      {budgetTotal > 0 && (
+        <Link href={`/financas/orcamento?mes=${month}`} className="block rounded-[20px]">
+          <Card className="p-4 transition hover:brightness-105">
+            <div className="flex items-baseline justify-between text-sm">
+              <span className="text-muted">Orçamento</span>
+              <span className="tabular-nums">
+                {formatBRL(budgetSpent / 100)} <span className="text-muted">de {formatBRL(budgetTotal / 100)}</span>
+              </span>
+            </div>
+            <div className="mt-3 h-2 rounded-full bg-surface-2">
+              <div
+                className={`h-full rounded-full ${budgetSpent > budgetTotal ? "bg-danger" : "bg-hero"}`}
+                style={{ width: `${Math.min(budgetSpent / budgetTotal, 1) * 100}%` }}
+              />
+            </div>
+          </Card>
+        </Link>
+      )}
+
+      <section>
+        <BlockTitle>Seções</BlockTitle>
+        <SectionGrid module="financas" />
+      </section>
+    </div>
   );
 }
