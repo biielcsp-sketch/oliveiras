@@ -100,6 +100,19 @@ export function consulta(
   };
 }
 
+/** Lista cortada pelo limite da consulta: quantos vieram e quantos existem no banco (count exato). */
+export type Corte = { rotulo: string; mostrados: number; total: number };
+
+/** Acrescenta o aviso de lista incompleta (o modelo não pode tratar a lista cortada como completa). */
+export function comCorte(d: ConsultaData, cortes: Corte[]): ConsultaData {
+  if (!cortes.length) return d;
+  const note = `Lista incompleta: ${cortes.map((c) => `${c.rotulo}: ${c.mostrados} de ${c.total}`).join("; ")}. Use busca ou um período menor para ver o resto.`;
+  return { ...d, aviso: d.aviso && d.aviso !== "Nada encontrado." ? `${d.aviso} ${note}` : note };
+}
+
+export const FIN_INCOMPLETO =
+  "Lista incompleta: há lançamentos demais neste período para somar com segurança; os totais não foram calculados. Peça um período menor.";
+
 const ref = (tipo: ArquivoTipo, id: string, temArquivo: boolean) => (temArquivo ? arquivoRef(tipo, id) : null);
 
 /** Filtro de busca (sem acento/caixa) em qualquer um dos campos. */
@@ -131,8 +144,11 @@ export function buildFinPeriodo(input: {
   accounts: Account[];
   categories: Category[];
   busca?: string;
+  /** false: a consulta não trouxe todos os lançamentos do período → sem totais e com aviso. */
+  completo?: boolean;
 }): ConsultaData {
   const { txs, accounts, categories } = input;
+  const completo = input.completo !== false;
   const cardIds = new Set(accounts.filter((a) => a.kind === "cartao").map((a) => a.id));
   const { income, expense, result, expenseByCategory } = summarize(txs, categories, cardIds);
   const catById = new Map(categories.map((c) => [c.id, c]));
@@ -155,8 +171,10 @@ export function buildFinPeriodo(input: {
     "financas",
     "periodo",
     input.busca ? `Finanças: “${input.busca}” em ${input.rotulo}` : `Finanças de ${input.rotulo}`,
-    [grupo("Resumo", txs.length ? [totais] : []), grupo("Gastos por categoria", cats, 8), grupo("Lançamentos", lanc)],
-    { periodo: `${input.de} a ${input.ate}` },
+    completo
+      ? [grupo("Resumo", txs.length ? [totais] : []), grupo("Gastos por categoria", cats, 8), grupo("Lançamentos", lanc)]
+      : [grupo("Lançamentos", lanc)],
+    { periodo: `${input.de} a ${input.ate}`, aviso: completo ? undefined : FIN_INCOMPLETO },
   );
 }
 

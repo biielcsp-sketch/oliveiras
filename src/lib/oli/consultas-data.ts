@@ -1,7 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import type { getAppContext } from "@/lib/data";
-import { getFinanceBase, getTransactions } from "@/lib/financas/data";
+import { getFinanceBase } from "@/lib/financas/data";
 import { getBillPayments, getBills, getBudgetRows, getGoals, getOneOffBillsForMonth, getTransactionsAround } from "@/lib/financas/planning-data";
 import { getConfirmedBillDocs } from "@/lib/financas/documentos/data";
 import { currentMonth, monthLabel, monthRange } from "@/lib/financas/period";
@@ -22,6 +22,8 @@ import {
   buildIgreja,
   buildPet,
   buildSaude,
+  comCorte,
+  FIN_INCOMPLETO,
   consulta,
   MAX_BUSCA_POR_ABA,
   visibleToMe,
@@ -30,6 +32,7 @@ import {
   type BuscaHit,
   type CasaRows,
   type ConsultaData,
+  type Corte,
   type IgrejaRows,
   type PetRows,
   type SaudeRows,
@@ -51,6 +54,7 @@ import {
  * arquivo para fora (só para saber se existe) nem ids de terceiros.
  */
 type Ctx = Awaited<ReturnType<typeof getAppContext>>;
+type Db = Awaited<ReturnType<typeof createClient>>;
 type Result = { ok: true; data: ConsultaData } | { ok: false; erro: string };
 
 const LIMIT = 60;
@@ -63,7 +67,50 @@ const like = (t: string) => `%${t.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 /** Termo para .or(): sem os separadores da sintaxe do PostgREST (vírgula, parênteses, aspas, dois-pontos). */
 const orLike = (t: string) => like(t.replace(/[,()"':*\\]/g, " ").replace(/\s+/g, " ").trim());
 
+/** Registra corte quando o count exato do banco passa do que veio. */
+function cut(cortes: Corte[], rotulo: string, rows: unknown[] | null | undefined, count: number | null | undefined) {
+  const n = rows?.length ?? 0;
+  if (typeof count === "number" && count > n) cortes.push({ rotulo, mostrados: n, total: count });
+}
+
 /* ---------- Finanças ---------- */
+
+const TX_COLS = "id, account_id, date, description, amount, category_id, member_id, notes, source";
+const TX_PAGE = 1000;
+/** Teto de segurança (10 páginas). Acima disso a resposta não traz totais (FIN_INCOMPLETO). */
+export const TX_MAX_PAGES = 10;
+
+/**
+ * Todos os lançamentos do período (de/até inclusivos), paginando até o fim: os totais saem de TODAS as linhas.
+ * `completo` = false só se passar do teto de páginas.
+ */
+async function allTransactions(db: Db, householdId: string, de: string, ate: string, busca?: string) {
+  const txs: Transaction[] = [];
+  for (let page = 0; page < TX_MAX_PAGES; page++) {
+    let q = db
+      .from("fin_transactions")
+      .select(TX_COLS)
+      .eq("household_id", householdId)
+      .gte("date", de)
+      .lte("date", ate)
+      .order("date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: true })
+      .range(page * TX_PAGE, page * TX_PAGE + TX_PAGE - 1);
+    if (busca) q = q.ilike("description", like(busca));
+    const { data, error } = await q;
+    if (error) throw new Error("lançamentos: consulta falhou");
+    const rows = (data ?? []) as unknown as Transaction[];
+    txs.push(...rows.map((t) => ({ ...t, amount: Number(t.amount) })));
+    if (rows.length < TX_PAGE) return { txs, completo: true };
+  }
+  return { txs, completo: false };
+}
+
+const monthBounds = (month: string) => {
+  const r = monthRange(month);
+  return { de: r.start, ate: addDays(r.end, -1) };
+};
 
 export async function consultarFinancas(ctx: Ctx, a: ConsultarFinancasArgs, today: string): Promise<Result> {
   const month = a.mes ?? currentMonth();
@@ -71,43 +118,21 @@ export async function consultarFinancas(ctx: Ctx, a: ConsultarFinancasArgs, toda
   switch (a.secao) {
     case "periodo": {
       const { accounts, categories } = await getFinanceBase();
-      let txs: Transaction[];
-      let de: string;
-      let ate: string;
-      let rotulo: string;
-      if (a.de || a.ate) {
-        de = a.de ?? addDays(a.ate!, -30);
-        ate = a.ate ?? today;
-        if (ate < de) return { ok: false, erro: "A data final é antes da inicial." };
-        let q = db
-          .from("fin_transactions")
-          .select("id, account_id, date, description, amount, category_id, member_id, notes, source")
-          .eq("household_id", ctx.household.id)
-          .gte("date", de)
-          .lte("date", ate)
-          .order("date", { ascending: false })
-          .order("created_at", { ascending: false })
-          .limit(1000);
-        if (a.busca) q = q.ilike("description", like(a.busca));
-        const { data } = await q;
-        txs = (data ?? []).map((t) => ({ ...t, amount: Number(t.amount) })) as Transaction[];
-        rotulo = `${brDate(de)} a ${brDate(ate)}`;
-      } else {
-        txs = await getTransactions({ month, q: a.busca });
-        const r = monthRange(month);
-        de = r.start;
-        ate = addDays(r.end, -1);
-        rotulo = monthLabel(month);
-      }
-      return { ok: true, data: buildFinPeriodo({ de, ate, rotulo, txs, accounts, categories, busca: a.busca }) };
+      // de/até já vêm completos e limitados a 92 dias pelo parser; sem eles, o mês.
+      const { de, ate } = a.de && a.ate ? { de: a.de, ate: a.ate } : monthBounds(month);
+      const rotulo = a.de && a.ate ? `${brDate(de)} a ${brDate(ate)}` : monthLabel(month);
+      const { txs, completo } = await allTransactions(db, ctx.household.id, de, ate, a.busca);
+      return { ok: true, data: buildFinPeriodo({ de, ate, rotulo, txs, accounts, categories, busca: a.busca, completo }) };
     }
     case "metas": {
       const [{ accounts }, goals] = await Promise.all([getFinanceBase(), getGoals()]);
       return { ok: true, data: buildFinMetas(goals, accounts, today) };
     }
     case "orcamento": {
-      const [{ accounts, categories }, txs, rows] = await Promise.all([getFinanceBase(), getTransactions({ month }), getBudgetRows()]);
-      return { ok: true, data: buildFinOrcamento(month, rows, txs, categories, accounts) };
+      const { de, ate } = monthBounds(month);
+      const [{ accounts, categories }, all, rows] = await Promise.all([getFinanceBase(), allTransactions(db, ctx.household.id, de, ate), getBudgetRows()]);
+      const d = buildFinOrcamento(month, rows, all.txs, categories, accounts);
+      return { ok: true, data: all.completo ? d : { ...d, aviso: FIN_INCOMPLETO } };
     }
     case "contas_fixas": {
       // Mesma montagem de contas_a_pagar (tela Contas fixas), para o mês pedido; avulsas ficam na outra seção.
@@ -125,8 +150,10 @@ export async function consultarFinancas(ctx: Ctx, a: ConsultarFinancasArgs, toda
     case "contas_avulsas":
       return { ok: true, data: buildFinAvulsas(month, await getOneOffBillsForMonth(month), today) };
     case "categorias": {
-      const [{ accounts, categories }, txs] = await Promise.all([getFinanceBase(), getTransactions({ month })]);
-      return { ok: true, data: buildFinCategorias(month, categories, txs, accounts) };
+      const { de, ate } = monthBounds(month);
+      const [{ accounts, categories }, all] = await Promise.all([getFinanceBase(), allTransactions(db, ctx.household.id, de, ate)]);
+      const d = buildFinCategorias(month, categories, all.txs, accounts);
+      return { ok: true, data: all.completo ? d : { ...d, aviso: FIN_INCOMPLETO } };
     }
   }
 }
@@ -150,8 +177,9 @@ export async function consultarSaude(ctx: Ctx, a: ConsultarSaudeArgs, today: str
   const hh = ctx.household.id;
   const s = a.secao;
   const want = (k: string) => s === "resumo" || s === k;
+  // count exato em toda consulta limitada: se o banco tem mais do que veio, a resposta avisa (comCorte).
   const base = (table: string, cols: string) => {
-    let q = db.from(table).select(cols).eq("household_id", hh);
+    let q = db.from(table).select(cols, { count: "exact" }).eq("household_id", hh);
     if (memberId) q = q.eq("member_id", memberId);
     return q;
   };
@@ -162,32 +190,54 @@ export async function consultarSaude(ctx: Ctx, a: ConsultarSaudeArgs, today: str
     return r;
   };
   const rows: SaudeRows = {};
+  const cortes: Corte[] = [];
   const jobs: Promise<void>[] = [];
-  let periodo: string | null = null;
+  let periodo: string | null = a.de && a.ate ? `${a.de} a ${a.ate}` : null;
+  type Appt = NonNullable<SaudeRows["consultas"]>;
+  const APPT = "id, member_id, kind, specialty, doctor, place, starts_at, status, notes";
 
-  if (want("consultas")) {
-    // Padrão: dos últimos 90 dias aos próximos 180 (resumo: só de hoje em diante).
-    const de = s === "resumo" ? today : (a.de ?? addDays(today, -90));
-    const ate = a.ate ?? addDays(today, 180);
-    if (s === "consultas") periodo = `${de} a ${ate}`;
+  if (s === "resumo") {
+    // Próximas consultas: de agora em diante, a mais cedo primeiro.
     jobs.push(
       (async () => {
-        const { data } = await base("health_appointments", "id, member_id, kind, specialty, doctor, place, starts_at, status, notes")
-          .gte("starts_at", spMidnightIso(de))
-          .lt("starts_at", spMidnightIso(addDays(ate, 1)))
+        const { data, count } = await base("health_appointments", APPT)
+          .gte("starts_at", new Date().toISOString())
+          .lt("starts_at", spMidnightIso(addDays(today, 181)))
           .order("starts_at", { ascending: true })
-          .limit(LIMIT);
-        rows.consultas = (data ?? []) as unknown as SaudeRows["consultas"];
+          .limit(20);
+        rows.consultas = (data ?? []) as unknown as Appt;
+        cut(cortes, "próximas consultas", data, count);
+      })(),
+    );
+  }
+  if (s === "consultas") {
+    // Janela padrão: últimos 90 dias e próximos 180. Dentro dela: as próximas (mais cedo primeiro) e as passadas
+    // (mais recente primeiro), cada uma com seu limite; assim um "de" antigo nunca esconde as recentes.
+    const de = a.de ?? addDays(today, -90);
+    const ate = a.ate ?? addDays(today, 180);
+    periodo = `${de} a ${ate}`;
+    const nowIso = new Date().toISOString();
+    const win = () => base("health_appointments", APPT).gte("starts_at", spMidnightIso(de)).lt("starts_at", spMidnightIso(addDays(ate, 1)));
+    jobs.push(
+      (async () => {
+        const [next, past] = await Promise.all([
+          win().gte("starts_at", nowIso).order("starts_at", { ascending: true }).limit(30),
+          win().lt("starts_at", nowIso).order("starts_at", { ascending: false }).limit(30),
+        ]);
+        rows.consultas = [...((next.data ?? []) as unknown as Appt), ...((past.data ?? []) as unknown as Appt)];
+        cut(cortes, "próximas consultas", next.data, next.count);
+        cut(cortes, "consultas passadas", past.data, past.count);
       })(),
     );
   }
   if (want("exames"))
     jobs.push(
       (async () => {
-        const { data } = await dated(base("health_exams", "id, member_id, name, exam_date, lab, requested_by, result_summary, file_path"), "exam_date")
+        const { data, count } = await dated(base("health_exams", "id, member_id, name, exam_date, lab, requested_by, result_summary, file_path"), "exam_date")
           .order("exam_date", { ascending: false, nullsFirst: false })
           .limit(s === "resumo" ? 5 : LIMIT);
         rows.exames = (data ?? []) as unknown as SaudeRows["exames"];
+        if (s !== "resumo") cut(cortes, "exames", data, count);
       })(),
     );
   if (want("vacinas"))
@@ -196,17 +246,19 @@ export async function consultarSaude(ctx: Ctx, a: ConsultarSaudeArgs, today: str
         let q = dated(base("health_vaccines", "id, member_id, name, dose_label, applied_on, next_dose_on, place, file_path"), "applied_on");
         if (s === "resumo") q = q.not("next_dose_on", "is", null).order("next_dose_on", { ascending: true });
         else q = q.order("applied_on", { ascending: false, nullsFirst: false });
-        const { data } = await q.limit(LIMIT);
+        const { data, count } = await q.limit(LIMIT);
         rows.vacinas = (data ?? []) as unknown as SaudeRows["vacinas"];
+        cut(cortes, "vacinas", data, count);
       })(),
     );
   if (s === "procedimentos")
     jobs.push(
       (async () => {
-        const { data } = await dated(base("health_procedures", "id, member_id, name, performed_on, place, doctor, notes, file_path"), "performed_on")
+        const { data, count } = await dated(base("health_procedures", "id, member_id, name, performed_on, place, doctor, notes, file_path"), "performed_on")
           .order("performed_on", { ascending: false, nullsFirst: false })
           .limit(LIMIT);
         rows.procedimentos = (data ?? []) as unknown as SaudeRows["procedimentos"];
+        cut(cortes, "procedimentos", data, count);
       })(),
     );
   if (want("medicamentos"))
@@ -214,20 +266,21 @@ export async function consultarSaude(ctx: Ctx, a: ConsultarSaudeArgs, today: str
       (async () => {
         let q = base("health_medications", "id, member_id, name, dosage, frequency, started_on, ended_on, active, prescribed_by, reminder_times");
         if (s === "resumo") q = q.eq("active", true);
-        const { data } = await q.order("active", { ascending: false }).order("name").limit(LIMIT);
+        const { data, count } = await q.order("active", { ascending: false }).order("name").limit(LIMIT);
         rows.medicamentos = (data ?? []) as unknown as SaudeRows["medicamentos"];
+        cut(cortes, "medicamentos", data, count);
       })(),
     );
   if (s === "carteirinhas")
     jobs.push(
       (async () => {
-        const { data } = await base("health_insurance_cards", "id, member_id, operator, card_number, plan_name, valid_until, file_path").order("created_at").limit(LIMIT);
+        const { data, count } = await base("health_insurance_cards", "id, member_id, operator, card_number, plan_name, valid_until, file_path").order("created_at").limit(LIMIT);
         rows.carteirinhas = (data ?? []) as unknown as SaudeRows["carteirinhas"];
+        cut(cortes, "carteirinhas", data, count);
       })(),
     );
   await Promise.all(jobs);
-  if (a.de || a.ate) periodo = periodo ?? `${a.de ?? "…"} a ${a.ate ?? "…"}`;
-  return { ok: true, data: buildSaude(s, rows, names(ctx), { busca: a.busca, pessoa, today, periodo }) };
+  return { ok: true, data: comCorte(buildSaude(s, rows, names(ctx), { busca: a.busca, pessoa, today, periodo }), cortes) };
 }
 
 /* ---------- Casa ---------- */
@@ -238,6 +291,7 @@ export async function consultarCasa(ctx: Ctx, a: ConsultarCasaArgs, today: strin
   const s = a.secao;
   const want = (k: string) => s === "resumo" || s === k;
   const rows: CasaRows = {};
+  const cortes: Corte[] = [];
   const jobs: Promise<void>[] = [];
   let periodo: string | null = null;
   const run = (k: keyof CasaRows, table: string, cols: string, order: string, extra?: (q: ReturnType<typeof sel>) => ReturnType<typeof sel>) => {
@@ -245,12 +299,14 @@ export async function consultarCasa(ctx: Ctx, a: ConsultarCasaArgs, today: strin
       (async () => {
         let q = sel(table, cols);
         if (extra) q = extra(q);
-        const { data } = await q.order(order).limit(k === "compras" || k === "cardapio" ? 100 : LIMIT);
+        // Ordem: o mais próximo/relevante primeiro (vencimento, dia); count exato para avisar se cortou.
+        const { data, count } = await q.order(order, { ascending: true, nullsFirst: false }).limit(k === "compras" || k === "cardapio" ? 100 : LIMIT);
+        cut(cortes, k, data, count);
         rows[k] = rowsOf(data).map((r) => ({ ...r, ...(r.amount !== undefined ? { amount: num(r.amount) } : {}), ...(r.quantity !== undefined ? { quantity: num(r.quantity) } : {}) })) as never;
       })(),
     );
   };
-  const sel = (table: string, cols: string) => db.from(table).select(cols).eq("household_id", hh);
+  const sel = (table: string, cols: string) => db.from(table).select(cols, { count: "exact" }).eq("household_id", hh);
 
   if (want("tarefas")) run("tarefas", "casa_chores", "id, name, notes, frequency, rotation, next_index, next_due_on, active", "next_due_on", (q) => q.eq("active", true));
   if (want("compras")) run("compras", "casa_shopping_items", "id, name, quantity, unit, category, notes, done", "created_at", (q) => q.eq("done", false));
@@ -267,7 +323,7 @@ export async function consultarCasa(ctx: Ctx, a: ConsultarCasaArgs, today: strin
   }
   if (s === "prestadores") run("prestadores", "casa_providers", "id, name, service, phone, notes", "name");
   await Promise.all(jobs);
-  return { ok: true, data: buildCasa(s, rows, names(ctx), { today, busca: a.busca, periodo }) };
+  return { ok: true, data: comCorte(buildCasa(s, rows, names(ctx), { today, busca: a.busca, periodo }), cortes) };
 }
 
 /* ---------- Pet ---------- */
@@ -275,7 +331,14 @@ export async function consultarCasa(ctx: Ctx, a: ConsultarCasaArgs, today: strin
 export async function consultarPet(ctx: Ctx, a: ConsultarPetArgs, today: string): Promise<Result> {
   const db = await createClient();
   const hh = ctx.household.id;
-  const { data: petRows } = await db.from("casa_pets").select("id, name, species, breed, sex, birth_date, notes").eq("household_id", hh).order("name").limit(20);
+  const cortes: Corte[] = [];
+  const { data: petRows, count: petCount } = await db
+    .from("casa_pets")
+    .select("id, name, species, breed, sex, birth_date, notes", { count: "exact" })
+    .eq("household_id", hh)
+    .order("name")
+    .limit(20);
+  cut(cortes, "pets", petRows, petCount);
   let pets = (petRows ?? []) as PetRows["pets"];
   if (a.pet) {
     const found = matchByName(pets, a.pet);
@@ -287,21 +350,21 @@ export async function consultarPet(ctx: Ctx, a: ConsultarPetArgs, today: string)
   if (ids.length) {
     const s = a.secao;
     const want = (k: string) => s === "resumo" || s === k;
-    const q = (table: string, cols: string) => db.from(table).select(cols).eq("household_id", hh).in("pet_id", ids);
+    const q = (table: string, cols: string) => db.from(table).select(cols, { count: "exact" }).eq("household_id", hh).in("pet_id", ids);
     const jobs: PromiseLike<void>[] = [];
     if (want("saude"))
       jobs.push(
         q("casa_pet_health", "id, pet_id, kind, name, dose, applied_on, next_due_on, notes, file_path")
           .order("applied_on", { ascending: false, nullsFirst: false })
           .limit(LIMIT)
-          .then(({ data }) => void (rows.saude = (data ?? []) as unknown as PetRows["saude"])),
+          .then(({ data, count }) => void (cut(cortes, "saúde do pet", data, count), rows.saude = (data ?? []) as unknown as PetRows["saude"])),
       );
     if (s === "veterinario")
       jobs.push(
         q("casa_pet_vet", "id, pet_id, kind, happened_on, clinic, vet, reason, notes, cost, file_path")
           .order("happened_on", { ascending: false })
           .limit(LIMIT)
-          .then(({ data }) => void (rows.veterinario = rowsOf(data).map((r) => ({ ...r, cost: num(r.cost) })) as unknown as PetRows["veterinario"])),
+          .then(({ data, count }) => void (cut(cortes, "veterinário", data, count), rows.veterinario = rowsOf(data).map((r) => ({ ...r, cost: num(r.cost) })) as unknown as PetRows["veterinario"])),
       );
     if (want("cuidados"))
       jobs.push(
@@ -309,25 +372,25 @@ export async function consultarPet(ctx: Ctx, a: ConsultarPetArgs, today: string)
           .eq("active", true)
           .order("next_due_on", { ascending: true, nullsFirst: false })
           .limit(LIMIT)
-          .then(({ data }) => void (rows.cuidados = (data ?? []) as unknown as PetRows["cuidados"])),
+          .then(({ data, count }) => void (cut(cortes, "cuidados", data, count), rows.cuidados = (data ?? []) as unknown as PetRows["cuidados"])),
       );
     if (want("peso"))
       jobs.push(
         q("casa_pet_weights", "id, pet_id, measured_on, weight_kg")
           .order("measured_on", { ascending: false })
           .limit(30)
-          .then(({ data }) => void (rows.peso = rowsOf(data).map((r) => ({ ...r, weight_kg: Number(r.weight_kg) })) as unknown as PetRows["peso"])),
+          .then(({ data, count }) => void (cut(cortes, "pesagens", data, count), rows.peso = rowsOf(data).map((r) => ({ ...r, weight_kg: Number(r.weight_kg) })) as unknown as PetRows["peso"])),
       );
     if (want("racao"))
       jobs.push(
         q("casa_pet_food", "id, pet_id, brand, bag_kg, daily_grams, started_on, active, notes")
           .order("started_on", { ascending: false })
           .limit(20)
-          .then(({ data }) => void (rows.racao = rowsOf(data).map((r) => ({ ...r, bag_kg: Number(r.bag_kg) })) as unknown as PetRows["racao"])),
+          .then(({ data, count }) => void (cut(cortes, "rações", data, count), rows.racao = rowsOf(data).map((r) => ({ ...r, bag_kg: Number(r.bag_kg) })) as unknown as PetRows["racao"])),
       );
     await Promise.all(jobs);
   }
-  return { ok: true, data: buildPet(a.secao, rows, today) };
+  return { ok: true, data: comCorte(buildPet(a.secao, rows, today), cortes) };
 }
 
 /* ---------- Igreja ---------- */
@@ -341,49 +404,52 @@ export async function consultarIgreja(ctx: Ctx, a: ConsultarIgrejaArgs): Promise
   const LESSON = "id, owner_id, shared, title, lesson_date, subject, teacher, notes, summary, summary_status";
   const FILE = "id, lesson_id, display_name, file_mime, status";
   if (a.aula) {
-    const [{ data: lesson }, { data: files }] = await Promise.all([
+    const [{ data: lesson }, { data: files, count: fileCount }] = await Promise.all([
       db.from("igreja_carisma_lessons").select(LESSON).eq("household_id", hh).eq("id", a.aula).maybeSingle(),
-      db.from("igreja_carisma_files").select(FILE).eq("household_id", hh).eq("lesson_id", a.aula).eq("status", "pronto").order("created_at").limit(40),
+      db.from("igreja_carisma_files").select(FILE, { count: "exact" }).eq("household_id", hh).eq("lesson_id", a.aula).eq("status", "pronto").order("created_at").limit(40),
     ]);
-    return { ok: true, data: buildAula((lesson as AulaRow | null) ?? null, (files ?? []) as AulaFileRow[], uid, people) };
+    const aulaCortes: Corte[] = [];
+    cut(aulaCortes, "arquivos da aula", files, fileCount);
+    return { ok: true, data: comCorte(buildAula((lesson as AulaRow | null) ?? null, (files ?? []) as AulaFileRow[], uid, people), aulaCortes) };
   }
   const s = a.secao;
   if (s === "consolidacao") return { ok: true, data: buildIgreja(s, {}, uid, people) };
   const want = (k: string) => s === "resumo" || s === k;
   const rows: IgrejaRows = {};
   const jobs: PromiseLike<void>[] = [];
-  const t = (table: string, cols: string) => db.from(table).select(cols).eq("household_id", hh);
+  const cortes: Corte[] = [];
+  const t = (table: string, cols: string) => db.from(table).select(cols, { count: "exact" }).eq("household_id", hh);
   if (want("palavras") || want("promessas")) {
     let q = t("igreja_words", "id, owner_id, shared, kind, title, body, received_on, reference, fulfilled_on");
     if (s === "palavras") q = q.eq("kind", "anotacao");
     if (s === "promessas" || s === "resumo") q = q.eq("kind", "promessa");
-    jobs.push(q.order("received_on", { ascending: false }).limit(LIMIT).then(({ data }) => void (rows.palavras = (data ?? []) as unknown as IgrejaRows["palavras"])));
+    jobs.push(q.order("received_on", { ascending: false }).limit(LIMIT).then(({ data, count }) => void (cut(cortes, "palavras", data, count), rows.palavras = (data ?? []) as unknown as IgrejaRows["palavras"])));
   }
   if (want("oracoes"))
     jobs.push(
       t("igreja_prayers", "id, owner_id, shared, title, person, details, status, answered_on, answer_notes")
         .order("created_at", { ascending: false })
         .limit(LIMIT)
-        .then(({ data }) => void (rows.oracoes = (data ?? []) as unknown as IgrejaRows["oracoes"])),
+        .then(({ data, count }) => void (cut(cortes, "orações", data, count), rows.oracoes = (data ?? []) as unknown as IgrejaRows["oracoes"])),
     );
   if (want("propositos"))
     jobs.push(
       t("igreja_purposes", "id, owner_id, shared, title, description, status, starts_on, ends_on, notes")
         .order("created_at", { ascending: false })
         .limit(LIMIT)
-        .then(({ data }) => void (rows.propositos = (data ?? []) as unknown as IgrejaRows["propositos"])),
+        .then(({ data, count }) => void (cut(cortes, "propósitos", data, count), rows.propositos = (data ?? []) as unknown as IgrejaRows["propositos"])),
     );
   if (want("carisma")) {
     jobs.push(
       t("igreja_carisma_lessons", LESSON)
         .order("lesson_date", { ascending: false, nullsFirst: false })
         .limit(LIMIT)
-        .then(({ data }) => void (rows.aulas = (data ?? []) as unknown as IgrejaRows["aulas"])),
+        .then(({ data, count }) => void (cut(cortes, "aulas", data, count), rows.aulas = (data ?? []) as unknown as IgrejaRows["aulas"])),
     );
-    jobs.push(t("igreja_carisma_files", FILE).eq("status", "pronto").limit(500).then(({ data }) => void (rows.arquivos = (data ?? []) as unknown as IgrejaRows["arquivos"])));
+    jobs.push(t("igreja_carisma_files", FILE).eq("status", "pronto").limit(500).then(({ data, count }) => void (cut(cortes, "arquivos das aulas", data, count), rows.arquivos = (data ?? []) as unknown as IgrejaRows["arquivos"])));
   }
   await Promise.all(jobs);
-  return { ok: true, data: buildIgreja(s, rows, uid, people, a.busca) };
+  return { ok: true, data: comCorte(buildIgreja(s, rows, uid, people, a.busca), cortes) };
 }
 
 /* ---------- Busca em todo o app ---------- */
@@ -434,15 +500,18 @@ export async function buscarNoApp(ctx: Ctx, busca: string): Promise<Result> {
   const term = orLike(busca);
   if (term === "%%") return { ok: true, data: consulta("busca", "busca", `Busca: “${busca}”`, []) };
   const specs = SPECS(ctx);
+  const cortes: Corte[] = [];
   const results = await Promise.all(
     specs.map(async (sp) => {
-      const { data, error } = await db
+      const { data, error, count } = await db
         .from(sp.table)
-        .select(sp.cols)
+        .select(sp.cols, { count: "exact" })
         .eq("household_id", ctx.household.id)
         .or(sp.fields.map((f) => `${f}.ilike.${term}`).join(","))
-        .limit(MAX_BUSCA_POR_ABA + 2);
+        .limit(MAX_BUSCA_POR_ABA);
       if (error || !data) return [] as BuscaHit[];
+      // Igreja: o count do RLS já exclui o privado do outro; o corte só diz que há mais resultados.
+      cut(cortes, sp.aba, data, count);
       let list = data as unknown as Record<string, unknown>[];
       if (sp.owned) list = visibleToMe(list as unknown as { owner_id: string; shared: boolean }[], ctx.user.id) as unknown as Record<string, unknown>[];
       return list
@@ -451,5 +520,5 @@ export async function buscarNoApp(ctx: Ctx, busca: string): Promise<Result> {
         .map((h) => ({ ...h, aba: sp.aba }));
     }),
   );
-  return { ok: true, data: buildBusca(busca, results.flat()) };
+  return { ok: true, data: comCorte(buildBusca(busca, results.flat()), cortes) };
 }

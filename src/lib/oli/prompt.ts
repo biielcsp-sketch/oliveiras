@@ -247,7 +247,7 @@ export const OLI_TOOLS: Tool[] = [
           properties: {
             secao: { type: Type.STRING, enum: [...FIN_SECOES], description: "Padrão: periodo." },
             mes: { type: Type.STRING, description: "AAAA-MM. Padrão: mês atual." },
-            de: { type: Type.STRING, description: "Só em periodo: data inicial AAAA-MM-DD (máximo 92 dias)." },
+            de: { type: Type.STRING, description: "Só em periodo: data inicial AAAA-MM-DD. Período de no máximo 92 dias; só de vai até hoje, só ate começa 30 dias antes." },
             ate: { type: Type.STRING, description: "Só em periodo: data final AAAA-MM-DD." },
             busca: { type: Type.STRING, description: "Só em periodo: texto na descrição dos lançamentos." },
           },
@@ -263,7 +263,7 @@ export const OLI_TOOLS: Tool[] = [
             secao: { type: Type.STRING, enum: [...SAUDE_SECOES], description: "Padrão: resumo." },
             pessoa: { type: Type.STRING, description: "Nome da pessoa ou 'eu'. Padrão: todos." },
             busca: { type: Type.STRING, description: "Texto para filtrar (nome, médico, local)." },
-            de: { type: Type.STRING, description: "Data inicial AAAA-MM-DD (máximo 92 dias)." },
+            de: { type: Type.STRING, description: "Data inicial AAAA-MM-DD. Período de no máximo 92 dias; só de vai até hoje, só ate começa 30 dias antes." },
             ate: { type: Type.STRING, description: "Data final AAAA-MM-DD." },
           },
         },

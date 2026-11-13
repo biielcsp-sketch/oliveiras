@@ -285,6 +285,31 @@ test("Oli: consultas leem só a própria família, respeitam o privado e ler_arq
     expect(titles(r)).toEqual(["Arroz integral"]);
   });
 
+  await test.step("consultar_financas: totais exatos mesmo com mais de 1000 lançamentos no mês", async () => {
+    const { data: acc, error } = await admin.from("fin_accounts").insert({ household_id: hh, name: "Conta E2E", kind: "corrente" }).select("id").single();
+    expect(error).toBeNull();
+    const rows = Array.from({ length: 1005 }, (_, i) => ({ household_id: hh, account_id: acc!.id, date: `2026-10-${String((i % 28) + 1).padStart(2, "0")}`, description: `Compra ${i}`, amount: -1 }));
+    for (let i = 0; i < rows.length; i += 500) expect((await admin.from("fin_transactions").insert(rows.slice(i, i + 500))).error).toBeNull();
+    const r = await callOliTool(page, "consultar_financas", { secao: "periodo", mes: "2026-10" });
+    expect(r.ok).toBe(true);
+    const s = JSON.stringify(r);
+    expect(s).toContain("Saídas: 1005");
+    expect(s).toContain("Lançamentos: 1005");
+  });
+
+  await test.step("consultar_saude: com só de, as consultas mais recentes vêm e o corte é avisado", async () => {
+    const { data: me } = await admin.from("members").select("id").eq("household_id", hh).eq("name", "Gabriel").single();
+    const day = 86_400_000;
+    const now = Date.now();
+    const rows = Array.from({ length: 70 }, (_, i) => ({ household_id: hh, member_id: me!.id, specialty: `Antiga ${i}`, starts_at: new Date(now - (80 - i * 0.5) * day).toISOString(), status: "realizada" }));
+    rows.push({ household_id: hh, member_id: me!.id, specialty: "RECENTE", starts_at: new Date(now - day).toISOString(), status: "realizada" });
+    expect((await admin.from("health_appointments").insert(rows)).error).toBeNull();
+    const de = new Date(now - 85 * day).toISOString().slice(0, 10);
+    const r = await callOliTool(page, "consultar_saude", { secao: "consultas", de });
+    expect(titles(r)).toContain("Consulta · RECENTE");
+    expect(r.ok && r.data.aviso).toMatch(/incompleta/);
+  });
+
   await test.step("ler_arquivo: lê o exame guardado (resumo fiel, sem HTML) e registra 1 leitura", async () => {
     const before = (await admin.from("oli_file_reads").select("id", { count: "exact", head: true }).eq("household_id", hh)).count ?? 0;
     expect(before).toBe(0);

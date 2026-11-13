@@ -584,3 +584,23 @@ describe("painéis da leitura total", () => {
     expect(html).toContain("Confira no documento original");
   });
 });
+
+describe("regressões do revisor", () => {
+  it("período com só de ou só ate: completa o outro lado e respeita o teto de 92 dias", () => {
+    const today = "2026-11-13";
+    expect(parseConsultarFinancasArgs({ de: "2020-01-01" }, today)).toMatchObject({ ok: false, erro: `Período longo demais (máximo ${CONSULTA_MAX_DAYS} dias).` });
+    expect(parseConsultarSaudeArgs({ de: "2020-01-01" }, today)).toMatchObject({ ok: false });
+    expect(parseConsultarSaudeArgs({ de: "2026-10-01" }, today)).toMatchObject({ ok: true, value: { de: "2026-10-01", ate: "2026-11-13" } });
+    expect(parseConsultarSaudeArgs({ de: "2026-12-01" }, today)).toMatchObject({ ok: true, value: { de: "2026-12-01", ate: "2026-12-31" } });
+    expect(parseConsultarFinancasArgs({ ate: "2026-11-13" }, today)).toMatchObject({ ok: true, value: { de: "2026-10-14", ate: "2026-11-13" } });
+  });
+
+  it("período com lançamentos cortados: sem totais e com aviso de lista incompleta", () => {
+    const accounts = [{ id: "a1", name: "Conta", kind: "corrente", balance: 0, archived: false }] as unknown as Account[];
+    const txs = [{ id: "t", account_id: "a1", date: "2026-11-02", description: "X", amount: -10, category_id: null }] as unknown as Transaction[];
+    const d = buildFinPeriodo({ de: "2026-11-01", ate: "2026-11-30", rotulo: "nov", txs, accounts, categories: [], completo: false });
+    expect(d.grupos.map((g) => g.titulo)).toEqual(["Lançamentos"]);
+    expect(d.aviso).toMatch(/incompleta/);
+    expect(JSON.stringify(d)).not.toMatch(/Entradas:|Saídas:/);
+  });
+});

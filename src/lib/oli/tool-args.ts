@@ -5,6 +5,7 @@
 import { MAX_AMOUNT, UUID_RE, validDate } from "@/lib/financas/transaction-input";
 import { addDays, diffDays, isDate, normalizeLocal } from "@/lib/agenda/dates";
 import { EVENT_LIMITS } from "@/lib/agenda/input";
+import { todaySP } from "@/lib/financas/today";
 import { KINDS, LIMITS as SAUDE_LIMITS } from "@/lib/saude/input";
 import type { AppointmentKind } from "@/lib/saude/types";
 
@@ -335,19 +336,26 @@ function parseSecao<T extends string>(v: unknown, list: readonly T[], fallback: 
   return (list as readonly string[]).includes(s) ? ok(s as T) : fail(`Seção inválida. Use: ${list.join(", ")}.`);
 }
 
-/** de/até opcionais (AAAA-MM-DD): até ≥ de e no máximo CONSULTA_MAX_DAYS dias. */
-function parsePeriodo(a: Record<string, unknown>): Result<{ de?: string; ate?: string }> {
+/** Lado que falta quando vem só "ate": 30 dias antes. */
+export const CONSULTA_DEFAULT_DAYS = 30;
+
+/**
+ * de/até opcionais (AAAA-MM-DD). Se vier só um lado, o outro é completado (só de → até hoje, ou +30 dias se
+ * de for futuro; só até → 30 dias antes) e o teto de CONSULTA_MAX_DAYS vale sempre, inclusive nesse caso.
+ */
+function parsePeriodo(a: Record<string, unknown>, today: string): Result<{ de?: string; ate?: string }> {
   const de = optText(a.de, 10, "Data inicial");
   if (!de.ok) return de;
   const ate = optText(a.ate, 10, "Data final");
   if (!ate.ok) return ate;
   if (de.value && !isDate(de.value)) return fail("Data inicial inválida. Use AAAA-MM-DD.");
   if (ate.value && !isDate(ate.value)) return fail("Data final inválida. Use AAAA-MM-DD.");
-  if (de.value && ate.value) {
-    if (ate.value < de.value) return fail("A data final é antes da inicial.");
-    if (diffDays(de.value, ate.value) > CONSULTA_MAX_DAYS) return fail(`Período longo demais (máximo ${CONSULTA_MAX_DAYS} dias).`);
-  }
-  return ok({ de: de.value, ate: ate.value });
+  if (!de.value && !ate.value) return ok({});
+  const from = de.value ?? addDays(ate.value!, -CONSULTA_DEFAULT_DAYS);
+  const to = ate.value ?? (from <= today ? today : addDays(from, CONSULTA_DEFAULT_DAYS));
+  if (to < from) return fail("A data final é antes da inicial.");
+  if (diffDays(from, to) > CONSULTA_MAX_DAYS) return fail(`Período longo demais (máximo ${CONSULTA_MAX_DAYS} dias).`);
+  return ok({ de: from, ate: to });
 }
 
 function optMes(v: unknown): Result<string | undefined> {
@@ -360,13 +368,13 @@ function optMes(v: unknown): Result<string | undefined> {
 export type ConsultarFinancasArgs = { secao: FinSecao; mes?: string; de?: string; ate?: string; busca?: string };
 
 /** consultar_financas: seção (padrão periodo), mês AAAA-MM (padrão o atual) ou de/até (só em periodo), busca na descrição. */
-export function parseConsultarFinancasArgs(args: unknown): Result<ConsultarFinancasArgs> {
+export function parseConsultarFinancasArgs(args: unknown, today: string = todaySP()): Result<ConsultarFinancasArgs> {
   const a = obj(args);
   const secao = parseSecao(a.secao, FIN_SECOES, "periodo");
   if (!secao.ok) return secao;
   const mes = optMes(a.mes);
   if (!mes.ok) return mes;
-  const per = parsePeriodo(a);
+  const per = parsePeriodo(a, today);
   if (!per.ok) return per;
   const busca = optText(a.busca, LIMITS.search, "Busca");
   if (!busca.ok) return busca;
@@ -375,7 +383,7 @@ export function parseConsultarFinancasArgs(args: unknown): Result<ConsultarFinan
 
 export type ConsultarSaudeArgs = { secao: SaudeSecao; pessoa?: string; busca?: string; de?: string; ate?: string };
 
-export function parseConsultarSaudeArgs(args: unknown): Result<ConsultarSaudeArgs> {
+export function parseConsultarSaudeArgs(args: unknown, today: string = todaySP()): Result<ConsultarSaudeArgs> {
   const a = obj(args);
   const secao = parseSecao(a.secao, SAUDE_SECOES, "resumo");
   if (!secao.ok) return secao;
@@ -383,7 +391,7 @@ export function parseConsultarSaudeArgs(args: unknown): Result<ConsultarSaudeArg
   if (!pessoa.ok) return pessoa;
   const busca = optText(a.busca, LIMITS.search, "Busca");
   if (!busca.ok) return busca;
-  const per = parsePeriodo(a);
+  const per = parsePeriodo(a, today);
   if (!per.ok) return per;
   return ok({ secao: secao.value, pessoa: pessoa.value, busca: busca.value, ...per.value });
 }
