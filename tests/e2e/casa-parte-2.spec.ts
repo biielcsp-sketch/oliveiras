@@ -39,15 +39,9 @@ test("Casa parte 2: contas da casa, documentos, cardápio e prestadores (isolado
 
   await test.step("menu abre com Resumo selecionado; Despensa não existe mais", async () => {
     await a.goto("/casa");
-    // Grade de seções na raiz; o ⋮ do topo lista todas, com Resumo marcado.
     const nav = a.getByRole("navigation", { name: "Seções de Casa" });
+    await expect(nav.locator('[aria-current="page"]')).toContainText("Resumo");
     await expect(nav.getByText("Despensa")).toHaveCount(0);
-    await a.getByRole("button", { name: "Todas as seções de Casa" }).click();
-    const menu = a.getByRole("navigation", { name: "Todas as seções de Casa" });
-    await expect(menu.locator('[aria-current="page"]')).toContainText("Resumo");
-    await expect(menu.getByText("Despensa")).toHaveCount(0);
-    await a.keyboard.press("Escape");
-    await expect(menu).toBeHidden();
     // Página à parte: a página 404 padrão do Next aplica estilo inline (CSP), fora do escopo desta tela.
     const p404 = await ctxA.newPage();
     expect((await p404.goto("/casa/despensa"))?.status()).toBe(404);

@@ -38,12 +38,9 @@ test("Saúde 1b: procedimentos, medicamentos e vacinas (arquivos privados, famí
 
   await test.step("sub-navegação ganha as 3 abas", async () => {
     await a.goto("/saude/procedimentos");
-    await expect(a.getByRole("heading", { level: 1 }).first()).toHaveText("Procedimentos");
-    await a.getByRole("button", { name: "Todas as seções de Saúde" }).click();
-    const nav = a.getByRole("navigation", { name: "Todas as seções de Saúde" });
+    const nav = a.getByRole("navigation", { name: "Seções de Saúde" });
     for (const t of ["Procedimentos", "Medicamentos", "Vacinas"]) await expect(nav.getByRole("link", { name: t })).toBeVisible();
     await expect(nav.getByRole("link", { name: "Procedimentos" })).toHaveAttribute("aria-current", "page");
-    await a.keyboard.press("Escape");
   });
 
   await test.step("procedimento: recusa arquivo falso e grande; aceita PDF; texto como texto", async () => {

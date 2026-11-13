@@ -2,7 +2,12 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { donutSlices } from "@/lib/financas/donut";
 import { firstName, initials } from "@/lib/format";
-import { MODULE_INFO, activeSectionIndex, moduleTopTitle } from "@/lib/module-sections";
+import { ARC_BASE_Y, activeRouteIndex, arcTrackPath, rootIndex } from "@/lib/arc-nav";
+import { FINANCAS_TABS } from "@/lib/financas/nav";
+import { SAUDE_TABS } from "@/lib/saude/nav";
+import { CASA_TABS } from "@/lib/casa/nav";
+import { IGREJA_TABS } from "@/lib/igreja/nav";
+import { btnSize } from "@/components/ui";
 import { ASSISTANT, HOME_MODULES, MOBILE_NAV_LEFT, MOBILE_NAV_RIGHT, MODULES, SIDEBAR_NAV } from "@/lib/modules";
 import { THEME_COLOR } from "@/lib/theme";
 
@@ -80,15 +85,15 @@ describe("navegação do redesign", () => {
     expect([...MOBILE_NAV_LEFT, ...MOBILE_NAV_RIGHT].map((m) => m.label)).toEqual(["Finanças", "Saúde", "Casa", "Igreja"]);
     expect(SIDEBAR_NAV.map((m) => m.href)).toContain("/assistente");
   });
-  it("os módulos abrem na raiz (grade de seções), inclusive a Saúde", () => {
+  it("os módulos abrem na raiz, inclusive a Saúde (Carteirinhas no centro da ferradura)", () => {
     expect(MODULES.every((m) => !m.entry)).toBe(true);
     expect(HOME_MODULES.map((m) => m.href)).toEqual(["/financas", "/saude", "/casa", "/ministerio"]);
   });
-  it("todas as seções antigas da ferradura continuam acessíveis pela grade/⋮", () => {
-    const hrefs = (k: keyof typeof MODULE_INFO) => MODULE_INFO[k].sections.map((s) => s.href);
-    expect(hrefs("financas")).toEqual([
+  it("ferradura de volta: todas as seções de cada módulo estão nas abas", () => {
+    expect(FINANCAS_TABS.map((t) => t.href)).toEqual([
       "/financas/lancamentos",
       "/financas/orcamento",
+      "/financas",
       "/financas/contas-fixas",
       "/financas/documentos",
       "/financas/metas",
@@ -96,28 +101,53 @@ describe("navegação do redesign", () => {
       "/financas/categorias",
       "/financas/open-finance",
     ]);
-    expect(hrefs("saude")).toEqual(["/saude", "/saude/consultas", "/saude/exames", "/saude/procedimentos", "/saude/medicamentos", "/saude/vacinas"]);
-    expect(hrefs("casa")).toEqual(
-      expect.arrayContaining(["/casa/compras", "/casa/pet", "/casa/cardapio", "/casa/tarefas", "/casa/manutencao", "/casa/prestadores", "/casa/contas", "/casa/documentos"]),
+    expect(SAUDE_TABS.map((t) => t.href)).toEqual(["/saude", "/saude/consultas", "/saude/exames", "/saude/procedimentos", "/saude/medicamentos", "/saude/vacinas"]);
+    expect(CASA_TABS.map((t) => t.href)).toEqual(
+      expect.arrayContaining(["/casa", "/casa/compras", "/casa/pet", "/casa/cardapio", "/casa/tarefas", "/casa/manutencao", "/casa/prestadores", "/casa/contas", "/casa/documentos"]),
     );
-    expect(hrefs("casa")).not.toContain("/casa");
-    expect(hrefs("ministerio")).toEqual(["/ministerio/devocional", "/ministerio/devocional/oracoes", "/ministerio/carisma", "/ministerio/consolidacao"]);
+    expect(IGREJA_TABS.map((t) => t.href)).toEqual(["/ministerio/devocional", "/ministerio", "/ministerio/carisma", "/ministerio/consolidacao"]);
   });
-  it("título do topo: módulo na raiz, seção nas páginas internas", () => {
-    expect(moduleTopTitle(MODULE_INFO.financas, "/financas")).toBe("Finanças");
-    expect(moduleTopTitle(MODULE_INFO.financas, "/financas/lancamentos/novo")).toBe("Lançamentos");
-    expect(moduleTopTitle(MODULE_INFO.financas, "/financas/importar")).toBe("Finanças");
-    expect(moduleTopTitle(MODULE_INFO.saude, "/saude")).toBe("Saúde");
-    expect(moduleTopTitle(MODULE_INFO.saude, "/saude/vacinas")).toBe("Vacinas");
-    expect(moduleTopTitle(MODULE_INFO.casa, "/casa/contas/documento/abc/apagar")).toBe("Contas");
-    // A seção mais específica vence (Orações fica dentro de Devocional)
-    expect(moduleTopTitle(MODULE_INFO.ministerio, "/ministerio/devocional/oracoes")).toBe("Orações");
-    expect(moduleTopTitle(MODULE_INFO.ministerio, "/ministerio/devocional/promessas")).toBe("Devocional");
+  it("raiz de cada módulo abre no centro da ferradura (Resumo; Carteirinhas na Saúde)", () => {
+    expect(FINANCAS_TABS[rootIndex(FINANCAS_TABS)].key).toBe("resumo");
+    expect(CASA_TABS[rootIndex(CASA_TABS)].key).toBe("resumo");
+    expect(IGREJA_TABS[rootIndex(IGREJA_TABS)].key).toBe("resumo");
+    expect(SAUDE_TABS[activeRouteIndex(SAUDE_TABS, "/saude")].key).toBe("carteirinhas");
+    expect(activeRouteIndex(SAUDE_TABS, "/saude/exames")).toBe(2);
+    expect(FINANCAS_TABS[activeRouteIndex(FINANCAS_TABS, "/financas/lancamentos/novo")].key).toBe("lancamentos");
+    // Página fora das abas: nenhuma marcada (a raiz fica no centro)
+    expect(activeRouteIndex(FINANCAS_TABS, "/financas/importar")).toBe(-1);
   });
-  it("Carteirinhas (raiz da Saúde) só fica ativa na própria raiz", () => {
-    const i = MODULE_INFO.saude.sections.findIndex((s) => s.key === "carteirinhas");
-    expect(activeSectionIndex(MODULE_INFO.saude, "/saude")).toBe(i);
-    expect(activeSectionIndex(MODULE_INFO.saude, "/saude/exames")).not.toBe(i);
+  it("trilho de luz passa pelo centro das bolhas: mais baixo no meio, simétrico nas pontas", () => {
+    const pts = arcTrackPath(390, 35, 2)
+      .split(/[ML]/)
+      .filter(Boolean)
+      .map((p) => p.trim().split(" ").map(Number));
+    expect(pts).toHaveLength(3);
+    expect(pts[0][0]).toBe(0);
+    expect(pts[2][0]).toBe(390);
+    expect(pts[1]).toEqual([195, ARC_BASE_Y + 35]);
+    expect(pts[0][1]).toBeLessThan(pts[1][1]);
+    expect(pts[0][1]).toBeCloseTo(pts[2][1]);
+  });
+});
+
+describe("botões compactos", () => {
+  it("altura visual sm 34px, md 40px, lg 44px; fonte 13/14px", () => {
+    expect(btnSize.sm).toMatch(/\bh-\[34px\]/);
+    expect(btnSize.sm).toContain("text-[13px]");
+    expect(btnSize.md).toMatch(/\bh-10\b/);
+    expect(btnSize.md).toContain("text-sm");
+    expect(btnSize.lg).toMatch(/\bh-11\b/);
+    expect(btnSize.lg).toContain("text-sm");
+    expect(btnSize.icon).toContain("size-11");
+  });
+  it("área de toque invisível de 44px dentro do botão; o primário não corta essa área", () => {
+    const ui = readFileSync("src/components/ui.tsx", "utf8");
+    expect(ui).toMatch(/min-h-11 w-full min-w-11/);
+    expect((ui.match(/<TapArea \/>/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    const css = readFileSync("src/app/globals.css", "utf8");
+    const primary = css.slice(css.indexOf("@utility glass-primary"), css.indexOf("@utility card-hero"));
+    expect(primary).not.toContain("overflow: hidden");
   });
 });
 

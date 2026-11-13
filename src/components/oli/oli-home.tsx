@@ -316,14 +316,12 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
 
   return (
     <section aria-label="Oli, assistente da família" className="flex flex-col gap-4">
+      {/* Esfera solta, centralizada sobre o fundo da página; o estado fica logo abaixo, discreto e sem caixa. */}
       <div className="oli-stage" data-testid="oli-stage">
         <span ref={levelRef} className="oli-level">
           <OliSphere size={200} state={oli.state} label="Oli, o assistente da família" />
         </span>
-        <span
-          className="absolute left-3.5 top-3.5 rounded-full border border-[var(--glass-edge)] bg-surface-solid/70 px-3 py-1 text-[12px] font-semibold text-deep"
-          data-testid="oli-estado"
-        >
+        <span className="text-[12.5px] font-medium tracking-wide text-muted" data-testid="oli-estado">
           {LABELS[oli.state]}
         </span>
       </div>
@@ -343,10 +341,10 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
         onClick={() => (oli.active ? oli.stop() : void oli.start())}
         disabled={oli.busy}
         variant={oli.active ? "ghost" : "primary"}
-        className="h-[52px] w-full text-base"
+        className="self-center"
         aria-pressed={oli.active}
       >
-        {oli.active ? <Square size={20} aria-hidden /> : <Mic size={22} aria-hidden />}
+        {oli.active ? <Square size={16} aria-hidden /> : <Mic size={18} aria-hidden />}
         {oli.active ? "Encerrar conversa" : oli.busy ? "Conectando…" : "Conversar"}
       </Button>
 

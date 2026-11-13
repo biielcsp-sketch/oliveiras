@@ -1,9 +1,12 @@
-import { ModuleTop } from "@/components/module-top";
+import { ModuleHero } from "@/components/module-hero";
+import { SaudeSubnav } from "./_components/subnav";
 
 export default function SaudeLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
-      <ModuleTop module="saude" />
+      <ModuleHero title="Saúde">
+        <SaudeSubnav />
+      </ModuleHero>
       {children}
     </>
   );

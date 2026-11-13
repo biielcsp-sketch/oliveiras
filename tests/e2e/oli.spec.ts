@@ -42,6 +42,18 @@ test("tela do Oli (/assistente): esfera, controles e família não autorizada re
     await expect(page.getByTestId("oli-estado")).toHaveText("Repouso");
     await expect(page.getByRole("status").first()).toHaveText("Toque em Conversar para falar com o Oli");
     await expect(page.getByRole("button", { name: "Conversar" })).toBeVisible();
+    // Esfera solta sobre o fundo da página: sem quadro (borda, fundo ou sombra) em volta
+    const frame = await stage.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { border: cs.borderTopWidth, bg: cs.backgroundImage, color: cs.backgroundColor, shadow: cs.boxShadow };
+    });
+    expect(frame).toEqual({ border: "0px", bg: "none", color: "rgba(0, 0, 0, 0)", shadow: "none" });
+    // Botão Conversar compacto: largura do conteúdo, centralizado, 44px de altura
+    const vw = page.viewportSize()!.width;
+    const talk = (await page.getByRole("button", { name: "Conversar" }).boundingBox())!;
+    expect(talk.height).toBeLessThanOrEqual(44);
+    expect(talk.width).toBeLessThan(vw / 2);
+    expect(Math.abs(talk.x + talk.width / 2 - vw / 2)).toBeLessThan(4);
     await expect(page.getByPlaceholder("Ou digite aqui")).toBeVisible();
   });
 

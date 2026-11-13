@@ -29,14 +29,11 @@ async function uploadFromCasa(page: Page, tag: string) {
   const box = page.getByRole("region", { name: "Ler PDF ou foto" });
   await box.getByLabel("PDF", { exact: true }).setInputFiles(pdf(tag));
   await expect(page).toHaveURL(DOC_URL, { timeout: 45_000 });
-  // Menu principal com Casa marcada (não Finanças) e, no ⋮ da Casa, Contas marcada.
+  // Menu principal com Casa marcada (não Finanças) e ferradura da Casa com Contas marcada.
   const nav = page.getByRole("navigation", { name: "Principal" });
   await expect(nav.getByRole("link", { name: "Casa" })).toHaveAttribute("aria-current", "page");
   await expect(nav.getByRole("link", { name: "Finanças" })).not.toHaveAttribute("aria-current", "page");
-  await expect(page.getByRole("heading", { level: 1 }).first()).toHaveText("Contas");
-  await page.getByRole("button", { name: "Todas as seções de Casa" }).click();
-  await expect(page.getByRole("navigation", { name: "Todas as seções de Casa" }).getByRole("link", { name: "Contas" })).toHaveAttribute("aria-current", "page");
-  await page.keyboard.press("Escape");
+  await expect(page.getByRole("navigation", { name: "Seções de Casa" }).getByRole("link", { name: "Contas" })).toHaveAttribute("aria-current", "page");
   await page.getByRole("radio", { name: "Boleto" }).click();
 }
 

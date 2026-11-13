@@ -4,7 +4,7 @@ import { getAppContext } from "@/lib/data";
 import { createClient } from "@/lib/supabase/server";
 import { brDate } from "@/lib/agenda/dates";
 import { todaySP } from "@/lib/financas/today";
-import { ModuleHeroCard, SectionGrid } from "@/components/module-home";
+import { ModuleHeroCard } from "@/components/module-home";
 
 export const metadata = { title: "Igreja" };
 
@@ -55,7 +55,6 @@ export default async function Page() {
   return (
     <div className="flex flex-col gap-6">
       <ModuleHeroCard title="Conecte-se com a sua igreja" subtitle="Faça parte desta família." image="/ilustracoes/igreja.webp" />
-      <SectionGrid module="ministerio" />
       <section aria-labelledby="resumo-titulo" className="min-w-0">
         <h2 id="resumo-titulo" className="mb-2 text-[15.5px] font-bold tracking-tight">
           Resumo

@@ -17,7 +17,7 @@ test("navegação: barra inferior, logo para o Início e calendário da Agenda",
     expect(names).toEqual(["Finanças", "Saúde", "Oli, o assistente", "Casa", "Igreja"]);
     const oli = nav.getByRole("link", { name: "Oli, o assistente" });
     await expect(oli).toHaveAttribute("href", "/assistente");
-    // Saúde abre na raiz (grade de seções com as Carteirinhas)
+    // Saúde abre na raiz (Carteirinhas no centro da ferradura)
     await expect(nav.getByRole("link", { name: "Saúde" })).toHaveAttribute("href", "/saude");
     await expect(oli).not.toHaveAttribute("aria-current", "page");
     // Esfera animada só com CSS (sem imagem do avatar antigo)
@@ -32,20 +32,44 @@ test("navegação: barra inferior, logo para o Início e calendário da Agenda",
     await expect(nav.getByRole("link", { name: "Igreja" })).toHaveAttribute("aria-current", "page");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Igreja");
 
-    // Raiz do módulo: grade com as seções; página interna: título da seção e voltar para a raiz
-    const grid = page.getByRole("navigation", { name: "Seções de Igreja" });
-    await grid.getByRole("link", { name: "Consolidação" }).click();
+    // Menu em ferradura: o botão central é o selecionado e troca o conteúdo abaixo
+    const arc = page.getByRole("navigation", { name: "Seções de Igreja" });
+    await expect(arc.locator('[aria-current="page"]')).toContainText("Resumo");
+    await expect(page.getByRole("button", { name: /Todas as seções/ })).toHaveCount(0);
+    await arc.getByRole("link", { name: "Consolidação" }).click();
     await expect(page).toHaveURL(/\/ministerio\/consolidacao$/);
-    await expect(page.getByRole("heading", { level: 1 }).first()).toHaveText("Consolidação");
+    await expect(arc.getByRole("link", { name: "Consolidação" })).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Igreja");
     await expect(page.getByText("Integração com o app da Consolidação em breve").first()).toBeVisible();
-    await page.getByRole("button", { name: "Todas as seções de Igreja" }).click();
-    const menu = page.getByRole("navigation", { name: "Todas as seções de Igreja" });
-    await expect(menu.getByRole("link", { name: "Consolidação" })).toHaveAttribute("aria-current", "page");
-    await page.keyboard.press("Escape");
-    await expect(menu).toBeHidden();
-    await page.getByRole("link", { name: "Voltar para Igreja" }).click();
+
+    // Arrastar o arco para a direita e soltar: o botão que para no centro abre sozinho (sem toque)
+    const box = (await arc.boundingBox())!;
+    const y = box.y + box.height / 2;
+    const center = box.x + box.width / 2;
+    // Espera a Consolidação terminar de deslizar até o centro antes de arrastar
+    await expect
+      .poll(async () => {
+        const b = (await arc.getByRole("link", { name: "Consolidação" }).boundingBox())!;
+        return Math.abs(b.x + b.width / 2 - center);
+      })
+      .toBeLessThan(2);
+    // ~2 botões para a direita (95px por botão): para no Resumo
+    await page.mouse.move(center - 90, y);
+    await page.mouse.down();
+    for (let i = 1; i <= 10; i++) await page.mouse.move(center - 90 + i * 18, y);
+    await page.mouse.up();
     await expect(page).toHaveURL(/\/ministerio$/);
-    await page.getByRole("link", { name: "Voltar para o Início" }).click();
+    await expect(arc.locator('[aria-current="page"]')).toContainText("Resumo");
+
+    // Teclado: seta para a direita leva à próxima seção e mantém o foco no botão dela
+    await arc.getByRole("link", { name: "Resumo" }).focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(page).toHaveURL(/\/ministerio\/carisma$/);
+    await expect(arc.getByRole("link", { name: "Carisma" })).toHaveAttribute("aria-current", "page");
+    await expect(arc.getByRole("link", { name: "Carisma" })).toBeFocused();
+
+    // Logo do cabeçalho do módulo leva ao Início
+    await page.getByRole("link", { name: /ir para o Início/ }).click();
     await expect(page).toHaveURL(/\/inicio$/);
 
     await nav.getByRole("link", { name: "Oli, o assistente" }).click();
