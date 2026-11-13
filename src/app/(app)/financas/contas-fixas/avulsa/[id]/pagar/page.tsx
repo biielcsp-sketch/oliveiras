@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { Card, PageHeader } from "@/components/ui";
+import { Card, IncompleteNotice, PageHeader } from "@/components/ui";
 import { getFinanceBase } from "@/lib/financas/data";
 import { getLinkedTransactionIds, getOneOffBill, getTransactionsAround } from "@/lib/financas/planning-data";
 import { suggestPayments } from "@/lib/financas/planning";
@@ -26,6 +26,9 @@ export default async function PagarAvulsaPage({ params }: { params: Promise<{ id
   return (
     <Card>
       <PageHeader title={`Pagar ${oneOff.name}`} subtitle={`${formatBRL(oneOff.amount)} · vence ${shortDate(oneOff.due_date)} · avulsa`} />
+      <IncompleteNotice show={txs.incomplete}>
+        Extrato incompleto (lançamentos demais no período ou falha na leitura): pode faltar sugestão de pagamento.
+      </IncompleteNotice>
       {oneOff.paid_on ? (
         <p className="text-[15px]">Esta conta já está paga ({shortDate(oneOff.paid_on)}).</p>
       ) : (

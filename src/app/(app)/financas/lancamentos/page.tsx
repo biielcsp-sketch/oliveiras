@@ -1,5 +1,5 @@
 import { Plus, Search } from "lucide-react";
-import { Card, EmptyState, Input, LinkButton, Select } from "@/components/ui";
+import { Card, EmptyState, IncompleteNotice, Input, LinkButton, Select } from "@/components/ui";
 import { getFinanceBase, getTransactions } from "@/lib/financas/data";
 import { summarize } from "@/lib/financas/summary";
 import { formatBRL } from "@/lib/financas/money";
@@ -59,6 +59,8 @@ export default async function LancamentosPage({ searchParams }: { searchParams: 
         </Select>
         <button className="h-12 rounded-full border border-line bg-surface-solid px-5 text-[15px] font-medium shadow-soft hover:bg-surface-2">Filtrar</button>
       </form>
+
+      <IncompleteNotice show={transactions.incomplete} />
 
       <p className="text-sm text-muted">
         {transactions.length} lançamentos · entradas <span className="tabular-nums text-olive">{formatBRL(income)}</span> ·

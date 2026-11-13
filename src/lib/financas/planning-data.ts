@@ -5,6 +5,7 @@ import { monthRange, shiftMonth } from "./period";
 import type { BudgetRow } from "./planning";
 import type { Bill, BillPayment, Goal, Transaction } from "./types";
 import type { OneOffBill } from "./avulsas";
+import { fetchAllPages, markList, type TxList } from "./paginate";
 
 const num = (v: unknown) => Number(v);
 
@@ -121,18 +122,19 @@ export async function getGoals(): Promise<Goal[]> {
 }
 
 /** Lançamentos entre o início de (mês−2) e o fim de (mês+1): cobre faturas e janelas de pagamento. */
-export async function getTransactionsAround(month: string, accountIds?: string[]): Promise<Transaction[]> {
+export async function getTransactionsAround(month: string, accountIds?: string[]): Promise<TxList<Transaction>> {
   const { household } = await getAppContext();
   const supabase = await createClient();
-  let q = supabase
-    .from("fin_transactions")
-    .select("id, account_id, date, description, amount, category_id, member_id, notes, source")
-    .eq("household_id", household.id)
-    .gte("date", monthRange(shiftMonth(month, -2)).start)
-    .lt("date", monthRange(shiftMonth(month, 1)).end)
-    .order("date", { ascending: false })
-    .limit(3000);
-  if (accountIds) q = q.in("account_id", accountIds.length ? accountIds : ["00000000-0000-0000-0000-000000000000"]);
-  const { data } = await q;
-  return (data ?? []).map((t) => ({ ...t, amount: num(t.amount) }));
+  // Paginado: o antigo `.limit(3000)` voltava no máximo 1000 (max_rows do PostgREST), sem aviso.
+  const { rows, incomplete } = await fetchAllPages((from, to) => {
+    let q = supabase
+      .from("fin_transactions")
+      .select("id, account_id, date, description, amount, category_id, member_id, notes, source")
+      .eq("household_id", household.id)
+      .gte("date", monthRange(shiftMonth(month, -2)).start)
+      .lt("date", monthRange(shiftMonth(month, 1)).end);
+    if (accountIds) q = q.in("account_id", accountIds.length ? accountIds : ["00000000-0000-0000-0000-000000000000"]);
+    return q.order("date", { ascending: false }).order("id", { ascending: false }).range(from, to);
+  });
+  return markList(rows.map((t) => ({ ...t, amount: num(t.amount) })), incomplete);
 }

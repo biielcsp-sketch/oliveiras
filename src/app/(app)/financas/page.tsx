@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Plus, Upload, Wallet } from "lucide-react";
-import { Card, EmptyState, LinkButton, SectionHeader, Tag } from "@/components/ui";
+import { Card, EmptyState, IncompleteNotice, LinkButton, SectionHeader, Tag } from "@/components/ui";
 import { HeroDrawer } from "@/components/hero-drawer";
 import { getFinanceBase, getTransactions } from "@/lib/financas/data";
 import { summarize } from "@/lib/financas/summary";
@@ -110,6 +110,8 @@ export default async function FinancasPage({ searchParams }: { searchParams: Pro
             </LinkButton>
           </div>
         </div>
+
+        <IncompleteNotice show={transactions.incomplete || cardTxs.incomplete} />
 
         <section className="grid grid-cols-2 gap-5">
           <Card className="p-4">

@@ -96,7 +96,7 @@ async function dispatch(name: OliToolName, args: unknown): Promise<OliToolResult
       if (!a.ok) return err(a.erro);
       const month = a.value.mes ?? currentMonth();
       const [{ accounts, categories }, txs] = await Promise.all([getFinanceBase(), getTransactions({ month })]);
-      return { ok: true, tool: name, data: buildResumo(month, txs, categories, accounts) };
+      return { ok: true, tool: name, data: buildResumo(month, txs, categories, accounts, txs.incomplete) };
     }
     case "saldo_das_contas": {
       const { accounts } = await getFinanceBase();
@@ -116,7 +116,9 @@ async function dispatch(name: OliToolName, args: unknown): Promise<OliToolResult
       return {
         ok: true,
         tool: name,
-        data: buildContasAPagar({ month, today: todaySP(), bills, payments, accounts, categories, cardTxs, billDocs, oneOffs }),
+        data: buildContasAPagar({
+          month, today: todaySP(), bills, payments, accounts, categories, cardTxs, billDocs, oneOffs, cardTxsIncomplete: cardTxs.incomplete,
+        }),
       };
     }
     case "ultimos_lancamentos": {

@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getAppContext } from "@/lib/data";
 import { monthRange, shiftMonth } from "./period";
 import { getBills } from "./planning-data";
+import { fetchAllPages } from "./paginate";
 import {
   oneOffPairKey, pairKey, planBaixasComAvulsas, type BaixaBoleto, type BaixaMatch, type BaixaOneOff, type BaixaPayment, type BaixaTx, type OneOffMatch,
 } from "./baixa";
@@ -103,18 +104,22 @@ export async function loadBaixaInput(months: string[], codes: TxCode[] = []) {
   const from = monthRange(shiftMonth(sorted[0], -1)).start;
   const to = monthRange(shiftMonth(sorted[sorted.length - 1], 1)).end;
   const boletoCols = "bill_id, bill_month, amount, due_date, barcode, payee";
-  const [{ data: txRows }, { data: monthBoletos }] = await Promise.all([
-    db
-      .from("fin_transactions")
-      .select("id, account_id, date, amount, description, external_id")
-      .eq("household_id", household.id)
-      .lt("amount", 0)
-      // Só o extrato (Open Finance e OFX/CSV): lançamento manual ou de comprovante não entra no cruzamento.
-      .in("source", [...STATEMENT_SOURCES])
-      .gte("date", from)
-      .lt("date", to)
-      .order("date")
-      .limit(5000),
+  const [{ rows: txRows, incomplete }, { data: monthBoletos }] = await Promise.all([
+    // Paginado: o antigo `.limit(5000)` voltava no máximo 1000 (max_rows do PostgREST), sem aviso.
+    fetchAllPages((rangeFrom, rangeTo) =>
+      db
+        .from("fin_transactions")
+        .select("id, account_id, date, amount, description, external_id")
+        .eq("household_id", household.id)
+        .lt("amount", 0)
+        // Só o extrato (Open Finance e OFX/CSV): lançamento manual ou de comprovante não entra no cruzamento.
+        .in("source", [...STATEMENT_SOURCES])
+        .gte("date", from)
+        .lt("date", to)
+        .order("date")
+        .order("id")
+        .range(rangeFrom, rangeTo),
+    ),
     db
       .from("fin_documents")
       .select(boletoCols)
@@ -125,8 +130,14 @@ export async function loadBaixaInput(months: string[], codes: TxCode[] = []) {
       .in("bill_month", sorted),
   ]);
 
+  // Extrato incompleto (teto ou falha): sem a lista inteira, um casamento "único" pode não ser único.
+  // Não dá baixa automática nem sugere nada nesse caso.
+  if (incomplete) {
+    console.error("Baixa automática: extrato incompleto (teto de lançamentos ou falha na leitura); cruzamento pulado.");
+    return null;
+  }
   const codeOf = new Map(codes.map((c) => [`${c.account_id}|${c.external_id}`, c.barcode]));
-  const txs: BaixaTx[] = (txRows ?? []).map((t) => ({
+  const txs: BaixaTx[] = txRows.map((t) => ({
     id: t.id,
     account_id: t.account_id,
     date: t.date,

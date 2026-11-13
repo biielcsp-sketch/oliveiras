@@ -134,6 +134,16 @@ export function Tag({ tone = "warning", children }: { tone?: "warning" | "info";
   );
 }
 
+/** Aviso de lista de lançamentos incompleta (teto de segurança ou falha na leitura): totais são parciais. */
+export function IncompleteNotice({ show, children }: { show: boolean; children?: ReactNode }) {
+  if (!show) return null;
+  return (
+    <div role="alert" data-testid="lista-incompleta" className="rounded-2xl bg-warning-soft px-4 py-3 text-sm text-warning">
+      {children ?? "Lista de lançamentos incompleta: há lançamentos demais no período ou a leitura falhou. Os totais abaixo são parciais."}
+    </div>
+  );
+}
+
 export function FormError({ message }: { message?: string | null }) {
   if (!message) return null;
   return <p className="text-sm text-danger">{message}</p>;
