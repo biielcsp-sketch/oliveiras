@@ -94,6 +94,7 @@ export function PanelView({
       return (
         <Card>
           <Head icon={<PieChart size={16} aria-hidden />} title={`Resumo de ${d.mes_rotulo}`} />
+          {d.incompleto && <Partial text={d.aviso} />}
           <div className="grid grid-cols-2 gap-2">
             <Stat label="Entradas" value={money(d.entradas)} className="text-primary" />
             <Stat label="Saídas" value={money(-d.saidas)} />
@@ -161,6 +162,7 @@ export function PanelView({
             title={`Contas fixas de ${d.mes_rotulo}`}
             aside={<span className="text-sm text-muted">Pendente {formatBRL(d.total_pendente)}</span>}
           />
+          {d.incompleto && <Partial text={d.aviso} />}
           {d.contas.length === 0 ? (
             <p className="text-sm text-muted">Nenhuma conta neste mês.</p>
           ) : (
@@ -466,6 +468,15 @@ export function PanelView({
         </Card>
       );
   }
+}
+
+/** Dados parciais (lista de lançamentos incompleta): o painel não apresenta os valores como totais. */
+function Partial({ text }: { text?: string }) {
+  return (
+    <p role="alert" data-testid="lista-incompleta" className="mb-3 rounded-2xl bg-warning-soft px-3 py-2 text-[13px] text-warning">
+      {text ?? "Lista de lançamentos incompleta: valores parciais."}
+    </p>
+  );
 }
 
 function Stat({ label, value, className }: { label: string; value: ReactNode; className?: string }) {

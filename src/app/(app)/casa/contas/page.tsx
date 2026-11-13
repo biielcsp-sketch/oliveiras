@@ -1,7 +1,7 @@
 import Link from "next/link";
 import clsx from "clsx";
 import { Plus } from "lucide-react";
-import { Card, EmptyState, LinkButton } from "@/components/ui";
+import { Card, EmptyState, IncompleteNotice, LinkButton } from "@/components/ui";
 import { getBillPayments, getBills, getOneOffBillsForMonth, getOneOffBoletoDocs } from "@/lib/financas/planning-data";
 import { countPendingDocuments, getConfirmedBillDocs } from "@/lib/financas/documentos/data";
 import { getAllBaixaSuggestions } from "@/lib/financas/baixa-data";
@@ -58,6 +58,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ m
         </LinkButton>
       </div>
       <DocUpload pending={pendingDocs} origem="casa" mes={month} />
+      <IncompleteNotice show={suggestions.incomplete}>
+        Sugestões de pagamento indisponíveis: extrato grande demais (ou falha na leitura). Marque as contas pagas à mão.
+      </IncompleteNotice>
       {rows.length === 0 ? (
         <EmptyState title="Nenhuma conta da casa neste mês.">
           Marque “Conta da casa” numa conta fixa das Finanças (aluguel, condomínio, luz, água, gás, internet).

@@ -3,6 +3,7 @@ import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { getAppContext } from "@/lib/data";
 import { monthRange } from "./period";
+import { fetchAllPages, markList, type TxList } from "./paginate";
 
 
 export type { Account, AccountKind, Category, CategoryKind, Transaction } from "./types";
@@ -47,32 +48,35 @@ export const getFinanceBase = cache(async () => {
 
 export type TxFilters = { month: string; account?: string; category?: string; q?: string };
 
-/** Lançamentos do mês com filtros opcionais. */
-export async function getTransactions(filters: TxFilters): Promise<Transaction[]> {
+/**
+ * Lançamentos do mês com filtros opcionais, todos (paginado; o PostgREST corta em 1000 por resposta).
+ * `incomplete` = passou do teto de segurança ou uma página falhou: a tela avisa e não trata o total como completo.
+ */
+export async function getTransactions(filters: TxFilters): Promise<TxList<Transaction>> {
   const { household } = await getAppContext();
   const supabase = await createClient();
   const { start, end } = monthRange(filters.month);
-  let query = supabase
-    .from("fin_transactions")
-    .select(TX_COLUMNS)
-    .eq("household_id", household.id)
-    .gte("date", start)
-    .lt("date", end)
-    .order("date", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(1000);
+  const term = filters.q ? filters.q.slice(0, 60).replace(/[\\%_]/g, (c) => `\\${c}`) : null; // % e _ viram literais
 
-  if (filters.account) query = query.eq("account_id", filters.account);
-  if (filters.category === "sem") query = query.is("category_id", null);
-  else if (filters.category) query = query.eq("category_id", filters.category);
-  if (filters.q) {
-    // % e _ viram literais na busca
-    const term = filters.q.slice(0, 60).replace(/[\\%_]/g, (c) => `\\${c}`);
-    query = query.ilike("description", `%${term}%`);
-  }
-
-  const { data } = await query;
-  return (data ?? []).map((t) => ({ ...t, amount: Number(t.amount) })) as Transaction[];
+  const { rows, incomplete } = await fetchAllPages((from, to) => {
+    let query = supabase
+      .from("fin_transactions")
+      .select(TX_COLUMNS)
+      .eq("household_id", household.id)
+      .gte("date", start)
+      .lt("date", end);
+    if (filters.account) query = query.eq("account_id", filters.account);
+    if (filters.category === "sem") query = query.is("category_id", null);
+    else if (filters.category) query = query.eq("category_id", filters.category);
+    if (term) query = query.ilike("description", `%${term}%`);
+    // Ordem estável (id desempata) para as páginas não repetirem nem pularem linhas.
+    return query
+      .order("date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, to);
+  });
+  return markList(rows.map((t) => ({ ...t, amount: Number(t.amount) })) as Transaction[], incomplete);
 }
 
 export async function getTransaction(id: string): Promise<Transaction | null> {

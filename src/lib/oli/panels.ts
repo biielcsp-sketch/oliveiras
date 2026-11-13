@@ -31,6 +31,9 @@ export type ResumoData = {
   saidas: number;
   saldo: number;
   categorias: { nome: string; total: number; cor: string | null }[];
+  /** Presente só quando a lista de lançamentos veio incompleta (teto ou falha): totais parciais. */
+  incompleto?: true;
+  aviso?: string;
 };
 
 export type SaldosData = {
@@ -40,7 +43,20 @@ export type SaldosData = {
 };
 
 export type ContaAPagar = { nome: string; valor: number; vencimento: string; status: BillStatus; fatura: boolean; avulsa?: boolean };
-export type ContasData = { mes: string; mes_rotulo: string; total_pendente: number; contas: ContaAPagar[] };
+export type ContasData = {
+  mes: string;
+  mes_rotulo: string;
+  total_pendente: number;
+  contas: ContaAPagar[];
+  /** Presente só quando os lançamentos dos cartões vieram incompletos: faturas podem estar erradas. */
+  incompleto?: true;
+  aviso?: string;
+};
+
+/** Texto para o modelo e o painel quando a lista de lançamentos passou do teto ou falhou. */
+export const AVISO_INCOMPLETO =
+  "Lista de lançamentos incompleta (muitos lançamentos no período ou falha na leitura): os valores são parciais, não informe como totais.";
+const incompleteFields = (incomplete: boolean) => (incomplete ? { incompleto: true as const, aviso: AVISO_INCOMPLETO } : {});
 
 export type LancamentoItem = { data: string; descricao: string; valor: number; categoria: string | null; conta: string };
 export type LancamentosData = { busca: string | null; itens: LancamentoItem[] };
@@ -133,7 +149,7 @@ export type OliPanel =
 export const TOP_CATEGORIES = 6;
 
 /** Resumo do mês com as mesmas regras do Resumo de Finanças (summarize + cartões). */
-export function buildResumo(month: string, txs: Transaction[], categories: Category[], accounts: Account[]): ResumoData {
+export function buildResumo(month: string, txs: Transaction[], categories: Category[], accounts: Account[], incomplete = false): ResumoData {
   const cardIds = new Set(accounts.filter((a) => a.kind === "cartao").map((a) => a.id));
   const { income, expense, result, expenseByCategory } = summarize(txs, categories, cardIds);
   const catById = new Map(categories.map((c) => [c.id, c]));
@@ -147,6 +163,7 @@ export function buildResumo(month: string, txs: Transaction[], categories: Categ
       const cat = category_id ? catById.get(category_id) : undefined;
       return { nome: cat?.name ?? "Sem categoria", total, cor: cat?.color ?? null };
     }),
+    ...incompleteFields(incomplete),
   };
 }
 
@@ -177,6 +194,8 @@ export function buildContasAPagar(input: {
   /** Boleto confirmado do mês por conta: valor e vencimento dele prevalecem (mesma regra da tela). */
   billDocs?: Map<string, { amount: number | null; due_date: string | null }>;
   oneOffs?: { name: string; amount: number; due_date: string; paid_on: string | null }[];
+  /** Os lançamentos dos cartões vieram incompletos (teto ou falha). */
+  cardTxsIncomplete?: boolean;
 }): ContasData {
   const { month, today, bills, payments, accounts, categories, cardTxs, billDocs } = input;
   const oneOffs = (input.oneOffs ?? []).filter((o) => !o.paid_on && o.due_date.slice(0, 7) <= month);
@@ -227,7 +246,7 @@ export function buildContasAPagar(input: {
   ].sort((a, b) => a.vencimento.localeCompare(b.vencimento));
 
   const pendente = contas.filter((c) => c.status !== "paga").reduce((s, c) => s + cents(c.valor), 0);
-  return { mes: month, mes_rotulo: monthLabel(month), total_pendente: reais(pendente), contas };
+  return { mes: month, mes_rotulo: monthLabel(month), total_pendente: reais(pendente), contas, ...incompleteFields(input.cardTxsIncomplete === true) };
 }
 
 export function buildLancamentos(
