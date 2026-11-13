@@ -28,7 +28,7 @@ export async function createFamilyWithId(householdId: string, email: string, pas
   }
 }
 
-/** Segundo adulto (cônjuge) na família: usuário confirmado + vínculo + membro. */
+/** Segundo adulto (cônjuge) na família: usuário confirmado + vínculo + membro. Devolve o id do usuário. */
 export async function addSpouse(householdId: string, email: string, password: string, name: string) {
   const admin = adminClient();
   const { data: user, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true });
@@ -41,4 +41,5 @@ export async function addSpouse(householdId: string, email: string, password: st
     const { error: e } = await admin.from(table).insert(row);
     if (e) throw e;
   }
+  return uid;
 }

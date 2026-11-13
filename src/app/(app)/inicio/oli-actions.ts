@@ -26,6 +26,13 @@ import {
   parseDocumentosArgs,
   parseLerDocumentoArgs,
   parseCriarConsultaArgs,
+  parseConsultarFinancasArgs,
+  parseConsultarSaudeArgs,
+  parseConsultarCasaArgs,
+  parseConsultarPetArgs,
+  parseConsultarIgrejaArgs,
+  parseBuscarNoAppArgs,
+  parseLerArquivoArgs,
   matchByName,
   type OliToolName,
 } from "@/lib/oli/tool-args";
@@ -56,6 +63,11 @@ import {
   type DocumentoData,
   type DocumentosData,
 } from "@/lib/oli/panels";
+import { oliAllowedFor } from "@/lib/oli/access";
+import type { ConsultaData } from "@/lib/oli/consultas";
+import type { LerArquivoData } from "@/lib/oli/ler-arquivo";
+import { buscarNoApp, consultarCasa, consultarFinancas, consultarIgreja, consultarPet, consultarSaude } from "@/lib/oli/consultas-data";
+import { lerArquivo } from "@/lib/oli/ler-arquivo-server";
 
 /**
  * Ferramentas do Oli. Rodam com a sessão do usuário (RLS), nunca com chave de serviço.
@@ -75,6 +87,8 @@ export type OliToolResult =
   | { ok: true; tool: "documentos_recentes"; data: DocumentosData }
   | { ok: true; tool: "ler_documento"; data: DocumentoData }
   | { ok: true; tool: "criar_consulta"; data: ConsultaPreview }
+  | { ok: true; tool: "consultar_financas" | "consultar_saude" | "consultar_casa" | "consultar_pet" | "consultar_igreja" | "buscar_no_app"; data: ConsultaData }
+  | { ok: true; tool: "ler_arquivo"; data: LerArquivoData }
   | { ok: false; erro: string };
 
 const err = (erro: string): OliToolResult => ({ ok: false, erro });
@@ -82,6 +96,10 @@ const err = (erro: string): OliToolResult => ({ ok: false, erro });
 export async function runOliTool(name: string, args: unknown): Promise<OliToolResult> {
   if (!isToolName(name)) return err("Ferramenta desconhecida.");
   try {
+    // Mesma liberação do token: a server action pode ser chamada direto, então confere aqui também
+    // (ler_arquivo chama a IA, que é paga).
+    const { household } = await getAppContext();
+    if (!oliAllowedFor(household.id)) return err("O Oli ainda não está liberado para esta família.");
     return await dispatch(name, args);
   } catch (e) {
     console.error("Oli: ferramenta falhou:", name, e instanceof Error ? e.message : "erro");
@@ -229,6 +247,49 @@ async function dispatch(name: OliToolName, args: unknown): Promise<OliToolResult
         .limit(a.value.limite);
       if (error) return err("Não consegui consultar os documentos.");
       return { ok: true, tool: name, data: buildDocumentos(data ?? []) };
+    }
+    case "consultar_financas": {
+      const a = parseConsultarFinancasArgs(args);
+      if (!a.ok) return err(a.erro);
+      const r = await consultarFinancas(await getAppContext(), a.value, todaySP());
+      return r.ok ? { ok: true, tool: name, data: r.data } : err(r.erro);
+    }
+    case "consultar_saude": {
+      const a = parseConsultarSaudeArgs(args);
+      if (!a.ok) return err(a.erro);
+      const r = await consultarSaude(await getAppContext(), a.value, todaySP());
+      return r.ok ? { ok: true, tool: name, data: r.data } : err(r.erro);
+    }
+    case "consultar_casa": {
+      const a = parseConsultarCasaArgs(args);
+      if (!a.ok) return err(a.erro);
+      const r = await consultarCasa(await getAppContext(), a.value, todaySP());
+      return r.ok ? { ok: true, tool: name, data: r.data } : err(r.erro);
+    }
+    case "consultar_pet": {
+      const a = parseConsultarPetArgs(args);
+      if (!a.ok) return err(a.erro);
+      const r = await consultarPet(await getAppContext(), a.value, todaySP());
+      return r.ok ? { ok: true, tool: name, data: r.data } : err(r.erro);
+    }
+    case "consultar_igreja": {
+      const a = parseConsultarIgrejaArgs(args);
+      if (!a.ok) return err(a.erro);
+      const r = await consultarIgreja(await getAppContext(), a.value);
+      return r.ok ? { ok: true, tool: name, data: r.data } : err(r.erro);
+    }
+    case "buscar_no_app": {
+      const a = parseBuscarNoAppArgs(args);
+      if (!a.ok) return err(a.erro);
+      const r = await buscarNoApp(await getAppContext(), a.value.busca);
+      return r.ok ? { ok: true, tool: name, data: r.data } : err(r.erro);
+    }
+    case "ler_arquivo": {
+      // Lê o conteúdo de um arquivo guardado (sessão/RLS; Drive só com a conta da própria pessoa), no limite diário do "+".
+      const a = parseLerArquivoArgs(args);
+      if (!a.ok) return err(a.erro);
+      const r = await lerArquivo(await getAppContext(), a.value);
+      return r.ok ? { ok: true, tool: name, data: r.data } : err(r.erro);
     }
     case "ler_documento": {
       // Só os dados validados do documento; o Oli nunca recebe o arquivo.

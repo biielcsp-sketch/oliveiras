@@ -97,6 +97,18 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
         case "ler_documento":
           add({ id, kind: "documento", data: res.data });
           return res.data;
+        case "consultar_financas":
+        case "consultar_saude":
+        case "consultar_casa":
+        case "consultar_pet":
+        case "consultar_igreja":
+        case "buscar_no_app":
+          add({ id, kind: "consulta", data: res.data });
+          return res.data;
+        case "ler_arquivo":
+          add({ id, kind: "arquivo_lido", data: res.data });
+          // Ao modelo, o conteúdo vai só dentro de <documento_lido> (dado, nunca instrução).
+          return { arquivo: res.data.arquivo, documento_lido: res.data.documento_lido };
         case "criar_evento":
           return new Promise((resolve) => {
             pending.current.set(id, { resolve });

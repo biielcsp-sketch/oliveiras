@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { Brain, CalendarClock, CalendarDays, Check, FileText, ListOrdered, PieChart, Trash2, Wallet, X } from "lucide-react";
+import { Brain, CalendarClock, CalendarDays, Check, Church, FileText, HeartPulse, Home, ListOrdered, Paperclip, PawPrint, PieChart, Search, Trash2, Wallet, X } from "lucide-react";
 import { brDate, shortDayLabel } from "@/lib/agenda/dates";
 import { safeHex } from "@/lib/agenda/view";
 import type { ReactNode } from "react";
@@ -8,6 +8,8 @@ import { StatusBadge } from "@/app/(app)/financas/_components/status-badge";
 import { formatBRL } from "@/lib/financas/money";
 import { shortDate } from "@/lib/financas/period";
 import type { OliPanel } from "@/lib/oli/panels";
+import type { ConsultaAba, ConsultaData } from "@/lib/oli/consultas";
+import type { LerArquivoData } from "@/lib/oli/ler-arquivo";
 import type { OliFileDest } from "@/lib/oli/arquivo";
 import { ArquivoPanel } from "./oli-arquivo";
 
@@ -450,6 +452,10 @@ export function PanelView({
           onCancel={onCancel}
         />
       );
+    case "consulta":
+      return <ConsultaPanel data={p.data} />;
+    case "arquivo_lido":
+      return <ArquivoLidoPanel data={p.data} />;
     case "aviso":
       return (
         <Card className="p-4">
@@ -541,6 +547,84 @@ function Confirm({
           {status === "erro" ? (erro ?? "Não foi possível concluir.") : status === "criado" ? doneText.criado : doneText.cancelado}
         </p>
       )}
+    </Card>
+  );
+}
+
+/* ---------- Leitura total: consultas por aba e arquivo lido ---------- */
+
+const ABA_ICON: Record<ConsultaAba, ReactNode> = {
+  financas: <Wallet size={16} aria-hidden />,
+  saude: <HeartPulse size={16} aria-hidden />,
+  casa: <Home size={16} aria-hidden />,
+  pet: <PawPrint size={16} aria-hidden />,
+  igreja: <Church size={16} aria-hidden />,
+  busca: <Search size={16} aria-hidden />,
+};
+
+/** Itens por grupo no painel (o modelo recebe até 15; o painel mostra um resumo). */
+export const PANEL_ITEMS = 6;
+
+function ConsultaPanel({ data: d }: { data: ConsultaData }) {
+  return (
+    <Card role="group" aria-label={d.titulo}>
+      <Head icon={ABA_ICON[d.aba] ?? <Search size={16} aria-hidden />} title={d.titulo} />
+      {d.grupos.length === 0 ? (
+        <p className="text-sm text-muted">{d.aviso ?? "Nada encontrado."}</p>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {d.grupos.map((g) => (
+            <section key={g.titulo} aria-label={g.titulo}>
+              <h4 className="text-[13px] font-medium text-muted">{g.titulo}</h4>
+              <ul className="divide-y divide-line">
+                {g.itens.slice(0, PANEL_ITEMS).map((x, i) => {
+                  const meta = [x.data ? brDate(x.data) : null, x.pessoa, x.status].filter(Boolean).join(" · ");
+                  return (
+                    <li key={i} className="flex items-start gap-3 py-2.5 text-[15px]">
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">{x.titulo}</span>
+                        {meta && <span className="block truncate text-[12px] text-muted">{meta}</span>}
+                        {x.detalhes[0] && <span className="block truncate text-[12px] text-muted">{x.detalhes[0]}</span>}
+                      </span>
+                      {x.arquivo && (
+                        <span className="mt-0.5 shrink-0 text-muted" title="Tem arquivo guardado">
+                          <Paperclip size={14} aria-label="Tem arquivo" />
+                        </span>
+                      )}
+                      {x.valor !== null && <span className={clsx("shrink-0 tabular-nums", x.valor < 0 && "text-danger")}>{formatBRL(x.valor)}</span>}
+                    </li>
+                  );
+                })}
+              </ul>
+              {g.total > Math.min(PANEL_ITEMS, g.itens.length) && (
+                <p className="mt-1 text-[12px] text-muted">+{g.total - Math.min(PANEL_ITEMS, g.itens.length)} no app</p>
+              )}
+            </section>
+          ))}
+          {d.aviso && <p className="text-[12px] text-muted">{d.aviso}</p>}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function ArquivoLidoPanel({ data: d }: { data: LerArquivoData }) {
+  const title = d.arquivo.nome ? `${d.arquivo.rotulo}: ${d.arquivo.nome}` : d.arquivo.rotulo;
+  return (
+    <Card role="group" aria-label="Arquivo lido pelo Oli (guardado)">
+      <Head icon={<FileText size={16} aria-hidden />} title={title} aside={d.arquivo.pessoa ? <span className="text-sm text-muted">{d.arquivo.pessoa}</span> : undefined} />
+      {d.titulo && <p className="text-[13px] font-medium text-muted">{d.titulo}</p>}
+      <p className="mt-1 text-[15px] leading-relaxed" data-testid="arquivo-lido-resumo">
+        {d.resumo}
+      </p>
+      {d.pontos.length > 0 && (
+        <ul className="mt-3 list-disc space-y-1 pl-5 text-[14px]">
+          {d.pontos.map((pt, i) => (
+            <li key={i}>{pt}</li>
+          ))}
+        </ul>
+      )}
+      <p className="mt-3 text-[12px] text-muted">Resumo feito por IA a partir do arquivo. Confira no documento original.</p>
     </Card>
   );
 }
