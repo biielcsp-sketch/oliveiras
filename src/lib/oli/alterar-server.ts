@@ -23,7 +23,7 @@ import {
 } from "@/app/(app)/casa/pet-actions";
 import { deletePrayer, deletePurpose, deleteWord, savePrayer, savePurpose, saveWord } from "@/app/(app)/ministerio/devocional-actions";
 import { deleteLesson, saveLesson } from "@/app/(app)/ministerio/carisma-actions";
-import { planAlteracao, planToFormEntries, specFor, type AlteracaoPlan, type AlterarArgs, type AlterarLookup, type Row } from "./alterar";
+import { driveAviso, planAlteracao, planToFormEntries, specFor, type AlteracaoPlan, type AlterarArgs, type AlterarLookup, type Row } from "./alterar";
 
 /**
  * Lado do servidor da escrita do Oli (Casa, Pet, Igreja): lê a linha atual com a sessão do usuário (RLS) e, no
@@ -52,28 +52,38 @@ async function lookup(ctx: Ctx, db: Db, aba: string): Promise<AlterarLookup> {
 
 const ARQUIVO_AVISO = "O arquivo guardado também será apagado.";
 
-/** Avisos que dependem do banco (arquivo junto, item que será substituído). Entram no painel e no conferir do Confirmar. */
-async function avisoDe(ctx: Ctx, db: Db, plan: AlteracaoPlan, row: Row | null): Promise<string | null> {
+const AVISO_FALHOU = "Não consegui conferir o item agora. Nada foi alterado: tente de novo.";
+
+/**
+ * Avisos que dependem do banco (arquivo junto, item que será substituído). Entram no painel e no conferir do Confirmar.
+ * Se a consulta que decide o aviso falhar, recusa (nunca mostra um painel sem o aviso que deveria ter).
+ */
+async function avisoDe(ctx: Ctx, db: Db, plan: AlteracaoPlan, row: Row | null): Promise<{ ok: true; aviso: string | null } | { ok: false; erro: string }> {
   const { preview: p, raw } = plan;
   const hh = ctx.household.id;
+  const aviso = (a: string | null) => ({ ok: true as const, aviso: a });
+  const falhou = { ok: false as const, erro: AVISO_FALHOU };
   if (p.acao === "apagar") {
-    if ((p.secao === "documentos" || p.secao === "saude" || p.secao === "veterinario") && row?.file_path) return ARQUIVO_AVISO;
-    if (p.secao === "prestadores") return "Manutenções ligadas a este prestador ficam sem prestador.";
+    if ((p.secao === "documentos" || p.secao === "saude" || p.secao === "veterinario") && row?.file_path) return aviso(ARQUIVO_AVISO);
+    if (p.secao === "prestadores") return aviso("Manutenções ligadas a este prestador ficam sem prestador.");
     if (p.secao === "carisma") {
-      const { count } = await db.from("igreja_carisma_files").select("id", { count: "exact", head: true }).eq("household_id", hh).eq("lesson_id", p.id!);
-      if (count || row?.drive_folder_id) return `A pasta e ${count === 1 ? "o arquivo" : `os ${count ?? 0} arquivos`} da aula vão para a lixeira do seu Google Drive.`;
+      const { count, error } = await db.from("igreja_carisma_files").select("id", { count: "exact", head: true }).eq("household_id", hh).eq("lesson_id", p.id!);
+      if (error || typeof count !== "number") return falhou;
+      return aviso(driveAviso(Boolean(row?.drive_folder_id), count));
     }
-    return null;
+    return aviso(null);
   }
   if (p.acao === "criar" && p.secao === "cardapio") {
-    const { data } = await db.from("casa_meal_plan").select("title").eq("household_id", hh).eq("day", String(raw.day)).eq("meal", String(raw.meal)).maybeSingle();
-    if (data) return `Já tem “${String(data.title).slice(0, 120)}” no ${MEAL_LABEL[raw.meal as Meal]?.toLowerCase() ?? "horário"} de ${brDate(String(raw.day))}: vai ser substituído.`;
+    const { data, error } = await db.from("casa_meal_plan").select("title").eq("household_id", hh).eq("day", String(raw.day)).eq("meal", String(raw.meal)).maybeSingle();
+    if (error) return falhou;
+    if (data) return aviso(`Já tem “${String(data.title).slice(0, 120)}” no ${MEAL_LABEL[raw.meal as Meal]?.toLowerCase() ?? "horário"} de ${brDate(String(raw.day))}: vai ser substituído.`);
   }
   if (p.acao === "criar" && p.secao === "peso") {
-    const { data } = await db.from("casa_pet_weights").select("weight_kg").eq("household_id", hh).eq("pet_id", String(raw.pet_id)).eq("measured_on", String(raw.measured_on)).maybeSingle();
-    if (data) return `Já tem pesagem nesse dia (${String(Number(data.weight_kg)).replace(".", ",")} kg): vai ser substituída.`;
+    const { data, error } = await db.from("casa_pet_weights").select("weight_kg").eq("household_id", hh).eq("pet_id", String(raw.pet_id)).eq("measured_on", String(raw.measured_on)).maybeSingle();
+    if (error) return falhou;
+    if (data) return aviso(`Já tem pesagem nesse dia (${String(Number(data.weight_kg)).replace(".", ",")} kg): vai ser substituída.`);
   }
-  return null;
+  return aviso(null);
 }
 
 /** Prepara (sem gravar): linha atual + plano + painel. */
@@ -89,7 +99,9 @@ export async function prepararAlteracao(ctx: Ctx, a: AlterarArgs): Promise<Prepa
   }
   const r = planAlteracao(a, row, await lookup(ctx, db, a.aba));
   if (!r.ok) return r;
-  r.plan.preview.aviso = await avisoDe(ctx, db, r.plan, row);
+  const av = await avisoDe(ctx, db, r.plan, row);
+  if (!av.ok) return av;
+  r.plan.preview.aviso = av.aviso;
   return { ok: true, plan: r.plan, row };
 }
 

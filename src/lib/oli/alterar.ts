@@ -845,6 +845,14 @@ export function planToFormEntries(plan: AlteracaoPlan): [string, string][] {
   return out;
 }
 
+/** Aviso de lixeira do Drive ao apagar uma aula: só pasta, só arquivos ou os dois; sem nenhum dos dois, sem aviso. */
+export function driveAviso(temPasta: boolean, arquivos: number): string | null {
+  if (arquivos > 0 && temPasta) return `A pasta da aula e ${arquivos === 1 ? "o arquivo" : `os ${arquivos} arquivos`} vão para a lixeira do seu Google Drive.`;
+  if (arquivos > 0) return arquivos === 1 ? "O arquivo da aula vai para a lixeira do seu Google Drive." : `Os ${arquivos} arquivos da aula vão para a lixeira do seu Google Drive.`;
+  if (temPasta) return "A pasta da aula vai para a lixeira do seu Google Drive.";
+  return null;
+}
+
 export const ITEM_MUDOU = "O item mudou desde que o Oli mostrou o painel. Nada foi gravado: peça de novo para conferir.";
 
 export const ALTERAR_DONE: Record<AlterarAcao, string> = {

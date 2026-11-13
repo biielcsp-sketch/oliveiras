@@ -724,7 +724,11 @@ function AlteracaoPanel({
           Isto apaga o item de vez do app. Não dá para desfazer.
         </p>
       )}
-      {d.aviso && <p className="mt-2 text-sm text-muted">{d.aviso}</p>}
+      {d.aviso && (
+        <p role="note" data-testid="alteracao-aviso" className="mt-3 rounded-2xl bg-danger/10 px-3 py-2 text-sm font-medium text-danger">
+          {d.aviso}
+        </p>
+      )}
     </Confirm>
   );
 }

@@ -346,7 +346,7 @@ test("Oli: consultas leem só a própria família, respeitam o privado e ler_arq
  * Escrita (etapa 2): alterar_casa/pet/igreja só PROPÕEM (painel); confirmOliAlteracao grava pelas actions das telas.
  * Sem Gemini Live nos testes: o teste pede a ferramenta e depois o Confirmar, como a tela faz com o painel recebido.
  */
-type Preview = Record<string, unknown> & { acao: string; titulo: string; campos: { rotulo: string; antes: string | null; depois: string | null }[]; anexo: { atual: string | null; acrescimo: string } | null };
+type Preview = Record<string, unknown> & { acao: string; titulo: string; aviso: string | null; campos: { rotulo: string; antes: string | null; depois: string | null }[]; anexo: { atual: string | null; acrescimo: string } | null };
 const previewOf = (r: ToolResult) => {
   expect(r).toMatchObject({ ok: true });
   return (r as { data: unknown }).data as Preview;
@@ -476,6 +476,19 @@ test("Oli: cria, edita e apaga em Casa, Pet e Igreja só depois de Confirmar, re
     expect(await leite()).toHaveLength(1);
     expect(await confirm(p)).toEqual({ ok: true });
     expect(await leite()).toEqual([]);
+  });
+
+  await test.step("apagar aula: aviso do Drive só quando há pasta; sem pasta nem arquivos, sem aviso", async () => {
+    const semPasta = itemId(await callOliTool(page, "consultar_igreja", { secao: "carisma" }), "Aula do Gabriel");
+    expect(previewOf(await callOliTool(page, "alterar_igreja", { acao: "apagar", secao: "carisma", id: semPasta })).aviso).toBeNull();
+    const comPasta = randomUUID();
+    const { data: me } = await admin.from("household_users").select("user_id").eq("household_id", hh).eq("role", "owner").single();
+    expect((await admin.from("igreja_carisma_lessons").insert({ id: comPasta, household_id: hh, owner_id: me!.user_id, shared: false, title: "Aula com pasta", drive_folder_id: "pasta-teste" })).error).toBeNull();
+    const p = previewOf(await callOliTool(page, "alterar_igreja", { acao: "apagar", secao: "carisma", id: comPasta }));
+    expect(p.aviso).toBe("A pasta da aula vai para a lixeira do seu Google Drive.");
+    expect(JSON.stringify(p.aviso)).not.toMatch(/\b0 arquivos/);
+    expect((await admin.from("igreja_carisma_lessons").select("id").eq("id", comPasta)).data).toHaveLength(1); // propor não apaga
+    await admin.from("igreja_carisma_lessons").delete().eq("id", comPasta);
   });
 
   await test.step("Pet: registra o peso do único pet", async () => {

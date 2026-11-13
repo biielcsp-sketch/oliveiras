@@ -13,6 +13,7 @@ import {
   type AlterarLookup,
   type Row,
 } from "@/lib/oli/alterar";
+import { driveAviso } from "@/lib/oli/alterar";
 import { ALTERAR_TOOLS, OLI_PERSONA } from "@/lib/oli/prompt";
 import { OliPanels } from "@/components/oli/oli-panels";
 import type { OliPanel } from "@/lib/oli/panels";
@@ -71,7 +72,24 @@ vi.mock("@/app/(app)/ministerio/devocional-actions", () => ({
   deletePurpose: del("deletePurpose"),
 }));
 vi.mock("@/app/(app)/ministerio/carisma-actions", () => ({ saveLesson: save("saveLesson"), deleteLesson: del("deleteLesson") }));
-vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({}) }));
+/* Banco falso só para o preparo de apagar aula (linha da aula + contagem de arquivos). */
+const dbState = vi.hoisted(() => ({
+  lesson: null as Record<string, unknown> | null,
+  files: { count: 0 as number | null, error: null as unknown },
+}));
+vi.mock("@/lib/supabase/server", () => ({
+  createClient: async () => ({
+    from: (table: string) => {
+      const b: Record<string, unknown> = {
+        select: () => b,
+        eq: () => b,
+        maybeSingle: async () => ({ data: table === "igreja_carisma_lessons" ? dbState.lesson : null, error: null }),
+        then: (res: (v: unknown) => unknown) => Promise.resolve(res(dbState.files)),
+      };
+      return b;
+    },
+  }),
+}));
 
 const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const ME = { id: U(1), name: "Gabriel", user_id: U(101) };
@@ -363,5 +381,60 @@ describe("Oli escrita: painel de confirmação", () => {
     const done = render([{ id: "1", kind: "confirmar_alteracao", status: "criado", data: apagar }]);
     expect(done).toContain("Apagado.");
     expect(done).not.toContain(">Confirmar<");
+  });
+});
+
+describe("Oli escrita: apagar aula (aviso de lixeira do Drive)", () => {
+  const ctx = { household: { id: U(900) }, user: { id: ME.user_id }, me: ME, members: [ME, KAREN] } as never;
+  const apagar = { aba: "carisma" as const, acao: "apagar" as const, secao: "carisma", id: U(9), frase: null, valores: {} };
+  const prep = async () => {
+    const { prepararAlteracao } = await import("@/lib/oli/alterar-server");
+    return prepararAlteracao(ctx, { ...apagar, aba: "igreja" });
+  };
+  const lesson = (folder: string | null) => ({ id: U(9), owner_id: ME.user_id, shared: false, title: "Aula", lesson_date: null, subject: null, teacher: null, notes: null, drive_folder_id: folder });
+
+  it("texto por caso: só pasta, só arquivos, os dois; nunca 0 arquivos; nada, sem aviso", () => {
+    expect(driveAviso(true, 0)).toBe("A pasta da aula vai para a lixeira do seu Google Drive.");
+    expect(driveAviso(false, 1)).toBe("O arquivo da aula vai para a lixeira do seu Google Drive.");
+    expect(driveAviso(false, 3)).toBe("Os 3 arquivos da aula vão para a lixeira do seu Google Drive.");
+    expect(driveAviso(true, 1)).toBe("A pasta da aula e o arquivo vão para a lixeira do seu Google Drive.");
+    expect(driveAviso(true, 2)).toBe("A pasta da aula e os 2 arquivos vão para a lixeira do seu Google Drive.");
+    expect(driveAviso(false, 0)).toBeNull();
+    for (const [f, n] of [[true, 0], [false, 1], [false, 5], [true, 1], [true, 4]] as const) expect(driveAviso(f, n)).not.toMatch(/\b0 arquivos/);
+  });
+
+  it("o painel usa o aviso certo conforme pasta e arquivos do banco", async () => {
+    const aviso = async (folder: string | null, count: number) => {
+      dbState.lesson = lesson(folder);
+      dbState.files = { count, error: null };
+      const r = await prep();
+      if (!r.ok) throw new Error(r.erro);
+      return r.plan.preview.aviso;
+    };
+    expect(await aviso("pasta", 0)).toBe("A pasta da aula vai para a lixeira do seu Google Drive.");
+    expect(await aviso(null, 2)).toBe("Os 2 arquivos da aula vão para a lixeira do seu Google Drive.");
+    expect(await aviso("pasta", 1)).toBe("A pasta da aula e o arquivo vão para a lixeira do seu Google Drive.");
+    expect(await aviso(null, 0)).toBeNull();
+  });
+
+  it("falha na contagem de arquivos: recusa, sem painel (nem para o Confirmar apagar)", async () => {
+    dbState.lesson = lesson(null);
+    dbState.files = { count: null, error: { message: "boom" } };
+    expect(await prep()).toEqual({ ok: false, erro: "Não consegui conferir o item agora. Nada foi alterado: tente de novo." });
+    dbState.files = { count: null, error: null }; // sem count também não vale como "zero arquivos"
+    expect(await prep()).toMatchObject({ ok: false });
+  });
+});
+
+describe("Oli escrita: avisos em destaque no painel", () => {
+  it("aviso (Drive ou arquivo do storage) usa o mesmo alerta vermelho de apagar, com role note", () => {
+    const row = { id: U(9), kind: "garantia", title: "TV", product: null, store: null, purchase_date: null, warranty_until: null, amount: null, notes: null, file_path: "x" };
+    const data = { ...okPlan("casa", { acao: "apagar", secao: "documentos", id: U(9) }, row).preview, aviso: "O arquivo guardado também será apagado." };
+    const html = renderToStaticMarkup(createElement(OliPanels, { panels: [{ id: "1", kind: "confirmar_alteracao", status: "pendente", data }], onConfirm: () => {}, onCancel: () => {}, onClear: () => {} }));
+    const m = /<p role="note"[^>]*data-testid="alteracao-aviso"[^>]*>O arquivo guardado também será apagado\.<\/p>/.exec(html);
+    expect(m?.[0]).toMatch(/bg-danger\/10/);
+    expect(m?.[0]).toMatch(/text-danger/);
+    expect(m?.[0]).toMatch(/font-medium/);
+    expect(m?.[0]).not.toMatch(/text-muted/);
   });
 });
