@@ -40,7 +40,8 @@ export function OliAddFile({ busy, onFile }: { busy: boolean; onFile: (file: Fil
         variant="ghost"
         aria-label={busy ? "Lendo arquivo…" : "Adicionar arquivo"}
         aria-haspopup="dialog"
-        className="w-12 shrink-0 px-0"
+        size="icon"
+        className="text-deep"
         disabled={busy}
         onClick={() => setOpen(true)}
       >

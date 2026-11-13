@@ -23,14 +23,14 @@ export type ModuleDef = {
 export const MODULES: ModuleDef[] = [
   { href: "/financas", label: "Finanças", icon: Wallet, description: "Contas, cartões, orçamento e metas", phase: 1 },
   { href: "/agenda", label: "Agenda", icon: CalendarDays, description: "Agendas do casal integradas ao Google", phase: 3 },
-  { href: "/saude", label: "Saúde", icon: HeartPulse, description: "Carteirinhas, consultas, exames, medicamentos e vacinas", phase: 4, entry: "/saude/consultas" },
+  { href: "/saude", label: "Saúde", icon: HeartPulse, description: "Carteirinhas, consultas, exames, medicamentos e vacinas", phase: 4 },
   { href: "/casa", label: "Casa", icon: Home, description: "Compras, tarefas, manutenção e documentos", phase: 5 },
   { href: "/ministerio", label: "Igreja", icon: Church, description: "Vida devocional, Carisma e Consolidação", phase: 6 },
 ];
 
-/** O Oli mora na tela Início (/assistente redireciona para lá). */
+/** O Oli tem tela própria (/assistente); o Início é o painel da família. */
 export const ASSISTANT: ModuleDef = {
-  href: "/inicio",
+  href: "/assistente",
   label: "Oli",
   icon: Sparkles,
   description: "Pergunte sobre qualquer área da vida da família",
@@ -42,14 +42,13 @@ export const FAMILY: ModuleDef = { href: "/familia", label: "Família", icon: Us
 
 const byHref = (href: string) => MODULES.find((m) => m.href === href)!;
 
-/** Barra inferior do celular: Finanças · Saúde · [Oli] · Casa · Igreja. Início fica no logo; Agenda no topo. */
+/** Barra inferior do celular: Finanças · Saúde · [Oli] · Casa · Igreja. Início fica no logo; Agenda no topo do Início. */
 export const MOBILE_NAV_LEFT = [byHref("/financas"), byHref("/saude")];
 export const MOBILE_NAV_RIGHT = [byHref("/casa"), byHref("/ministerio")];
 export const AGENDA = byHref("/agenda");
 
-/** Barra lateral no desktop (Agenda abre o calendário, separado). O Oli está no Início. */
-export const SIDEBAR_NAV = [HOME, ...MODULES.filter((m) => m.href !== "/agenda")];
+/** Barra lateral no desktop (Agenda abre o calendário, separado). */
+export const SIDEBAR_NAV = [HOME, ASSISTANT, ...MODULES.filter((m) => m.href !== "/agenda")];
 
-/** Telas com o cabeçalho azul em ferradura: a barra do topo do celular fica clara sobre ele. */
-export const HERO_ROUTES = ["/financas", "/saude", "/casa", "/ministerio"];
-export const isHeroRoute = (path: string) => HERO_ROUTES.some((r) => path === r || path.startsWith(r + "/"));
+/** Módulos do arco do Início, na ordem da prévia aprovada. */
+export const HOME_MODULES = [byHref("/financas"), byHref("/saude"), byHref("/casa"), byHref("/ministerio")];

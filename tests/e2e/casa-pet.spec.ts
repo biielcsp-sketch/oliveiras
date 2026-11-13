@@ -39,7 +39,7 @@ test("Pet: Moisés com vacina, veterinário, cuidados, peso e ração (isolado d
   await test.step("aba Pet no menu; cadastrar o Moisés", async () => {
     await a.goto("/casa");
     const nav = a.getByRole("navigation", { name: "Seções de Casa" });
-    await expect(nav.locator('[aria-current="page"]')).toContainText("Resumo");
+    await expect(a.getByRole("heading", { level: 1 })).toHaveText("Casa");
     await expect(nav.getByText("Pet", { exact: true })).toHaveCount(1);
     await expect(a.getByTestId("resumo-pet")).toContainText("Nenhum pet cadastrado.");
 

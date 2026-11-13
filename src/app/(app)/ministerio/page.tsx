@@ -4,7 +4,7 @@ import { getAppContext } from "@/lib/data";
 import { createClient } from "@/lib/supabase/server";
 import { brDate } from "@/lib/agenda/dates";
 import { todaySP } from "@/lib/financas/today";
-import { Card } from "@/components/ui";
+import { ModuleHeroCard, SectionGrid } from "@/components/module-home";
 
 export const metadata = { title: "Igreja" };
 
@@ -12,19 +12,19 @@ function Tile({ href, icon: Icon, title, lines, testId }: { href: string; icon: 
   // min-w-0: sem ele o item da grade cresce até a largura do texto com truncate e a página rola para os lados
   return (
     <Link href={href} className="block min-w-0" data-testid={testId}>
-      <Card className="flex h-full items-start gap-4 transition hover:brightness-105">
-        <span className="grid size-12 shrink-0 place-items-center rounded-full border border-line bg-accent-soft text-primary">
-          <Icon size={22} aria-hidden />
+      <div className="glass-card flex h-full items-start gap-3.5 rounded-[20px] px-4 py-3.5 transition hover:brightness-105">
+        <span className="tic size-[42px]">
+          <Icon size={20} aria-hidden />
         </span>
         <div className="min-w-0">
-          <p className="text-lg font-semibold tracking-tight">{title}</p>
+          <p className="text-[15px] font-semibold tracking-tight">{title}</p>
           {lines.map((l) => (
-            <p key={l} className="truncate text-sm text-muted">
+            <p key={l} className="truncate text-[13px] text-muted">
               {l}
             </p>
           ))}
         </div>
-      </Card>
+      </div>
     </Link>
   );
 }
@@ -53,7 +53,14 @@ export default async function Page() {
   const preview = (s: string) => (s.length > 70 ? `${s.slice(0, 69)}…` : s);
 
   return (
-    <div className="grid gap-4 md:grid-cols-2">
+    <div className="flex flex-col gap-6">
+      <ModuleHeroCard title="Conecte-se com a sua igreja" subtitle="Faça parte desta família." image="/ilustracoes/igreja.webp" />
+      <SectionGrid module="ministerio" />
+      <section aria-labelledby="resumo-titulo" className="min-w-0">
+        <h2 id="resumo-titulo" className="mb-2 text-[15.5px] font-bold tracking-tight">
+          Resumo
+        </h2>
+        <div className="grid gap-3 md:grid-cols-2">
       <Tile
         href="/ministerio/devocional/oracoes"
         icon={HandHeart}
@@ -89,6 +96,8 @@ export default async function Page() {
         ].filter(Boolean).concat(!next && !last ? ["Nenhuma aula com data ainda"] : [])}
       />
       <Tile href="/ministerio/consolidacao" icon={Users} title="Consolidação" testId="igreja-resumo-consolidacao" lines={["Integração com o app da Consolidação em breve"]} />
+        </div>
+      </section>
     </div>
   );
 }

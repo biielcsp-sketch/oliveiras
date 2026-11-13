@@ -2,13 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { RouteArcNav } from "@/components/route-arc-nav";
 import { chipClass } from "@/components/ui";
-import { DEVOCIONAL_TABS, devocionalTabFor, IGREJA_TABS } from "@/lib/igreja/nav";
-
-export function IgrejaSubnav() {
-  return <RouteArcNav items={IGREJA_TABS} label="Seções de Igreja" />;
-}
+import { DEVOCIONAL_TABS, devocionalTabFor } from "@/lib/igreja/nav";
 
 /** Abas internas da Vida Devocional (cada uma é uma página). */
 export function DevocionalTabs() {

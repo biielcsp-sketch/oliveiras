@@ -28,27 +28,18 @@ test("login: seletor Entrar/Criar conta removido; texto alterna o modo", async (
   expect(problems).toEqual([]);
 });
 
-test("login: palco do Oli presente (3D, imagem estática sem GPU ou aviso)", async ({ page }) => {
+test("login: esfera do Oli presente e reage ao foco nos campos", async ({ page }) => {
   await page.goto("/login");
   const stage = page.getByTestId("oli-stage");
   await expect(stage).toBeVisible();
-  await expect(
-    stage
-      .locator("canvas")
-      .or(stage.locator('img[src="/oli/oli-login-transparent.webp"]'))
-      .or(stage.getByText("Não foi possível carregar o Oli em 3D")),
-  ).toBeVisible({ timeout: 15_000 });
-  // Com 3D: o placeholder sai depois que o canvas assume (e fica decorativo enquanto os dois coexistem).
-  // Sem GPU (software): o poster é a única imagem e permanece, com texto alternativo.
-  const poster = stage.locator('img[src="/oli/oli-login-transparent.webp"]');
-  if (await stage.locator("canvas").count()) {
-    await expect(poster).toHaveCount(0, { timeout: 5_000 });
-  } else if (await poster.count()) {
-    await expect(poster).toHaveAttribute("alt", "Oli, o assistente da família");
-    await expect(poster).not.toHaveAttribute("aria-hidden", "true");
-    await page.waitForTimeout(1_200);
-    await expect(poster).toHaveCount(1);
-  }
+  const sphere = stage.getByRole("img", { name: "Oli, o assistente da família" });
+  await expect(sphere).toBeVisible();
+  await expect(stage.locator("canvas, img")).toHaveCount(0);
+  await expect(sphere).toHaveAttribute("data-state", "idle");
+  await page.getByLabel("E-mail").focus();
+  await expect(sphere).toHaveAttribute("data-state", "listen");
+  await page.getByRole("heading", { name: "Oliveira's" }).click();
+  await expect(sphere).toHaveAttribute("data-state", "idle");
   const box = await stage.boundingBox();
   expect(box!.height).toBeLessThanOrEqual(400); // altura reservada por CSS (sem deslocamento de layout)
   await expect(page.getByRole("heading", { name: "Oliveira's" })).toBeVisible();

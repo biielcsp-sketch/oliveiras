@@ -157,7 +157,7 @@ function UploadBox({ lessonId, onNotice, onError }: { lessonId: string; onNotice
       />
       <label
         htmlFor="carisma-arquivo"
-        className={`glass glass-shine inline-flex h-12 w-fit cursor-pointer items-center gap-2 rounded-full border border-[var(--glass-edge)] px-5 text-[15px] font-medium shadow-glass ${busy ? "pointer-events-none opacity-50" : ""}`}
+        className={`glass-card inline-flex h-12 w-fit cursor-pointer items-center gap-2 rounded-full px-5 text-[15px] font-medium ${busy ? "pointer-events-none opacity-50" : ""}`}
       >
         <Upload size={18} aria-hidden /> Adicionar arquivo
       </label>

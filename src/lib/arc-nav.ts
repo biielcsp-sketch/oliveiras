@@ -1,4 +1,4 @@
-/** Geometria do menu em ferradura (src/components/arc-nav.tsx). Funções puras, testadas em tests/unit/arc-nav.test.ts. */
+/** Geometria do antigo menu em ferradura. Funções puras (activeRouteIndex ainda serve às abas da Casa), testadas em tests/unit/arc-nav.test.ts. */
 
 /** Distância, em px, entre dois botões vizinhos medida sobre o arco. */
 export const ARC_SPACING = 104;

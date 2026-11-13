@@ -50,7 +50,7 @@ test("Android: card aparece, Instalar chama o prompt e Agora não esconde mesmo 
     expect(await card(page).evaluate((el) => el.contains(document.activeElement))).toBe(false);
     const cardBox = (await card(page).boundingBox())!;
     const navBox = (await page.getByRole("navigation", { name: "Principal" }).boundingBox())!;
-    const oliBtn = (await page.getByRole("link", { name: "Oli, tela inicial" }).boundingBox())!;
+    const oliBtn = (await page.getByRole("link", { name: "Oli, o assistente" }).boundingBox())!;
     expect(cardBox.y + cardBox.height).toBeLessThanOrEqual(Math.min(navBox.y, oliBtn.y));
     for (const name of ["Instalar", "Agora não"]) {
       const b = (await card(page).getByRole("button", { name }).boundingBox())!;

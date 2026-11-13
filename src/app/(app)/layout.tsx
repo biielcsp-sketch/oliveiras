@@ -1,6 +1,5 @@
 import { getAppContext } from "@/lib/data";
-import { BottomNav, MobileTopBar, Sidebar } from "@/components/nav";
-import { Plexus } from "@/components/plexus";
+import { BottomNav, Sidebar } from "@/components/nav";
 import { InstallPrompt } from "@/components/install-prompt";
 import { OfflineCardsSync } from "@/components/offline-cards";
 
@@ -9,11 +8,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="relative flex min-h-dvh">
-      <Plexus />
       <Sidebar familyName={household.name} />
       <div className="relative flex min-w-0 flex-1 flex-col">
-        <MobileTopBar />
-        <main className="pb-nav mx-auto w-full max-w-3xl flex-1 px-5 pt-5 md:px-10 md:pb-10 md:pt-10">
+        {/* Cada tela traz o próprio topo (cabeçalho azul no Início; voltar + título nas demais). */}
+        <main className="pb-nav mx-auto w-full max-w-3xl flex-1 px-4 pt-[calc(env(safe-area-inset-top)+12px)] md:px-10 md:pb-10 md:pt-8">
           {children}
         </main>
       </div>
