@@ -17,6 +17,7 @@ import { billForMonth } from "@/lib/financas/documentos/rules";
 import type { OliFileDest, OliFileOptions, OliFileReading } from "./arquivo";
 import type { ConsultaData } from "./consultas";
 import type { LerArquivoData } from "./ler-arquivo";
+import type { AlteracaoPreview } from "./alterar";
 
 const cents = (v: number) => Math.round(v * 100);
 const reais = (c: number) => c / 100;
@@ -124,6 +125,7 @@ export type OliPanel =
   | { id: string; kind: "confirmar_arquivo"; data: ArquivoPreview; status: ConfirmStatus; erro?: string }
   | { id: string; kind: "consulta"; data: ConsultaData }
   | { id: string; kind: "arquivo_lido"; data: LerArquivoData }
+  | { id: string; kind: "confirmar_alteracao"; data: AlteracaoPreview; status: ConfirmStatus; erro?: string; aviso?: string }
   | { id: string; kind: "aviso"; texto: string };
 
 /* ---------- Montagem dos dados ---------- */
@@ -460,7 +462,8 @@ const isPending = (p: OliPanel) =>
     p.kind === "confirmar_memoria" ||
     p.kind === "confirmar_evento" ||
     p.kind === "confirmar_consulta" ||
-    p.kind === "confirmar_arquivo") &&
+    p.kind === "confirmar_arquivo" ||
+    p.kind === "confirmar_alteracao") &&
   (p.status === "pendente" || p.status === "salvando");
 
 /** Novo painel no topo; no máximo MAX_PANELS. Confirmações pendentes nunca somem. */

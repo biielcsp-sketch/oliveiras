@@ -7,7 +7,7 @@ import { ChevronDown, Mic, SendHorizontal, Square } from "lucide-react";
 import { Button, Input } from "@/components/ui";
 import { clearPanels, pushPanel, type OliPanel } from "@/lib/oli/panels";
 import { clearOliHistory } from "@/app/(app)/inicio/oli-history-actions";
-import { confirmOliConsulta, confirmOliEsquecer, confirmOliEvento, confirmOliLancamento, confirmOliMemoria, runOliTool } from "@/app/(app)/inicio/oli-actions";
+import { confirmOliAlteracao, confirmOliConsulta, confirmOliEsquecer, confirmOliEvento, confirmOliLancamento, confirmOliMemoria, runOliTool } from "@/app/(app)/inicio/oli-actions";
 import { confirmOliArquivoFinancas, readOliFile } from "@/app/(app)/inicio/oli-arquivo-actions";
 import { saveCard, saveExam, saveMedication, saveProcedure, saveVaccine } from "@/app/(app)/saude/actions";
 import { saveCasaDocument } from "@/app/(app)/casa/documentos-actions";
@@ -18,6 +18,7 @@ import { OliStage } from "./oli-stage";
 import { OliPanels } from "./oli-panels";
 import { OliAddFile } from "./oli-arquivo";
 import { useOliSession, type LogEntry, type ToolCall } from "./use-oli-session";
+import { ALTERAR_STATUS } from "@/lib/oli/alterar";
 
 const LABELS: Record<OliState, string> = { idle: "Repouso", listen: "Ouvindo", think: "Pensando", speak: "Falando" };
 
@@ -114,6 +115,13 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
             pending.current.set(id, { resolve });
             add({ id, kind: "confirmar_evento", data: res.data, status: "pendente" });
           });
+        case "alterar_casa":
+        case "alterar_pet":
+        case "alterar_igreja":
+          return new Promise((resolve) => {
+            pending.current.set(id, { resolve });
+            add({ id, kind: "confirmar_alteracao", data: res.data, status: "pendente" });
+          });
         case "criar_consulta":
           return new Promise((resolve) => {
             pending.current.set(id, { resolve });
@@ -148,6 +156,17 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
       const p = panelsRef.current.find((x) => x.id === id);
       if (!p || !("status" in p) || p.status !== "pendente" || p.kind === "confirmar_arquivo") return;
       patch(id, { status: "salvando" });
+      if (p.kind === "confirmar_alteracao") {
+        const c = await confirmOliAlteracao(p.data).catch(() => ({ ok: false as const, erro: "Não foi possível salvar agora." }));
+        if (c.ok) {
+          patch(id, { status: "criado", aviso: c.aviso });
+          settle(id, { status: ALTERAR_STATUS[p.data.acao], aviso: c.aviso });
+        } else {
+          patch(id, { status: "erro", erro: c.erro });
+          settle(id, { status: "erro", erro: c.erro });
+        }
+        return;
+      }
       if (p.kind === "confirmar_consulta") {
         const c = await confirmOliConsulta(p.data);
         if (c.ok) {

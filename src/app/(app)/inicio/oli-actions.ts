@@ -68,6 +68,8 @@ import type { ConsultaData } from "@/lib/oli/consultas";
 import type { LerArquivoData } from "@/lib/oli/ler-arquivo";
 import { buscarNoApp, consultarCasa, consultarFinancas, consultarIgreja, consultarPet, consultarSaude } from "@/lib/oli/consultas-data";
 import { lerArquivo } from "@/lib/oli/ler-arquivo-server";
+import { ITEM_MUDOU, parseAlterarArgs, previewFingerprint, type AlteracaoPreview, type AlterarAba } from "@/lib/oli/alterar";
+import { executarAlteracao, prepararAlteracao } from "@/lib/oli/alterar-server";
 
 /**
  * Ferramentas do Oli. Rodam com a sessão do usuário (RLS), nunca com chave de serviço.
@@ -89,6 +91,7 @@ export type OliToolResult =
   | { ok: true; tool: "criar_consulta"; data: ConsultaPreview }
   | { ok: true; tool: "consultar_financas" | "consultar_saude" | "consultar_casa" | "consultar_pet" | "consultar_igreja" | "buscar_no_app"; data: ConsultaData }
   | { ok: true; tool: "ler_arquivo"; data: LerArquivoData }
+  | { ok: true; tool: "alterar_casa" | "alterar_pet" | "alterar_igreja"; data: AlteracaoPreview }
   | { ok: false; erro: string };
 
 const err = (erro: string): OliToolResult => ({ ok: false, erro });
@@ -291,6 +294,15 @@ async function dispatch(name: OliToolName, args: unknown): Promise<OliToolResult
       const r = await lerArquivo(await getAppContext(), a.value);
       return r.ok ? { ok: true, tool: name, data: r.data } : err(r.erro);
     }
+    case "alterar_casa":
+    case "alterar_pet":
+    case "alterar_igreja": {
+      // Só prepara e mostra o painel: grava em confirmOliAlteracao, depois do toque do usuário.
+      const a = parseAlterarArgs(name.slice("alterar_".length) as AlterarAba, args);
+      if (!a.ok) return err(a.erro);
+      const r = await prepararAlteracao(await getAppContext(), a.value);
+      return r.ok ? { ok: true, tool: name, data: r.plan.preview } : err(r.erro);
+    }
     case "ler_documento": {
       // Só os dados validados do documento; o Oli nunca recebe o arquivo.
       const a = parseLerDocumentoArgs(args);
@@ -342,9 +354,13 @@ async function findMemory(id: string): Promise<MemoriaData | null> {
 
 export type ConfirmResult = { ok: true } | { ok: false; erro: string };
 
+const NOT_ALLOWED = "O Oli ainda não está liberado para esta família.";
+const notAllowed = () => ({ ok: false as const, erro: NOT_ALLOWED });
+
 /** Grava o lançamento depois do toque em Confirmar. Revalida tudo: o cliente não é confiável. */
 export async function confirmOliLancamento(preview: LancamentoPreview): Promise<ConfirmResult> {
   const { household, me } = await getAppContext();
+  if (!oliAllowedFor(household.id)) return notAllowed();
   if (!preview || typeof preview !== "object") return { ok: false, erro: "Dados inválidos." };
   const { accounts, categories } = await getFinanceBase();
   const account = accounts.find((a) => a.id === preview.conta?.id && !a.archived);
@@ -376,6 +392,7 @@ export async function confirmOliLancamento(preview: LancamentoPreview): Promise<
 /** Guarda a memória depois do toque em Confirmar. Revalida tamanho, categoria e o teto da família. */
 export async function confirmOliMemoria(preview: MemoriaPreview): Promise<ConfirmResult> {
   const { household, me } = await getAppContext();
+  if (!oliAllowedFor(household.id)) return notAllowed();
   const a = parseSalvarMemoriaArgs(preview);
   if (!a.ok) return { ok: false, erro: a.erro };
   const limit = memoryLimitError(await countMemories());
@@ -395,6 +412,7 @@ export async function confirmOliMemoria(preview: MemoriaPreview): Promise<Confir
 /** Apaga a memória depois do toque em Confirmar. */
 export async function confirmOliEsquecer(id: string): Promise<ConfirmResult> {
   const { household } = await getAppContext();
+  if (!oliAllowedFor(household.id)) return notAllowed();
   if (typeof id !== "string" || !UUID_RE.test(id)) return { ok: false, erro: "Id inválido." };
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -410,6 +428,7 @@ export async function confirmOliEsquecer(id: string): Promise<ConfirmResult> {
 /** Cria o evento no Google depois do toque em Confirmar. Revalida agenda e dados: o cliente não é confiável. */
 export async function confirmOliEvento(preview: EventoPreview): Promise<ConfirmResult> {
   const ctx = await getAppContext();
+  if (!oliAllowedFor(ctx.household.id)) return notAllowed();
   if (!preview || typeof preview !== "object") return { ok: false, erro: "Dados inválidos." };
   const cal = (await writableCalendars()).find((c) => c.id === preview.agenda?.id);
   if (!cal) return { ok: false, erro: "Agenda não encontrada." };
@@ -436,6 +455,7 @@ export type ConsultaConfirmResult = { ok: true; agenda: AgendaSyncState } | { ok
  */
 export async function confirmOliConsulta(preview: ConsultaPreview): Promise<ConsultaConfirmResult> {
   const ctx = await getAppContext();
+  if (!oliAllowedFor(ctx.household.id)) return notAllowed();
   if (!preview || typeof preview !== "object") return { ok: false, erro: "Dados inválidos." };
   const v = validateConsultaConfirm(preview, ctx.members);
   if (!v.ok) return { ok: false, erro: v.erro };
@@ -445,4 +465,28 @@ export async function confirmOliConsulta(preview: ConsultaPreview): Promise<Cons
   revalidatePath("/saude", "layout");
   revalidatePath("/agenda");
   return { ok: true, agenda: r.agenda };
+}
+
+export type AlteracaoConfirmResult = { ok: true; aviso?: string } | { ok: false; erro: string };
+
+/**
+ * Casa, Pet e Igreja: grava depois do toque em Confirmar. O cliente não é confiável: os args voltam a ser
+ * validados, a linha é lida de novo do banco (sessão/RLS) e o painel recalculado precisa ser IGUAL ao que a
+ * pessoa viu (senão nada é gravado). A gravação usa as server actions das telas (mesma validação e regras).
+ */
+export async function confirmOliAlteracao(preview: AlteracaoPreview): Promise<AlteracaoConfirmResult> {
+  const ctx = await getAppContext();
+  if (!oliAllowedFor(ctx.household.id)) return notAllowed();
+  if (!preview || typeof preview !== "object") return { ok: false, erro: "Dados inválidos." };
+  const a = parseAlterarArgs(preview.aba, preview.args);
+  if (!a.ok) return { ok: false, erro: a.erro };
+  try {
+    const prep = await prepararAlteracao(ctx, a.value);
+    if (!prep.ok) return { ok: false, erro: prep.erro };
+    if (previewFingerprint(prep.plan.preview) !== previewFingerprint(preview)) return { ok: false, erro: ITEM_MUDOU };
+    return await executarAlteracao(prep);
+  } catch (e) {
+    console.error("Oli: alteração falhou:", e instanceof Error ? e.message : "erro");
+    return { ok: false, erro: "Não foi possível salvar agora." };
+  }
 }

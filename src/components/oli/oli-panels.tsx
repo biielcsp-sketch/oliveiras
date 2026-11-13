@@ -12,6 +12,7 @@ import type { ConsultaAba, ConsultaData } from "@/lib/oli/consultas";
 import type { LerArquivoData } from "@/lib/oli/ler-arquivo";
 import type { OliFileDest } from "@/lib/oli/arquivo";
 import { ArquivoPanel } from "./oli-arquivo";
+import { ALTERAR_DONE, type AlteracaoPreview, type AlterarAcao } from "@/lib/oli/alterar";
 
 /**
  * Painéis do Oli: renderização determinística a partir dos DADOS das ferramentas.
@@ -452,6 +453,8 @@ export function PanelView({
           onCancel={onCancel}
         />
       );
+    case "confirmar_alteracao":
+      return <AlteracaoPanel id={p.id} data={p.data} status={p.status} erro={p.erro} aviso={p.aviso} onConfirm={onConfirm} onCancel={onCancel} />;
     case "consulta":
       return <ConsultaPanel data={p.data} />;
     case "arquivo_lido":
@@ -626,5 +629,106 @@ function ArquivoLidoPanel({ data: d }: { data: LerArquivoData }) {
       )}
       <p className="mt-3 text-[12px] text-muted">Resumo feito por IA a partir do arquivo. Confira no documento original.</p>
     </Card>
+  );
+}
+
+/* ---------- Escrita em Casa, Pet e Igreja (sempre com Confirmar) ---------- */
+
+const ABA_LABEL: Record<AlteracaoPreview["aba"], string> = { casa: "Casa", pet: "Pet", igreja: "Igreja" };
+
+function alteracaoTitle(acao: AlterarAcao, rotulo: string, d: AlteracaoPreview) {
+  const r = rotulo.toLowerCase();
+  switch (acao) {
+    case "criar":
+      return `Criar ${r}?`;
+    case "editar":
+      return `Alterar ${r}?`;
+    case "apagar":
+      return `Apagar ${r}?`;
+    case "concluir":
+      if (d.secao === "compras") return d.campos[0]?.depois === "Pendente" ? "Voltar o item para a lista?" : "Marcar como comprado?";
+      if (d.secao === "manutencao") return "Registrar manutenção feita?";
+      if (d.secao === "cuidados") return "Registrar cuidado feito?";
+      return "Marcar tarefa como feita?";
+    case "acrescentar":
+      return "Acrescentar à anotação?";
+  }
+}
+
+function AlteracaoPanel({
+  id,
+  data: d,
+  status,
+  erro,
+  aviso,
+  onConfirm,
+  onCancel,
+}: {
+  id: string;
+  data: AlteracaoPreview;
+  status: "pendente" | "salvando" | "criado" | "cancelado" | "erro";
+  erro?: string;
+  aviso?: string;
+  onConfirm: (id: string) => void;
+  onCancel: (id: string) => void;
+}) {
+  return (
+    <Confirm
+      id={id}
+      title={alteracaoTitle(d.acao, d.rotulo, d)}
+      status={status}
+      erro={erro}
+      danger={d.acao === "apagar"}
+      doneText={{ criado: aviso ? `${ALTERAR_DONE[d.acao]} ${aviso}` : ALTERAR_DONE[d.acao], cancelado: "Nada foi alterado." }}
+      onConfirm={onConfirm}
+      onCancel={onCancel}
+    >
+      <p className="text-[13px] text-muted">
+        {ABA_LABEL[d.aba]} · <span className="font-medium text-ink" data-testid="alteracao-titulo">{d.titulo}</span>
+      </p>
+      {d.campos.length > 0 && (
+        <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[15px]">
+          {d.campos.map((c) => (
+            <div key={c.rotulo} className="contents">
+              <dt className="text-muted">{c.rotulo}</dt>
+              <dd className="min-w-0 whitespace-pre-wrap break-words">
+                {d.acao === "editar" ? (
+                  <>
+                    <span className="text-muted line-through">{c.antes ?? "vazio"}</span>
+                    <span aria-hidden> → </span>
+                    <span className="sr-only"> passa a ser </span>
+                    <span className="font-medium">{c.depois ?? "vazio"}</span>
+                  </>
+                ) : (
+                  (d.acao === "apagar" ? c.antes : c.depois)
+                )}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {d.anexo && (
+        <div className="mt-2 flex flex-col gap-2 text-[15px]">
+          <p className="text-[13px] font-medium text-muted">Texto atual (fica como está)</p>
+          <p className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded-2xl bg-surface-2 px-3 py-2" data-testid="anexo-atual">
+            {d.anexo.atual ?? "Sem texto ainda."}
+          </p>
+          <p className="text-[13px] font-medium text-muted">Frase nova (entra no fim)</p>
+          <p className="whitespace-pre-wrap break-words rounded-2xl bg-accent-soft px-3 py-2 font-medium text-primary" data-testid="anexo-novo">
+            {d.anexo.acrescimo}
+          </p>
+        </div>
+      )}
+      {d.acao === "apagar" && (
+        <p role="note" className="mt-3 rounded-2xl bg-danger/10 px-3 py-2 text-sm font-medium text-danger">
+          Isto apaga o item de vez do app. Não dá para desfazer.
+        </p>
+      )}
+      {d.aviso && (
+        <p role="note" data-testid="alteracao-aviso" className="mt-3 rounded-2xl bg-danger/10 px-3 py-2 text-sm font-medium text-danger">
+          {d.aviso}
+        </p>
+      )}
+    </Confirm>
   );
 }

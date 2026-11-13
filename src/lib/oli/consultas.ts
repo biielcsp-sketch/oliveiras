@@ -37,7 +37,7 @@ export type ConsultaItem = {
   detalhes: string[];
   /** Referência para ler_arquivo ("exame:uuid"); null se não há arquivo. */
   arquivo: string | null;
-  /** Só para itens que abrem outra consulta (aula do Carisma). */
+  /** Id do item (Casa, Pet e Igreja): para alterar_<aba> e para abrir a aula do Carisma. */
   id?: string;
 };
 export type ConsultaGrupo = { titulo: string; total: number; itens: ConsultaItem[] };
@@ -441,6 +441,7 @@ export function casaItens(rows: CasaRows, names: Names, today: string, busca?: s
       .map((t) => {
         const resp = currentResponsible({ rotation: t.rotation ?? [], next_index: t.next_index ?? 0 }, valid);
         return item(t.name, {
+          id: t.id,
           data: t.next_due_on,
           pessoa: resp ? (names.get(resp) ?? null) : null,
           status: dueStatus(t.next_due_on),
@@ -451,6 +452,7 @@ export function casaItens(rows: CasaRows, names: Names, today: string, busca?: s
       .filter((c) => !c.done && matches(busca, c.name, c.category, c.notes))
       .map((c) =>
         item(c.name, {
+          id: c.id,
           detalhes: [
             c.quantity ? `Quantidade: ${c.quantity}${c.unit ? ` ${txt(c.unit, 20)}` : ""}` : null,
             det("Categoria", c.category, 40),
@@ -463,6 +465,7 @@ export function casaItens(rows: CasaRows, names: Names, today: string, busca?: s
       .sort((a, b) => (a.next_due_on ?? "9999").localeCompare(b.next_due_on ?? "9999"))
       .map((m) =>
         item(m.name, {
+          id: m.id,
           data: m.next_due_on,
           status: m.next_due_on && m.next_due_on < today ? "atrasada" : null,
           detalhes: [
@@ -478,6 +481,7 @@ export function casaItens(rows: CasaRows, names: Names, today: string, busca?: s
       .map((d) => {
         const w = warrantyStatus(d.warranty_until, today);
         return item(d.title, {
+          id: d.id,
           data: d.purchase_date,
           valor: d.amount,
           status: w ? WARRANTY[w] : null,
@@ -496,6 +500,7 @@ export function casaItens(rows: CasaRows, names: Names, today: string, busca?: s
       .sort((a, b) => a.day.localeCompare(b.day) || (MEAL_ORDER[a.meal] ?? 9) - (MEAL_ORDER[b.meal] ?? 9))
       .map((m) =>
         item(m.title, {
+          id: m.id,
           data: m.day,
           status: MEAL_LABEL[m.meal as Meal] ?? null,
           detalhes: [
@@ -512,7 +517,7 @@ export function casaItens(rows: CasaRows, names: Names, today: string, busca?: s
       ),
     prestadores: (rows.prestadores ?? [])
       .filter((p) => matches(busca, p.name, p.service, p.notes))
-      .map((p) => item(p.name, { detalhes: [det("Serviço", p.service, 80), det("Telefone", p.phone, 30), det("Notas", p.notes)] })),
+      .map((p) => item(p.name, { id: p.id, detalhes: [det("Serviço", p.service, 80), det("Telefone", p.phone, 30), det("Notas", p.notes)] })),
   };
 }
 
@@ -588,6 +593,7 @@ export function buildPet(secao: string, rows: PetRows, today: string): ConsultaD
   const saudeRows = rows.saude ?? [];
   const saude = saudeRows.map((h) =>
     item(`${PET_HEALTH_LABEL[h.kind as PetHealthKind] ?? "Saúde"}: ${txt(h.name, 120) ?? ""}`, {
+      id: h.id,
       data: h.applied_on,
       pessoa: pn(h.pet_id),
       status: h.next_due_on && h.next_due_on < today ? "atrasada" : null,
@@ -597,6 +603,7 @@ export function buildPet(secao: string, rows: PetRows, today: string): ConsultaD
   );
   const vet = (rows.veterinario ?? []).map((v) =>
     item(`${PET_VET_LABEL[v.kind as PetVetKind] ?? "Veterinário"}${v.reason ? `: ${txt(v.reason, 120)}` : ""}`, {
+      id: v.id,
       data: v.happened_on,
       pessoa: pn(v.pet_id),
       valor: v.cost,
@@ -608,15 +615,17 @@ export function buildPet(secao: string, rows: PetRows, today: string): ConsultaD
     .filter((c) => c.active)
     .map((c) =>
       item(c.name, {
+        id: c.id,
         data: c.next_due_on,
         pessoa: pn(c.pet_id),
         status: c.next_due_on && c.next_due_on < today ? "atrasado" : null,
         detalhes: [`A cada ${c.interval_value} ${c.interval_unit}`, c.last_done_on ? `Última vez: ${brDate(c.last_done_on)}` : null, det("Notas", c.notes)],
       }),
     );
-  const peso = (rows.peso ?? []).map((w) => item(`${w.weight_kg} kg`, { data: w.measured_on, pessoa: pn(w.pet_id) }));
+  const peso = (rows.peso ?? []).map((w) => item(`${w.weight_kg} kg`, { id: w.id, data: w.measured_on, pessoa: pn(w.pet_id) }));
   const racao = (rows.racao ?? []).map((f) =>
     item(f.brand, {
+      id: f.id,
       data: f.started_on,
       pessoa: pn(f.pet_id),
       status: f.active ? "em uso" : "anterior",
@@ -704,6 +713,7 @@ export function igrejaItens(rows: IgrejaRows, uid: string, members: People, busc
   const palavras = visibleToMe(rows.palavras, uid).filter((w) => matches(busca, w.title, w.body, w.reference));
   const word = (w: (typeof palavras)[number]) =>
     item(w.title ?? txt(w.body, 60) ?? "Palavra", {
+      id: w.id,
       data: w.received_on,
       pessoa: ownerLabel(w, uid, members),
       status: w.kind === "promessa" ? (w.fulfilled_on ? "cumprida" : "aguardando") : null,
@@ -716,6 +726,7 @@ export function igrejaItens(rows: IgrejaRows, uid: string, members: People, busc
       .filter((p) => matches(busca, p.title, p.person, p.details))
       .map((p) =>
         item(p.title, {
+          id: p.id,
           pessoa: ownerLabel(p, uid, members),
           status: p.status === "respondida" ? "respondida" : "orando",
           data: p.answered_on,
@@ -726,6 +737,7 @@ export function igrejaItens(rows: IgrejaRows, uid: string, members: People, busc
       .filter((p) => matches(busca, p.title, p.description, p.notes))
       .map((p) =>
         item(p.title, {
+          id: p.id,
           data: p.starts_on,
           pessoa: ownerLabel(p, uid, members),
           status: PURPOSE_STATUS_LABEL[p.status as PurposeStatus]?.toLowerCase() ?? null,
@@ -803,7 +815,7 @@ export function buildAula(l: AulaRow | null, files: AulaFileRow[], uid: string, 
 
 /* ---------- Busca em todo o app ---------- */
 
-export type BuscaHit = { aba: string; titulo: unknown; data?: string | null; detalhe?: unknown; arquivo?: string | null; valor?: number | null };
+export type BuscaHit = { aba: string; titulo: unknown; data?: string | null; detalhe?: unknown; arquivo?: string | null; valor?: number | null; id?: string | null };
 export const MAX_BUSCA_POR_ABA = 6;
 
 export function buildBusca(busca: string, hits: BuscaHit[]): ConsultaData {
@@ -814,7 +826,7 @@ export function buildBusca(busca: string, hits: BuscaHit[]): ConsultaData {
       byAba.set(h.aba, []);
       order.push(h.aba);
     }
-    byAba.get(h.aba)!.push(item(h.titulo, { data: h.data ?? null, valor: h.valor ?? null, detalhes: [txt(h.detalhe, 160)], arquivo: h.arquivo ?? null }));
+    byAba.get(h.aba)!.push(item(h.titulo, { id: h.id ?? undefined, data: h.data ?? null, valor: h.valor ?? null, detalhes: [txt(h.detalhe, 160)], arquivo: h.arquivo ?? null }));
   }
   return consulta(
     "busca",

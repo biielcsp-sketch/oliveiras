@@ -30,6 +30,9 @@ export const OLI_TOOL_NAMES = [
   "consultar_igreja",
   "buscar_no_app",
   "ler_arquivo",
+  "alterar_casa",
+  "alterar_pet",
+  "alterar_igreja",
 ] as const;
 export type OliToolName = (typeof OLI_TOOL_NAMES)[number];
 
