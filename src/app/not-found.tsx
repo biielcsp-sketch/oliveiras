@@ -22,7 +22,7 @@ export default function NotFound() {
       </p>
       <Link
         href="/inicio"
-        className="glass-primary mt-7 inline-flex h-12 w-[260px] max-w-full items-center justify-center rounded-full text-[15px] font-semibold"
+        className="glass-primary mt-7 inline-flex h-11 max-w-full items-center justify-center rounded-full px-6 text-sm font-semibold"
       >
         Voltar para o início
       </Link>

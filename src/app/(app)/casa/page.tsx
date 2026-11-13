@@ -3,7 +3,7 @@ import { FileText, ListChecks, PawPrint, Phone, Receipt, ShoppingCart, UtensilsC
 import { getAppContext } from "@/lib/data";
 import { createClient } from "@/lib/supabase/server";
 import { brDate, toSpDate } from "@/lib/agenda/dates";
-import { ModuleHeroCard, SectionGrid } from "@/components/module-home";
+import { ModuleHeroCard } from "@/components/module-home";
 import { choreBuckets, maintenanceStatus } from "@/lib/casa/view";
 import { homeBillCounts, homeBillsForMonth } from "@/lib/casa/contas";
 import { warrantyAlerts } from "@/lib/casa/docs";
@@ -87,7 +87,6 @@ export default async function Page() {
   return (
     <div className="flex flex-col gap-6">
       <ModuleHeroCard title="Sua casa sempre organizada" subtitle="Tudo sob controle." image="/ilustracoes/casa.webp" />
-      <SectionGrid module="casa" />
       <section aria-labelledby="resumo-titulo" className="min-w-0">
         <h2 id="resumo-titulo" className="mb-2 text-[15.5px] font-bold tracking-tight">
           Resumo

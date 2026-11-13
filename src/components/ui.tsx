@@ -14,7 +14,7 @@ export function Card({ className, tone = "glass", ...props }: ComponentProps<"di
 }
 
 export const btnBase =
-  "inline-flex items-center justify-center gap-2 rounded-full text-center font-semibold transition active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 aria-busy:cursor-progress";
+  "relative inline-flex items-center justify-center gap-1.5 rounded-full text-center font-semibold transition active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 aria-busy:cursor-progress";
 
 export const btnVariant = {
   primary: "glass-primary hover:brightness-110",
@@ -23,14 +23,31 @@ export const btnVariant = {
   danger: "text-danger hover:bg-danger-soft",
 };
 
-/** Tamanhos: todos com área de toque de pelo menos 44px. */
+/**
+ * Tamanhos visuais compactos (sm 34px, md 40px, lg 44px), largura do conteúdo.
+ * A área de toque continua com pelo menos 44px pelo <TapArea> invisível dentro do botão.
+ */
 export const btnSize = {
-  sm: "h-11 px-4 text-[13px]",
-  md: "h-11 px-5 text-sm",
-  lg: "h-12 px-6 text-[15px]",
+  sm: "h-[34px] px-3.5 text-[13px]",
+  md: "h-10 px-4 text-sm",
+  lg: "h-11 px-[18px] text-sm",
   /** só ícone: círculo de 44px sem padding lateral */
   icon: "size-11 shrink-0 p-0",
 };
+
+/**
+ * Área de toque invisível de pelo menos 44x44px, centrada no botão (que precisa ser `relative`).
+ * Deixa o botão visualmente menor sem perder o alvo mínimo de toque.
+ */
+export function TapArea() {
+  return (
+    <span
+      aria-hidden
+      data-tap-area
+      className="absolute left-1/2 top-1/2 h-full min-h-11 w-full min-w-11 -translate-x-1/2 -translate-y-1/2"
+    />
+  );
+}
 
 type BtnVariant = keyof typeof btnVariant;
 type BtnSize = keyof typeof btnSize;
@@ -51,6 +68,7 @@ export function Button({
       aria-busy={loading || undefined}
       {...props}
     >
+      <TapArea />
       {loading && <Loader2 size={16} className="animate-spin" aria-hidden />}
       {children}
     </button>
@@ -227,9 +245,15 @@ export function LinkButton({
   variant = "primary",
   size = "md",
   className,
+  children,
   ...props
 }: ComponentProps<"a"> & { variant?: BtnVariant; size?: BtnSize }) {
-  return <a className={clsx(btnBase, btnSize[size], btnVariant[variant], className)} {...props} />;
+  return (
+    <a className={clsx(btnBase, btnSize[size], btnVariant[variant], className)} {...props}>
+      <TapArea />
+      {children}
+    </a>
+  );
 }
 
 export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {

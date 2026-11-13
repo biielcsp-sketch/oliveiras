@@ -78,7 +78,7 @@ test("finanças: contas, lançamento manual, importação OFX/CSV sem duplicar e
   await test.step("resumo de novembro/2026 confere", async () => {
     await page.goto("/financas?mes=2026-11");
     const main = page.locator("main");
-    // Saldo das contas começa escondido e abre pelo botão "Saldo das contas"
+    // Saldo das contas começa escondido e abre pela setinha da ponta do cabeçalho
     const seta = page.getByRole("button", { name: "Mostrar saldo das contas" });
     await expect(seta).toHaveAttribute("aria-expanded", "false");
     await seta.click();

@@ -67,14 +67,10 @@ test("Igreja: devocional pessoal com compartilhamento, Carisma com Google Drive 
 
   await login(page, gEmail);
 
-  await test.step("raiz da Igreja: grade de seções e Resumo marcado no ⋮", async () => {
+  await test.step("Resumo abre selecionado no centro da ferradura", async () => {
     await page.goto("/ministerio");
-    const grid = page.getByRole("navigation", { name: "Seções de Igreja" });
-    for (const s of ["Devocional", "Orações", "Carisma", "Consolidação"]) await expect(grid.getByRole("link", { name: s })).toBeVisible();
-    await page.getByRole("button", { name: "Todas as seções de Igreja" }).click();
-    const menu = page.getByRole("navigation", { name: "Todas as seções de Igreja" });
-    await expect(menu.locator('[aria-current="page"]')).toContainText("Resumo");
-    await page.keyboard.press("Escape");
+    const arc = page.getByRole("navigation", { name: "Seções de Igreja" });
+    await expect(arc.locator('[aria-current="page"]')).toContainText("Resumo");
     await expect(page.getByTestId("igreja-resumo-oracoes")).toContainText("Nenhuma oração em andamento");
     // Regressão: o texto com truncate alargava a grade e a página rolava para os lados
     await expectNoHorizontalScroll(page);

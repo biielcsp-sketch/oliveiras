@@ -34,7 +34,12 @@ export function Modal({
       ref={ref}
       aria-labelledby={titleId}
       className="calendar-dialog mx-auto mb-0 mt-auto max-h-[92dvh] w-full max-w-[520px] overflow-y-auto rounded-t-[28px] border-0 bg-[linear-gradient(180deg,var(--sheet-from),var(--sheet-to))] p-0 text-ink shadow-[0_-10px_30px_rgb(10_60_160/0.18)] md:m-auto md:w-[min(94vw,480px)] md:rounded-[28px]"
-      onClose={onClose}
+      onClose={(e) => {
+        // O evento "close" chega depois (tarefa assíncrona): se o modal já foi reaberto nesse meio tempo
+        // (toque rápido em "Editar" logo após salvar), ignora, para não fechar o modal novo.
+        if (e.currentTarget.open) return;
+        onClose();
+      }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
