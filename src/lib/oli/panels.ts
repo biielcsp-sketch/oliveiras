@@ -15,6 +15,8 @@ import type { AppointmentKind } from "@/lib/saude/types";
 import { cleanText, DOC_LIMITS, storedExtracted } from "@/lib/financas/documentos/schema";
 import { billForMonth } from "@/lib/financas/documentos/rules";
 import type { OliFileDest, OliFileOptions, OliFileReading } from "./arquivo";
+import type { ConsultaData } from "./consultas";
+import type { LerArquivoData } from "./ler-arquivo";
 
 const cents = (v: number) => Math.round(v * 100);
 const reais = (c: number) => c / 100;
@@ -120,6 +122,8 @@ export type OliPanel =
   | { id: string; kind: "documentos"; data: DocumentosData }
   | { id: string; kind: "documento"; data: DocumentoData }
   | { id: string; kind: "confirmar_arquivo"; data: ArquivoPreview; status: ConfirmStatus; erro?: string }
+  | { id: string; kind: "consulta"; data: ConsultaData }
+  | { id: string; kind: "arquivo_lido"; data: LerArquivoData }
   | { id: string; kind: "aviso"; texto: string };
 
 /* ---------- Montagem dos dados ---------- */

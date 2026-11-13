@@ -22,6 +22,13 @@ export const OLI_TOOL_NAMES = [
   "documentos_recentes",
   "ler_documento",
   "criar_consulta",
+  "consultar_financas",
+  "consultar_saude",
+  "consultar_casa",
+  "consultar_pet",
+  "consultar_igreja",
+  "buscar_no_app",
+  "ler_arquivo",
 ] as const;
 export type OliToolName = (typeof OLI_TOOL_NAMES)[number];
 
@@ -300,4 +307,166 @@ export function parseCriarConsultaArgs(args: unknown): Result<CriarConsultaArgs>
     inicio,
     observacoes: observacoes.value,
   });
+}
+
+/* ---------- Leitura total (consultas por aba, busca e leitura de arquivo guardado) ---------- */
+
+export const FIN_SECOES = ["periodo", "metas", "orcamento", "contas_fixas", "contas_avulsas", "categorias"] as const;
+export const SAUDE_SECOES = ["resumo", "consultas", "exames", "vacinas", "procedimentos", "medicamentos", "carteirinhas"] as const;
+export const CASA_SECOES = ["resumo", "tarefas", "compras", "manutencao", "documentos", "cardapio", "prestadores"] as const;
+export const PET_SECOES = ["resumo", "saude", "veterinario", "cuidados", "peso", "racao"] as const;
+export const IGREJA_SECOES = ["resumo", "palavras", "promessas", "oracoes", "propositos", "carisma", "consolidacao"] as const;
+export type FinSecao = (typeof FIN_SECOES)[number];
+export type SaudeSecao = (typeof SAUDE_SECOES)[number];
+export type CasaSecao = (typeof CASA_SECOES)[number];
+export type PetSecao = (typeof PET_SECOES)[number];
+export type IgrejaSecao = (typeof IGREJA_SECOES)[number];
+
+/** Período máximo de uma consulta com de/até (dias). */
+export const CONSULTA_MAX_DAYS = 92;
+export const BUSCA_MIN = 2;
+
+/** Seção: sem acento/caixa, espaço ou hífen vira "_" ("Manutenção" → manutencao; "contas fixas" → contas_fixas). */
+function parseSecao<T extends string>(v: unknown, list: readonly T[], fallback: T): Result<T> {
+  if (v === undefined || v === null || v === "") return ok(fallback);
+  if (typeof v !== "string" || v.length > 40) return fail("Seção inválida.");
+  const s = normalizeName(v).replace(/[\s-]+/g, "_");
+  if (!s) return ok(fallback);
+  return (list as readonly string[]).includes(s) ? ok(s as T) : fail(`Seção inválida. Use: ${list.join(", ")}.`);
+}
+
+/** de/até opcionais (AAAA-MM-DD): até ≥ de e no máximo CONSULTA_MAX_DAYS dias. */
+function parsePeriodo(a: Record<string, unknown>): Result<{ de?: string; ate?: string }> {
+  const de = optText(a.de, 10, "Data inicial");
+  if (!de.ok) return de;
+  const ate = optText(a.ate, 10, "Data final");
+  if (!ate.ok) return ate;
+  if (de.value && !isDate(de.value)) return fail("Data inicial inválida. Use AAAA-MM-DD.");
+  if (ate.value && !isDate(ate.value)) return fail("Data final inválida. Use AAAA-MM-DD.");
+  if (de.value && ate.value) {
+    if (ate.value < de.value) return fail("A data final é antes da inicial.");
+    if (diffDays(de.value, ate.value) > CONSULTA_MAX_DAYS) return fail(`Período longo demais (máximo ${CONSULTA_MAX_DAYS} dias).`);
+  }
+  return ok({ de: de.value, ate: ate.value });
+}
+
+function optMes(v: unknown): Result<string | undefined> {
+  const r = optText(v, 7, "Mês");
+  if (!r.ok) return r;
+  if (r.value && !MONTH_RE.test(r.value)) return fail("Mês inválido. Use AAAA-MM.");
+  return ok(r.value);
+}
+
+export type ConsultarFinancasArgs = { secao: FinSecao; mes?: string; de?: string; ate?: string; busca?: string };
+
+/** consultar_financas: seção (padrão periodo), mês AAAA-MM (padrão o atual) ou de/até (só em periodo), busca na descrição. */
+export function parseConsultarFinancasArgs(args: unknown): Result<ConsultarFinancasArgs> {
+  const a = obj(args);
+  const secao = parseSecao(a.secao, FIN_SECOES, "periodo");
+  if (!secao.ok) return secao;
+  const mes = optMes(a.mes);
+  if (!mes.ok) return mes;
+  const per = parsePeriodo(a);
+  if (!per.ok) return per;
+  const busca = optText(a.busca, LIMITS.search, "Busca");
+  if (!busca.ok) return busca;
+  return ok({ secao: secao.value, mes: mes.value, ...per.value, busca: busca.value });
+}
+
+export type ConsultarSaudeArgs = { secao: SaudeSecao; pessoa?: string; busca?: string; de?: string; ate?: string };
+
+export function parseConsultarSaudeArgs(args: unknown): Result<ConsultarSaudeArgs> {
+  const a = obj(args);
+  const secao = parseSecao(a.secao, SAUDE_SECOES, "resumo");
+  if (!secao.ok) return secao;
+  const pessoa = optText(a.pessoa, LIMITS.name, "Pessoa");
+  if (!pessoa.ok) return pessoa;
+  const busca = optText(a.busca, LIMITS.search, "Busca");
+  if (!busca.ok) return busca;
+  const per = parsePeriodo(a);
+  if (!per.ok) return per;
+  return ok({ secao: secao.value, pessoa: pessoa.value, busca: busca.value, ...per.value });
+}
+
+export type ConsultarCasaArgs = { secao: CasaSecao; busca?: string; data?: string };
+
+export function parseConsultarCasaArgs(args: unknown): Result<ConsultarCasaArgs> {
+  const a = obj(args);
+  const secao = parseSecao(a.secao, CASA_SECOES, "resumo");
+  if (!secao.ok) return secao;
+  const busca = optText(a.busca, LIMITS.search, "Busca");
+  if (!busca.ok) return busca;
+  const data = optText(a.data, 10, "Data");
+  if (!data.ok) return data;
+  if (data.value && !isDate(data.value)) return fail("Data inválida. Use AAAA-MM-DD.");
+  return ok({ secao: secao.value, busca: busca.value, data: data.value });
+}
+
+export type ConsultarPetArgs = { secao: PetSecao; pet?: string };
+
+export function parseConsultarPetArgs(args: unknown): Result<ConsultarPetArgs> {
+  const a = obj(args);
+  const secao = parseSecao(a.secao, PET_SECOES, "resumo");
+  if (!secao.ok) return secao;
+  const pet = optText(a.pet, LIMITS.name, "Pet");
+  if (!pet.ok) return pet;
+  return ok({ secao: secao.value, pet: pet.value });
+}
+
+export type ConsultarIgrejaArgs = { secao: IgrejaSecao; busca?: string; aula?: string };
+
+/** consultar_igreja: `aula` (id de consultar_igreja secao carisma) traz anotações, resumo e arquivos da aula. */
+export function parseConsultarIgrejaArgs(args: unknown): Result<ConsultarIgrejaArgs> {
+  const a = obj(args);
+  const secao = parseSecao(a.secao, IGREJA_SECOES, a.aula ? "carisma" : "resumo");
+  if (!secao.ok) return secao;
+  const busca = optText(a.busca, LIMITS.search, "Busca");
+  if (!busca.ok) return busca;
+  let aula: string | undefined;
+  if (a.aula !== undefined && a.aula !== null && a.aula !== "") {
+    if (typeof a.aula !== "string" || !UUID_RE.test(a.aula.trim())) return fail("Id de aula inválido.");
+    aula = a.aula.trim().toLowerCase();
+  }
+  return ok({ secao: secao.value, busca: busca.value, aula });
+}
+
+export function parseBuscarNoAppArgs(args: unknown): Result<{ busca: string }> {
+  const busca = reqText(obj(args).busca, LIMITS.search, "Busca");
+  if (!busca.ok) return busca;
+  if (busca.value.length < BUSCA_MIN) return fail("Busca muito curta.");
+  return ok({ busca: busca.value });
+}
+
+/**
+ * Arquivos guardados que o Oli pode ler. O id vem das consultas como "<tipo>:<uuid>"; o tipo é uma lista
+ * fechada (decide tabela e bucket no servidor), o uuid é conferido no formato.
+ */
+export const ARQUIVO_TIPOS = [
+  "exame",
+  "carteirinha",
+  "procedimento",
+  "vacina",
+  "casa_documento",
+  "pet_saude",
+  "pet_veterinario",
+  "financas",
+  "carisma",
+] as const;
+export type ArquivoTipo = (typeof ARQUIVO_TIPOS)[number];
+export type ArquivoRef = { tipo: ArquivoTipo; id: string };
+
+export const arquivoRef = (tipo: ArquivoTipo, id: string) => `${tipo}:${id}`;
+
+export function parseArquivoRef(v: unknown): ArquivoRef | null {
+  if (typeof v !== "string" || v.length > 60) return null;
+  const m = /^([a-z_]+):([0-9a-f-]{36})$/i.exec(v.trim());
+  if (!m) return null;
+  const tipo = m[1].toLowerCase();
+  if (!(ARQUIVO_TIPOS as readonly string[]).includes(tipo) || !UUID_RE.test(m[2])) return null;
+  return { tipo: tipo as ArquivoTipo, id: m[2].toLowerCase() };
+}
+
+export function parseLerArquivoArgs(args: unknown): Result<ArquivoRef> {
+  const ref = parseArquivoRef(obj(args).id);
+  return ref ? ok(ref) : fail("Id de arquivo inválido. Use o id que veio da consulta (ex.: exame:…).");
 }
