@@ -12,6 +12,7 @@ import { buildImportRows, suggestInvert } from "@/lib/financas/import";
 import { validateManualTransaction } from "@/lib/financas/transaction-input";
 import { baixaLabels, countBaixas, monthsAround } from "@/lib/financas/baixa";
 import { runBaixaAutomatica } from "@/lib/financas/baixa-data";
+import { fetchAllPages } from "@/lib/financas/paginate";
 
 export type FormState = { error?: string; ok?: boolean } | null;
 
@@ -183,38 +184,51 @@ export async function deleteRule(form: FormData) {
   refresh();
 }
 
-/** Aplica as regras aos lançamentos que ainda estão sem categoria. */
-export async function applyRules(): Promise<FormState & { updated?: number }> {
+/**
+ * Aplica as regras aos lançamentos que ainda estão sem categoria. Lê todos primeiro (paginado: o antigo
+ * `.limit(5000)` voltava só 1000 por causa do max_rows do PostgREST) e só depois atualiza, para a paginação
+ * não pular linhas que saem do filtro "sem categoria". `updated` conta as linhas que o banco de fato mudou.
+ * `partial` = passou do teto ou uma leitura/gravação falhou: ainda pode haver lançamento para categorizar.
+ */
+export async function applyRules(): Promise<FormState & { updated?: number; partial?: boolean }> {
   const { household } = await getAppContext();
   const supabase = await createClient();
-  const [{ data: rules }, { data: txs }] = await Promise.all([
+  const [{ data: rules }, { rows: txs, incomplete }] = await Promise.all([
     supabase.from("fin_rules").select("pattern, category_id").eq("household_id", household.id),
-    supabase
-      .from("fin_transactions")
-      .select("id, description")
-      .eq("household_id", household.id)
-      .is("category_id", null)
-      .limit(5000),
+    fetchAllPages<{ id: string; description: string }>((from, to) =>
+      supabase
+        .from("fin_transactions")
+        .select("id, description")
+        .eq("household_id", household.id)
+        .is("category_id", null)
+        .order("id")
+        .range(from, to),
+    ),
   ]);
   const byCategory = new Map<string, string[]>();
-  for (const t of txs ?? []) {
+  for (const t of txs) {
     const cat = matchCategory(t.description, rules ?? []);
     if (cat) byCategory.set(cat, [...(byCategory.get(cat) ?? []), t.id]);
   }
   let updated = 0;
+  let failed = false;
   for (const [categoryId, ids] of byCategory) {
     for (let i = 0; i < ids.length; i += 200) {
       const chunk = ids.slice(i, i + 200);
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("fin_transactions")
         .update({ category_id: categoryId })
         .in("id", chunk)
-        .eq("household_id", household.id);
-      if (!error) updated += chunk.length;
+        .eq("household_id", household.id)
+        // Não sobrescreve categoria que alguém pôs no meio do caminho.
+        .is("category_id", null)
+        .select("id");
+      if (error) failed = true;
+      else updated += data?.length ?? 0;
     }
   }
   refresh();
-  return { ok: true, updated };
+  return { ok: true, updated, ...(incomplete || failed ? { partial: true } : {}) };
 }
 
 /* ---------- Importação ---------- */

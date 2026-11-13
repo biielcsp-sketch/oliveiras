@@ -1,4 +1,4 @@
-import { Card } from "@/components/ui";
+import { Card, IncompleteNotice } from "@/components/ui";
 import { getFinanceBase, getTransactions } from "@/lib/financas/data";
 import { getBudgetRows } from "@/lib/financas/planning-data";
 import { resolveBudgets } from "@/lib/financas/planning";
@@ -30,6 +30,7 @@ export default async function OrcamentoPage({ searchParams }: { searchParams: Pr
   return (
     <div className="flex flex-col gap-4">
       <MonthSwitcher month={month} basePath="/financas/orcamento" />
+      <IncompleteNotice show={transactions.incomplete} />
 
       <Card className="p-4">
         <p className="text-[13px] text-muted">Gasto nas categorias com orçamento</p>

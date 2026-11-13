@@ -53,7 +53,7 @@ export function AddRuleForm({ categories }: { categories: Category[] }) {
 }
 
 export function ApplyRulesButton() {
-  const [state, action, pending] = useActionState<(FormState & { updated?: number }) | null, FormData>(
+  const [state, action, pending] = useActionState<(FormState & { updated?: number; partial?: boolean }) | null, FormData>(
     () => applyRules(),
     null,
   );
@@ -63,6 +63,7 @@ export function ApplyRulesButton() {
       {state?.ok && (
         <span className="text-sm text-muted" role="status">
           {state.updated === 1 ? "1 lançamento categorizado." : `${state.updated ?? 0} lançamentos categorizados.`}
+          {state.partial && " Ainda pode haver lançamentos sem categoria: toque de novo."}
         </span>
       )}
     </form>

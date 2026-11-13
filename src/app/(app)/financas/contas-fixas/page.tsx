@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { CreditCard, Plus, Search } from "lucide-react";
-import { Card, EmptyState, LinkButton } from "@/components/ui";
+import { Card, EmptyState, IncompleteNotice, LinkButton } from "@/components/ui";
 import { getFinanceBase } from "@/lib/financas/data";
 import { getBillPayments, getBills, getOneOffBillsForMonth, getOneOffBoletoDocs, getTransactionsAround } from "@/lib/financas/planning-data";
 import { billStatus, invoiceFor, invoiceTotals } from "@/lib/financas/planning";
@@ -61,6 +61,13 @@ export default async function ContasFixasPage({ searchParams }: { searchParams: 
           <Plus size={16} /> Nova conta
         </LinkButton>
       </div>
+
+      <IncompleteNotice show={cardTxs.incomplete}>
+        Lançamentos dos cartões incompletos (lançamentos demais no período ou falha na leitura): os valores das faturas são parciais.
+      </IncompleteNotice>
+      <IncompleteNotice show={allSuggestions.incomplete}>
+        Sugestões de pagamento indisponíveis: extrato grande demais (ou falha na leitura). Marque as contas pagas à mão.
+      </IncompleteNotice>
 
       {(activeBills.length > 0 || oneOffs.length > 0) && (
         <form action={searchStatementPayments} className="flex flex-wrap items-center gap-3">
