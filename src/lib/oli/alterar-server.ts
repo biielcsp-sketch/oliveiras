@@ -4,7 +4,7 @@ import type { getAppContext } from "@/lib/data";
 import { todaySP } from "@/lib/financas/today";
 import { brDate } from "@/lib/agenda/dates";
 import { MEAL_LABEL, type Meal } from "@/lib/casa/types";
-import { completeChore, deleteChore, deleteMaintenance, deleteShoppingItem, saveChore, saveMaintenance, saveShoppingItem } from "@/app/(app)/casa/actions";
+import { completeChore, deleteChore, deleteMaintenance, deleteShoppingItem, markMaintenanceDone, saveChore, saveMaintenance, saveShoppingItem, toggleShoppingItem } from "@/app/(app)/casa/actions";
 import { deleteCasaDocument, saveCasaDocument } from "@/app/(app)/casa/documentos-actions";
 import { deleteMeal, saveMeal } from "@/app/(app)/casa/cardapio-actions";
 import { deleteProvider, saveProvider } from "@/app/(app)/casa/prestadores-actions";
@@ -14,6 +14,7 @@ import {
   deletePetHealth,
   deletePetVet,
   deletePetWeight,
+  markPetCareDone,
   savePetCare,
   savePetFood,
   savePetHealth,
@@ -146,9 +147,22 @@ export async function executarAlteracao(prep: Extract<Prepared, { ok: true }>): 
       return r.ok ? { ok: true, ...(r.aviso ? { aviso: r.aviso } : {}) } : { ok: false, erro: r.erro ?? "Não foi possível apagar." };
     }
     case "concluir": {
-      // Estado lido agora: o "Feita" da tela confere índice e data (outro celular pode ter marcado antes).
-      const r = await completeChore(id!, { next_index: Number(row?.next_index ?? 0), next_due_on: (row?.next_due_on as string | null) ?? null });
-      return r.ok ? { ok: true } : { ok: false, erro: r.erro ?? "Não foi possível marcar como feita." };
+      const fail = (erro?: string) => ({ ok: false as const, erro: erro ?? "Não foi possível registrar." });
+      if (key === "casa/tarefas") {
+        // Estado lido agora: o "Feita" da tela confere índice e data (outro celular pode ter marcado antes).
+        const r = await completeChore(id!, { next_index: Number(row?.next_index ?? 0), next_due_on: (row?.next_due_on as string | null) ?? null });
+        return r.ok ? { ok: true } : fail(r.erro);
+      }
+      if (key === "casa/compras") {
+        const r = await toggleShoppingItem(id!, plan.raw.done === "true");
+        return r.ok ? { ok: true } : fail(r.erro);
+      }
+      const done = key === "casa/manutencao" ? markMaintenanceDone : key === "pet/cuidados" ? markPetCareDone : null;
+      if (!done) return fail("Não dá para concluir este item.");
+      const fd = new FormData();
+      for (const [k, v] of planToFormEntries(plan)) fd.append(k, v);
+      const r = await done(null, fd);
+      return r?.ok ? { ok: true } : fail(r?.error);
     }
     default: {
       const fd = new FormData();

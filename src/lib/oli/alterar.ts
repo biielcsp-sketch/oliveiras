@@ -22,9 +22,12 @@ import {
   validatePetVetInput,
   validatePetWeightInput,
 } from "@/lib/casa/pet-input";
-import { currentResponsible } from "@/lib/casa/schedule";
+import { currentResponsible, nextMaintenanceDue } from "@/lib/casa/schedule";
+import { validateMaintenanceDone } from "@/lib/casa/input";
+import { validatePetCareDone } from "@/lib/casa/pet-input";
 import { DOC_KIND_LABEL, MEAL_LABEL } from "@/lib/casa/types";
-import { PET_HEALTH_LABEL, PET_VET_LABEL } from "@/lib/casa/pet";
+import { nextCareDue, PET_HEALTH_LABEL, PET_VET_LABEL, type PetCareUnit } from "@/lib/casa/pet";
+import type { IntervalUnit } from "@/lib/casa/types";
 import { canEdit, PURPOSE_STATUS_LABEL, validateLessonInput, validatePrayerInput, validatePurposeInput, validateWordInput } from "@/lib/igreja/input";
 import { matchByName, normalizeName } from "./tool-args";
 
@@ -45,7 +48,7 @@ export const MAX_FRASE = 2000;
 export type Raw = Record<string, string | string[]>;
 export type Row = Record<string, unknown>;
 
-type Kind = "texto" | "data" | "dinheiro" | "decimal" | "inteiro" | "opcao" | "dias" | "pessoas" | "linhas" | "pet";
+type Kind = "texto" | "data" | "dinheiro" | "decimal" | "inteiro" | "opcao" | "dias" | "pessoas" | "linhas" | "pet" | "sim_nao";
 type Campo = { arg: string; key: string; label: string; kind: Kind; opcoes?: Record<string, string> };
 
 export type AlterarLookup = {
@@ -80,6 +83,11 @@ export type Spec = {
   fixos?: string[];
   /** Filtro da linha (palavra x promessa na mesma tabela). */
   rowOk?: (row: Row) => string | null;
+  /** "concluir": o "Feita"/"Comprado" da tela. Campos próprios (data, custo...) e o painel a partir da linha atual. */
+  concluir?: {
+    campos: Campo[];
+    plan: (row: Row, raw: Raw, lk: AlterarLookup) => { ok: true; campos: AlteracaoCampo[]; raw: Raw } | { ok: false; erro: string };
+  };
 };
 
 /* ---------- Conversões ---------- */
@@ -125,6 +133,10 @@ function toForm(c: Campo, v: unknown, lk: AlterarLookup): { ok: true; value: str
     case "texto":
     case "data":
       return typeof v === "string" ? { ok: true, value: v } : bad;
+    case "sim_nao":
+      if (typeof v === "boolean") return { ok: true, value: v ? "true" : "false" };
+      if (typeof v === "string" && /^(true|false|sim|nao|não)$/i.test(v.trim())) return { ok: true, value: /^(true|sim)$/i.test(v.trim()) ? "true" : "false" };
+      return bad;
     case "dinheiro":
       if (typeof v === "number") return Number.isFinite(v) ? { ok: true, value: v.toFixed(2).replace(".", ",") } : bad;
       return typeof v === "string" ? { ok: true, value: v } : bad;
@@ -181,6 +193,8 @@ function show(c: Campo, raw: Raw, lk: AlterarLookup): string | null {
       return str(raw, c.key).split("\n").filter(Boolean).join(", ") || null;
     case "pet":
       return lk.pets.find((p) => p.id === v)?.name ?? "Pet";
+    case "sim_nao":
+      return v === "true" ? "Sim" : "Não";
     default:
       return str(raw, c.key);
   }
@@ -193,6 +207,41 @@ const DATA = (arg: string, key: string, label: string): Campo => ({ arg, key, la
 const ownedRaw = (r: Row): Raw => ({ shared: on(r.shared) });
 const onePet = (lk: AlterarLookup): Raw => (lk.pets.length === 1 ? { pet_id: lk.pets[0].id } : {});
 const igrejaTitle = (r: Raw) => str(r, "title") || str(r, "body").slice(0, 60) || "Sem título";
+
+const DONE_CAMPOS = (notas: string): Campo[] => [
+  DATA("data", "done_on", "Feita em"),
+  { arg: "custo", key: "cost", label: "Custo", kind: "dinheiro" },
+  TEXTO(notas, "notes", "Observações"),
+];
+const showDone = (raw: Raw, lk: AlterarLookup, campos: Campo[]) =>
+  campos.map((c) => ({ rotulo: c.label, antes: null, depois: show(c, raw, lk) })).filter((c) => c.depois !== null);
+
+/** "Feita" com data (padrão hoje), custo e observação, como a tela; mostra a próxima data que vai ficar. */
+function doneWithNext(
+  validate: (raw: Raw, today: string) => { ok: true; value: { done_on: string } } | { ok: false; erro: string },
+  next: (last: string, row: Row) => string | null,
+  campos: Campo[],
+  extra: (row: Row) => Raw = () => ({}),
+) {
+  return (row: Row, raw: Raw, lk: AlterarLookup) => {
+    const r: Raw = { done_on: lk.today, ...raw };
+    const v = validate(r, lk.today);
+    if (!v.ok) return v;
+    // Data antiga registrada depois não faz a "última vez" voltar no tempo (mesma regra das actions).
+    const prev = typeof row.last_done_on === "string" ? row.last_done_on : null;
+    const last = prev && prev > v.value.done_on ? prev : v.value.done_on;
+    const nxt = next(last, row);
+    const shown = showDone({ ...r, done_on: v.value.done_on }, lk, campos);
+    return {
+      ok: true as const,
+      campos: [
+        ...shown,
+        { rotulo: "Próxima", antes: typeof row.next_due_on === "string" ? brDate(row.next_due_on) : null, depois: nxt ? brDate(nxt) : null },
+      ],
+      raw: { ...r, done_on: v.value.done_on, ...extra(row) },
+    };
+  };
+}
 
 const SPECS: Record<AlterarAba, Record<string, Spec>> = {
   casa: {
@@ -222,6 +271,20 @@ const SPECS: Record<AlterarAba, Record<string, Spec>> = {
       defaults: (lk): Raw => (lk.me ? { rotation: [lk.me.id] } : {}),
       validate: (raw, lk) => okv(validateChoreInput(raw, lk.members.map((m) => m.id))),
       titulo: (r) => str(r, "name"),
+      concluir: {
+        campos: [],
+        // "Feita" da tela: avança rodízio e data a partir do estado atual.
+        plan: (row, raw, lk) => {
+          const valid = new Set(lk.members.map((m) => m.id));
+          const rotation = Array.isArray(row.rotation) ? (row.rotation as string[]) : [];
+          const resp = currentResponsible({ rotation, next_index: Number(row.next_index ?? 0) }, valid);
+          const campos: AlteracaoCampo[] = [
+            { rotulo: "Vez de", antes: null, depois: resp ? (lk.members.find((m) => m.id === resp)?.name ?? null) : null },
+            { rotulo: "Prevista para", antes: null, depois: typeof row.next_due_on === "string" ? brDate(row.next_due_on) : null },
+          ].filter((c) => c.depois !== null);
+          return { ok: true, campos, raw };
+        },
+      },
     },
     compras: {
       aba: "casa",
@@ -229,7 +292,7 @@ const SPECS: Record<AlterarAba, Record<string, Spec>> = {
       rotulo: "Item de compra",
       table: "casa_shopping_items",
       cols: "id, name, quantity, unit, category, notes, done",
-      acoes: ["criar", "editar", "apagar"],
+      acoes: ["criar", "editar", "apagar", "concluir"],
       campos: [
         TEXTO("nome", "name", "Item"),
         { arg: "quantidade", key: "quantity", label: "Quantidade", kind: "decimal" },
@@ -240,6 +303,16 @@ const SPECS: Record<AlterarAba, Record<string, Spec>> = {
       rowToRaw: (r) => ({ name: s(r.name), quantity: r.quantity == null ? "" : String(Number(r.quantity)), unit: s(r.unit), category: s(r.category), notes: s(r.notes) }),
       validate: (raw) => okv(validateShoppingInput(raw)),
       titulo: (r) => str(r, "name"),
+      concluir: {
+        // Marcar comprado (padrão) ou desmarcar, como o toque na lista da tela.
+        campos: [{ arg: "comprado", key: "done", label: "Comprado", kind: "sim_nao" }],
+        plan: (row, raw) => {
+          const target = raw.done !== "false";
+          if ((row.done === true) === target) return { ok: false, erro: target ? "Esse item já está marcado como comprado." : "Esse item já está pendente na lista." };
+          const label = (d: boolean) => (d ? "Comprado" : "Pendente");
+          return { ok: true, campos: [{ rotulo: "Situação", antes: label(!target), depois: label(target) }], raw: { done: target ? "true" : "false" } };
+        },
+      },
     },
     manutencao: {
       aba: "casa",
@@ -247,7 +320,7 @@ const SPECS: Record<AlterarAba, Record<string, Spec>> = {
       rotulo: "Manutenção",
       table: "casa_maintenance",
       cols: "id, name, notes, interval_value, interval_unit, last_done_on, next_due_on, provider, provider_id, active",
-      acoes: ["criar", "editar", "apagar"],
+      acoes: ["criar", "editar", "apagar", "concluir"],
       campos: [
         TEXTO("nome", "name", "Manutenção"),
         { arg: "intervalo", key: "interval_value", label: "Intervalo", kind: "inteiro" },
@@ -268,6 +341,10 @@ const SPECS: Record<AlterarAba, Record<string, Spec>> = {
       }),
       validate: (raw, lk) => okv(validateMaintenanceInput(raw, lk.today)),
       titulo: (r) => str(r, "name"),
+      concluir: {
+        campos: DONE_CAMPOS("notas"),
+        plan: doneWithNext(validateMaintenanceDone, (last, row) => nextMaintenanceDue(last, Number(row.interval_value), row.interval_unit as IntervalUnit), DONE_CAMPOS("notas")),
+      },
     },
     documentos: {
       aba: "casa",
@@ -392,7 +469,7 @@ const SPECS: Record<AlterarAba, Record<string, Spec>> = {
       rotulo: "Cuidado",
       table: "casa_pet_care",
       cols: "id, pet_id, name, interval_value, interval_unit, last_done_on, next_due_on, provider_id, active, notes",
-      acoes: ["criar", "editar", "apagar"],
+      acoes: ["criar", "editar", "apagar", "concluir"],
       campos: [
         { arg: "pet", key: "pet_id", label: "Pet", kind: "pet" },
         TEXTO("nome", "name", "Cuidado"),
@@ -413,6 +490,14 @@ const SPECS: Record<AlterarAba, Record<string, Spec>> = {
       defaults: (lk): Raw => (lk.pets.length === 1 ? { pet_id: lk.pets[0].id } : {}),
       validate: (raw, lk) => okv(validatePetCareInput(raw, lk.today)),
       titulo: (r) => str(r, "name"),
+      concluir: {
+        campos: DONE_CAMPOS("notas"),
+        // Estado atual vai junto (expected_*): a action da tela não registra duas vezes se outro celular marcou antes.
+        plan: doneWithNext(validatePetCareDone, (last, row) => nextCareDue(last, Number(row.interval_value), row.interval_unit as PetCareUnit), DONE_CAMPOS("notas"), (row) => ({
+          expected_last: s(row.last_done_on),
+          expected_next: s(row.next_due_on),
+        })),
+      },
     },
     peso: {
       aba: "pet",
@@ -560,7 +645,7 @@ export const SECOES_ALTERAR: Record<AlterarAba, readonly string[]> = { casa: CAS
 
 /** Args aceitos por aba (para a declaração da ferramenta). */
 export function argsDaAba(aba: AlterarAba): string[] {
-  return [...new Set(Object.values(SPECS[aba]).flatMap((sp) => sp.campos.map((c) => c.arg)))];
+  return [...new Set(Object.values(SPECS[aba]).flatMap((sp) => [...sp.campos, ...(sp.concluir?.campos ?? [])].map((c) => c.arg)))];
 }
 
 /* ---------- Argumentos do modelo ---------- */
@@ -612,7 +697,7 @@ export function parseAlterarArgs(aba: unknown, args: unknown): { ok: true; value
     if (frase.length > MAX_FRASE) return { ok: false, erro: `Frase muito longa (máximo ${MAX_FRASE}).` };
   }
 
-  const allowed = new Set(spec.campos.map((c) => c.arg));
+  const allowed = new Set((act === "concluir" ? (spec.concluir?.campos ?? []) : spec.campos).map((c) => c.arg));
   const valores: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(a)) {
     if (FIXED_KEYS.has(k) || !present(v)) continue;
@@ -620,7 +705,7 @@ export function parseAlterarArgs(aba: unknown, args: unknown): { ok: true; value
     if (!simpleValue(v)) return { ok: false, erro: `Campo ${k} inválido.` };
     valores[k] = v;
   }
-  if ((act === "apagar" || act === "concluir" || act === "acrescentar") && Object.keys(valores).length > 0)
+  if ((act === "apagar" || act === "acrescentar") && Object.keys(valores).length > 0)
     return { ok: false, erro: `Para ${act}, mande só o id${act === "acrescentar" ? " e a frase" : ""}.` };
   if (act === "editar" && Object.keys(valores).length === 0) return { ok: false, erro: "Diga o que mudar." };
   return { ok: true, value: { aba, acao: act, secao: spec.secao, id, frase, valores } };
@@ -693,15 +778,19 @@ export function planAlteracao(a: AlterarArgs, row: Row | null, lk: AlterarLookup
   }
 
   if (a.acao === "concluir") {
-    // Só tarefas: "Feita" da tela (avança rodízio e data a partir do estado atual).
-    const valid = new Set(lk.members.map((m) => m.id));
-    const rotation = Array.isArray(row!.rotation) ? (row!.rotation as string[]) : [];
-    const resp = currentResponsible({ rotation, next_index: Number(row!.next_index ?? 0) }, valid);
-    const campos: AlteracaoCampo[] = [
-      { rotulo: "Vez de", antes: null, depois: resp ? (lk.members.find((m) => m.id === resp)?.name ?? null) : null },
-      { rotulo: "Prevista para", antes: null, depois: typeof row!.next_due_on === "string" ? brDate(row!.next_due_on) : null },
-    ].filter((c) => c.depois !== null);
-    return { ok: true, plan: { preview: preview(campos), raw, spec } };
+    const cfg = spec.concluir!;
+    const done: Raw = {};
+    for (const c of cfg.campos) {
+      if (!(c.arg in a.valores)) continue;
+      const conv = toForm(c, a.valores[c.arg], lk);
+      if (!conv.ok) return conv;
+      done[c.key] = conv.value;
+    }
+    const r = cfg.plan(row!, done, lk);
+    if (!r.ok) return r;
+    // raw = só os campos do "Feita" (a linha atual fica como está; a action da tela recalcula a próxima data).
+    const p = preview(r.campos);
+    return { ok: true, plan: { preview: p, raw: r.raw, spec } };
   }
 
   if (a.acao === "acrescentar") {
@@ -762,7 +851,7 @@ export const ALTERAR_DONE: Record<AlterarAcao, string> = {
   criar: "Salvo.",
   editar: "Alteração salva.",
   apagar: "Apagado.",
-  concluir: "Marcada como feita.",
+  concluir: "Registrado.",
   acrescentar: "Frase acrescentada.",
 };
 

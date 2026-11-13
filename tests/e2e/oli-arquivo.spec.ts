@@ -367,6 +367,7 @@ test("Oli: cria, edita e apaga em Casa, Pet e Igreja só depois de Confirmar, re
   let gabrielMember = "";
   const karenShared = randomUUID();
   const karenPrivate = randomUUID();
+  const petId = randomUUID();
 
   await test.step("família do Oli (Gabriel + Karen) com itens de cada um", async () => {
     await createFamilyWithId(hh, email, PASSWORD);
@@ -376,7 +377,9 @@ test("Oli: cria, edita e apaga em Casa, Pet e Igreja só depois de Confirmar, re
     gabrielMember = gabriel.id;
     for (const [table, rows] of [
       ["casa_shopping_items", [{ household_id: hh, name: "Leite" }]],
-      ["casa_pets", [{ household_id: hh, name: "Moisés", species: "cachorro" }]],
+      ["casa_maintenance", [{ household_id: hh, name: "Filtro de água", interval_value: 6, interval_unit: "meses" }]],
+      ["casa_pets", [{ id: petId, household_id: hh, name: "Moisés", species: "cachorro" }]],
+      ["casa_pet_care", [{ household_id: hh, pet_id: petId, name: "Banho", interval_value: 2, interval_unit: "semanas" }]],
       [
         "igreja_carisma_lessons",
         [
@@ -434,6 +437,35 @@ test("Oli: cria, edita e apaga em Casa, Pet e Igreja só depois de Confirmar, re
     expect((await admin.from("igreja_carisma_lessons").update({ notes: "Editado na tela." }).eq("id", id)).error).toBeNull();
     expect(await confirm(p2)).toEqual({ ok: false, erro: "O item mudou desde que o Oli mostrou o painel. Nada foi gravado: peça de novo para conferir." });
     expect(await notes()).toBe("Editado na tela.");
+  });
+
+  await test.step("concluir: compra comprada (e desmarcada), manutenção e cuidado do pet feitos, só com Confirmar", async () => {
+    const id = itemId(await callOliTool(page, "consultar_casa", { secao: "compras" }), "Leite");
+    const done = async () => (await admin.from("casa_shopping_items").select("done").eq("id", id).single()).data!.done;
+    const p = previewOf(await callOliTool(page, "alterar_casa", { acao: "concluir", secao: "compras", id }));
+    expect(p.campos).toEqual([{ rotulo: "Situação", antes: "Pendente", depois: "Comprado" }]);
+    expect(await done()).toBe(false);
+    expect(await confirm(p)).toEqual({ ok: true });
+    expect(await done()).toBe(true);
+    const back = previewOf(await callOliTool(page, "alterar_casa", { acao: "concluir", secao: "compras", id, comprado: false }));
+    expect(await confirm(back)).toEqual({ ok: true });
+    expect(await done()).toBe(false);
+
+    const mid = itemId(await callOliTool(page, "consultar_casa", { secao: "manutencao" }), "Filtro de água");
+    const m = previewOf(await callOliTool(page, "alterar_casa", { acao: "concluir", secao: "manutencao", id: mid, custo: 80 }));
+    expect(m.campos).toContainEqual({ rotulo: "Custo", antes: null, depois: expect.stringMatching(/80,00/) });
+    expect((await admin.from("casa_maintenance_log").select("id").eq("maintenance_id", mid)).data).toEqual([]);
+    expect(await confirm(m)).toEqual({ ok: true });
+    expect((await admin.from("casa_maintenance_log").select("cost").eq("maintenance_id", mid)).data).toEqual([{ cost: 80 }]);
+    expect((await admin.from("casa_maintenance").select("last_done_on, next_due_on").eq("id", mid).single()).data!.next_due_on).toBeTruthy();
+
+    const cid = itemId(await callOliTool(page, "consultar_pet", { secao: "cuidados" }), "Banho");
+    const c = previewOf(await callOliTool(page, "alterar_pet", { acao: "concluir", secao: "cuidados", id: cid }));
+    expect(await confirm(c)).toEqual({ ok: true });
+    expect((await admin.from("casa_pet_care_log").select("id").eq("care_id", cid)).data).toHaveLength(1);
+    // Painel antigo depois de registrado: o estado mudou, nada é gravado de novo.
+    expect(await confirm(c)).toMatchObject({ ok: false });
+    expect((await admin.from("casa_pet_care_log").select("id").eq("care_id", cid)).data).toHaveLength(1);
   });
 
   await test.step("apagar com Confirmar remove; só propor não remove", async () => {

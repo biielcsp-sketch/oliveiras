@@ -636,7 +636,7 @@ function ArquivoLidoPanel({ data: d }: { data: LerArquivoData }) {
 
 const ABA_LABEL: Record<AlteracaoPreview["aba"], string> = { casa: "Casa", pet: "Pet", igreja: "Igreja" };
 
-function alteracaoTitle(acao: AlterarAcao, rotulo: string) {
+function alteracaoTitle(acao: AlterarAcao, rotulo: string, d: AlteracaoPreview) {
   const r = rotulo.toLowerCase();
   switch (acao) {
     case "criar":
@@ -646,6 +646,9 @@ function alteracaoTitle(acao: AlterarAcao, rotulo: string) {
     case "apagar":
       return `Apagar ${r}?`;
     case "concluir":
+      if (d.secao === "compras") return d.campos[0]?.depois === "Pendente" ? "Voltar o item para a lista?" : "Marcar como comprado?";
+      if (d.secao === "manutencao") return "Registrar manutenção feita?";
+      if (d.secao === "cuidados") return "Registrar cuidado feito?";
       return "Marcar tarefa como feita?";
     case "acrescentar":
       return "Acrescentar à anotação?";
@@ -672,7 +675,7 @@ function AlteracaoPanel({
   return (
     <Confirm
       id={id}
-      title={alteracaoTitle(d.acao, d.rotulo)}
+      title={alteracaoTitle(d.acao, d.rotulo, d)}
       status={status}
       erro={erro}
       danger={d.acao === "apagar"}

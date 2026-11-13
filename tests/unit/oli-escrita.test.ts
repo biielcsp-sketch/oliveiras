@@ -36,6 +36,11 @@ vi.mock("@/app/(app)/casa/actions", () => ({
   deleteChore: del("deleteChore"),
   deleteShoppingItem: del("deleteShoppingItem"),
   deleteMaintenance: del("deleteMaintenance"),
+  markMaintenanceDone: save("markMaintenanceDone"),
+  toggleShoppingItem: async (id: string, done: boolean) => {
+    calls.list.push({ fn: "toggleShoppingItem", arg: [id, done] });
+    return { ok: true };
+  },
   completeChore: async (id: string, exp: unknown) => {
     calls.list.push({ fn: "completeChore", arg: [id, exp] });
     return { ok: true };
@@ -48,6 +53,7 @@ vi.mock("@/app/(app)/casa/pet-actions", () => ({
   savePetHealth: save("savePetHealth"),
   savePetVet: save("savePetVet"),
   savePetCare: save("savePetCare"),
+  markPetCareDone: save("markPetCareDone"),
   savePetWeight: save("savePetWeight"),
   savePetFood: save("savePetFood"),
   deletePetHealth: del("deletePetHealth"),
@@ -93,7 +99,9 @@ describe("Oli escrita: argumentos por seção", () => {
     expect(parseAlterarArgs("casa", { acao: "criar", secao: "compras", nome: "Leite", rodizio: ["Karen"] })).toMatchObject({ ok: false, erro: expect.stringContaining("Campo rodizio não existe em compras") });
     expect(parseAlterarArgs("casa", { acao: "editar", secao: "compras", id: U(9) })).toEqual({ ok: false, erro: "Diga o que mudar." });
     expect(parseAlterarArgs("casa", { acao: "apagar", secao: "compras", id: U(9), nome: "Leite" })).toMatchObject({ ok: false });
-    expect(parseAlterarArgs("casa", { acao: "concluir", secao: "compras", id: U(9) })).toMatchObject({ ok: false, erro: expect.stringContaining("Em compras dá para") });
+    expect(parseAlterarArgs("casa", { acao: "concluir", secao: "prestadores", id: U(9) })).toMatchObject({ ok: false, erro: expect.stringContaining("Em prestadores dá para") });
+    expect(parseAlterarArgs("casa", { acao: "concluir", secao: "compras", id: U(9), nome: "x" })).toMatchObject({ ok: false, erro: expect.stringContaining("Campos: comprado") });
+    expect(parseAlterarArgs("casa", { acao: "concluir", secao: "tarefas", id: U(9), custo: 10 })).toMatchObject({ ok: false, erro: expect.stringContaining("Campo custo não existe") });
     expect(parseAlterarArgs("pet", { acao: "editar", secao: "peso", id: U(9), peso_kg: 10 })).toMatchObject({ ok: false });
     expect(parseAlterarArgs("igreja", { acao: "acrescentar", secao: "carisma", id: U(9) })).toEqual({ ok: false, erro: "Informe a frase a acrescentar." });
     expect(parseAlterarArgs("igreja", { acao: "acrescentar", secao: "carisma", id: U(9), frase: "x".repeat(2001) })).toMatchObject({ ok: false, erro: expect.stringContaining("muito longa") });
@@ -227,6 +235,53 @@ describe("Oli escrita: Igreja (dono e anotação)", () => {
   });
 });
 
+describe("Oli escrita: concluir em compras, manutenção e cuidados do pet", () => {
+  it("compras: marca comprado (padrão) ou desmarca; já no estado pedido vira erro", () => {
+    const row = { id: U(9), name: "Leite", quantity: null, unit: null, category: null, notes: null, done: false };
+    const p = okPlan("casa", { acao: "concluir", secao: "compras", id: U(9) }, row);
+    expect(p.preview.campos).toEqual([{ rotulo: "Situação", antes: "Pendente", depois: "Comprado" }]);
+    expect(p.raw).toEqual({ done: "true" });
+    expect(plan("casa", { acao: "concluir", secao: "compras", id: U(9), comprado: false }, row)).toEqual({ ok: false, erro: "Esse item já está pendente na lista." });
+    const back = okPlan("casa", { acao: "concluir", secao: "compras", id: U(9), comprado: false }, { ...row, done: true });
+    expect(back.preview.campos).toEqual([{ rotulo: "Situação", antes: "Comprado", depois: "Pendente" }]);
+    expect(back.raw).toEqual({ done: "false" });
+    expect(plan("casa", { acao: "concluir", secao: "compras", id: U(9) }, { ...row, done: true })).toEqual({ ok: false, erro: "Esse item já está marcado como comprado." });
+  });
+
+  it("manutenção: data padrão hoje, custo e próxima data (mesmas regras da tela)", () => {
+    const row = { id: U(9), name: "Filtro", notes: null, interval_value: 6, interval_unit: "meses", last_done_on: "2026-05-01", next_due_on: "2026-11-01", provider: null, provider_id: null };
+    const p = okPlan("casa", { acao: "concluir", secao: "manutencao", id: U(9), custo: 80 }, row);
+    expect(p.raw).toEqual({ done_on: "2026-11-13", cost: "80,00" });
+    expect(p.preview.campos).toEqual([
+      { rotulo: "Feita em", antes: null, depois: "13/11/2026" },
+      { rotulo: "Custo", antes: null, depois: expect.stringMatching(/R\$\s?80,00/) },
+      { rotulo: "Próxima", antes: "01/11/2026", depois: "13/05/2027" },
+    ]);
+    expect(plan("casa", { acao: "concluir", secao: "manutencao", id: U(9), data: "2026-12-01" }, row)).toEqual({ ok: false, erro: "A data não pode ser no futuro." });
+    // Data antiga não faz a última vez voltar: a próxima segue a partir de 01/05.
+    const old = okPlan("casa", { acao: "concluir", secao: "manutencao", id: U(9), data: "2026-01-10" }, row);
+    expect(old.preview.campos.at(-1)).toEqual({ rotulo: "Próxima", antes: "01/11/2026", depois: "01/11/2026" });
+  });
+
+  it("cuidado do pet: leva o estado atual (expected) para a action da tela", () => {
+    const row = { id: U(9), pet_id: U(50), name: "Banho", interval_value: 2, interval_unit: "semanas", last_done_on: "2026-10-30", next_due_on: "2026-11-13", provider_id: null, active: true, notes: null };
+    const p = okPlan("pet", { acao: "concluir", secao: "cuidados", id: U(9), notas: "Pet shop" }, row);
+    expect(p.raw).toEqual({ done_on: "2026-11-13", notes: "Pet shop", expected_last: "2026-10-30", expected_next: "2026-11-13" });
+    expect(p.preview.campos.at(-1)).toEqual({ rotulo: "Próxima", antes: "13/11/2026", depois: "27/11/2026" });
+    expect(planToFormEntries(p)[0]).toEqual(["id", U(9)]);
+  });
+
+  it("painel: título conforme a seção", () => {
+    const render = (data: ReturnType<typeof okPlan>["preview"]) =>
+      renderToStaticMarkup(createElement(OliPanels, { panels: [{ id: "1", kind: "confirmar_alteracao", status: "pendente", data }], onConfirm: () => {}, onCancel: () => {}, onClear: () => {} }));
+    const row = { id: U(9), name: "Leite", quantity: null, unit: null, category: null, notes: null, done: false };
+    expect(render(okPlan("casa", { acao: "concluir", secao: "compras", id: U(9) }, row).preview)).toContain("Marcar como comprado?");
+    expect(render(okPlan("casa", { acao: "concluir", secao: "compras", id: U(9), comprado: "não" }, { ...row, done: true }).preview)).toContain("Voltar o item para a lista?");
+    const m = { id: U(9), name: "Filtro", notes: null, interval_value: 6, interval_unit: "meses", last_done_on: null, next_due_on: null, provider: null, provider_id: null };
+    expect(render(okPlan("casa", { acao: "concluir", secao: "manutencao", id: U(9) }, m).preview)).toContain("Registrar manutenção feita?");
+  });
+});
+
 describe("Oli escrita: Confirmar e gravação pelas telas", () => {
   beforeEach(() => {
     calls.list = [];
@@ -260,7 +315,18 @@ describe("Oli escrita: Confirmar e gravação pelas telas", () => {
     await executarAlteracao({ ok: true, plan: okPlan("casa", { acao: "concluir", secao: "tarefas", id: U(7) }, chore), row: chore });
     const aula = { id: U(6), owner_id: ME.user_id, shared: false, title: "Aula", lesson_date: null, subject: null, teacher: null, notes: "Antes" };
     await executarAlteracao({ ok: true, plan: okPlan("igreja", { acao: "acrescentar", secao: "carisma", id: U(6), frase: "Depois" }, aula), row: aula });
-    expect(calls.list).toEqual([
+    const leite = { id: U(5), name: "Leite", quantity: null, unit: null, category: null, notes: null, done: false };
+    await executarAlteracao({ ok: true, plan: okPlan("casa", { acao: "concluir", secao: "compras", id: U(5) }, leite), row: leite });
+    const filtro = { id: U(4), name: "Filtro", notes: null, interval_value: 6, interval_unit: "meses", last_done_on: null, next_due_on: null, provider: null, provider_id: null };
+    await executarAlteracao({ ok: true, plan: okPlan("casa", { acao: "concluir", secao: "manutencao", id: U(4), custo: 50 }, filtro), row: filtro });
+    const banho = { id: U(3), pet_id: U(50), name: "Banho", interval_value: 2, interval_unit: "semanas", last_done_on: null, next_due_on: null, provider_id: null, active: true, notes: null };
+    await executarAlteracao({ ok: true, plan: okPlan("pet", { acao: "concluir", secao: "cuidados", id: U(3) }, banho), row: banho });
+    expect(calls.list.slice(4)).toEqual([
+      { fn: "toggleShoppingItem", arg: [U(5), true] },
+      { fn: "markMaintenanceDone", arg: [["id", U(4)], ["done_on", "2026-11-13"], ["cost", "50,00"]] },
+      { fn: "markPetCareDone", arg: [["id", U(3)], ["done_on", "2026-11-13"], ["expected_last", ""], ["expected_next", ""]] },
+    ]);
+    expect(calls.list.slice(0, 4)).toEqual([
       { fn: "deleteCasaDocument", arg: U(9) },
       { fn: "deletePetHealth", arg: U(8) },
       { fn: "completeChore", arg: [U(7), { next_index: 0, next_due_on: "2026-11-13" }] },
