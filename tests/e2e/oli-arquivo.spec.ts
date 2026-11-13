@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { E2E_OLI_HOUSEHOLD_ID } from "../../playwright.config";
 import { addSpouse, adminClient, createFamilyWithId } from "./admin";
 import { PASSWORD, signUp, uniqueEmail, watchConsole } from "./helpers";
-import { callOliTool, titles } from "./oli-tool";
+import { callOliAction, callOliTool, titles, type ToolResult } from "./oli-tool";
 
 /**
  * "+" do Oli: ler um arquivo e guardar no módulo certo, sempre com Confirmar na tela.
@@ -342,6 +342,136 @@ test("Oli: consultas leem só a própria família, respeitam o privado e ler_arq
   await ctx.close();
 });
 
+/**
+ * Escrita (etapa 2): alterar_casa/pet/igreja só PROPÕEM (painel); confirmOliAlteracao grava pelas actions das telas.
+ * Sem Gemini Live nos testes: o teste pede a ferramenta e depois o Confirmar, como a tela faz com o painel recebido.
+ */
+type Preview = Record<string, unknown> & { acao: string; titulo: string; campos: { rotulo: string; antes: string | null; depois: string | null }[]; anexo: { atual: string | null; acrescimo: string } | null };
+const previewOf = (r: ToolResult) => {
+  expect(r).toMatchObject({ ok: true });
+  return (r as { data: unknown }).data as Preview;
+};
+const itemId = (r: ToolResult, titulo: string) => {
+  const it = (r.ok ? (r.data.grupos ?? []).flatMap((g) => g.itens) : []).find((i) => i.titulo === titulo) as { id?: string } | undefined;
+  expect(it?.id, titulo).toBeTruthy();
+  return it!.id!;
+};
+
+test("Oli: cria, edita e apaga em Casa, Pet e Igreja só depois de Confirmar, respeitando o dono", async ({ browser }) => {
+  test.setTimeout(180_000);
+  const admin = adminClient();
+  const hh = E2E_OLI_HOUSEHOLD_ID;
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  const email = uniqueEmail("oli-escrita");
+  let gabrielMember = "";
+  const karenShared = randomUUID();
+  const karenPrivate = randomUUID();
+
+  await test.step("família do Oli (Gabriel + Karen) com itens de cada um", async () => {
+    await createFamilyWithId(hh, email, PASSWORD);
+    const karenUid = await addSpouse(hh, uniqueEmail("oli-escrita-karen"), PASSWORD, "Karen");
+    const { data: ms } = await admin.from("members").select("id, user_id, name").eq("household_id", hh);
+    const gabriel = ms!.find((m) => m.name === "Gabriel")!;
+    gabrielMember = gabriel.id;
+    for (const [table, rows] of [
+      ["casa_shopping_items", [{ household_id: hh, name: "Leite" }]],
+      ["casa_pets", [{ household_id: hh, name: "Moisés", species: "cachorro" }]],
+      [
+        "igreja_carisma_lessons",
+        [
+          { id: randomUUID(), household_id: hh, owner_id: gabriel.user_id, shared: false, title: "Aula do Gabriel", notes: "Texto anterior da aula." },
+          { id: karenShared, household_id: hh, owner_id: karenUid, shared: true, title: "Aula compartilhada da Karen", notes: "Da Karen." },
+          { id: karenPrivate, household_id: hh, owner_id: karenUid, shared: false, title: "Aula PRIVADA da Karen", notes: "Privado." },
+        ],
+      ],
+    ] as const) {
+      const { error } = await admin.from(table).insert(rows as unknown as Record<string, unknown>[]);
+      expect(error, table).toBeNull();
+    }
+    await page.goto("/login");
+    await page.getByLabel("E-mail").fill(email);
+    await page.getByLabel("Senha").fill(PASSWORD);
+    await page.locator("form").getByRole("button", { name: "Entrar" }).click();
+    await expect(page).toHaveURL(/\/inicio$/);
+  });
+
+  const confirm = (p: Preview) => callOliAction(page, "confirmOliAlteracao", [p]);
+  const chores = async () => (await admin.from("casa_chores").select("name, frequency, rotation").eq("household_id", hh)).data ?? [];
+
+  let tarefa: Preview;
+  await test.step("propor tarefa não grava nada", async () => {
+    tarefa = previewOf(await callOliTool(page, "alterar_casa", { acao: "criar", secao: "tarefas", nome: "Tirar o lixo", frequencia: "diária" }));
+    expect(tarefa).toMatchObject({ aba: "casa", acao: "criar", titulo: "Tirar o lixo" });
+    expect(tarefa.campos).toContainEqual({ rotulo: "Rodízio", antes: null, depois: "Gabriel" });
+    expect(await chores()).toEqual([]);
+  });
+
+  await test.step("Confirmar cria a tarefa na Casa (pela action da tela)", async () => {
+    expect(await confirm(tarefa)).toEqual({ ok: true });
+    expect(await chores()).toEqual([{ name: "Tirar o lixo", frequency: "diaria", rotation: [gabrielMember] }]);
+  });
+
+  await test.step("marcar a tarefa como feita grava o histórico", async () => {
+    const id = itemId(await callOliTool(page, "consultar_casa", { secao: "tarefas" }), "Tirar o lixo");
+    const p = previewOf(await callOliTool(page, "alterar_casa", { acao: "concluir", secao: "tarefas", id }));
+    expect((await admin.from("casa_chore_log").select("id").eq("household_id", hh)).data).toEqual([]);
+    expect(await confirm(p)).toEqual({ ok: true });
+    expect((await admin.from("casa_chore_log").select("member_id").eq("household_id", hh)).data).toEqual([{ member_id: gabrielMember }]);
+  });
+
+  await test.step("acrescentar frase à anotação da aula preserva o texto anterior", async () => {
+    const id = itemId(await callOliTool(page, "consultar_igreja", { secao: "carisma" }), "Aula do Gabriel");
+    const p = previewOf(await callOliTool(page, "alterar_igreja", { acao: "acrescentar", secao: "carisma", id, frase: "Deus é fiel." }));
+    expect(p.anexo).toEqual({ atual: "Texto anterior da aula.", acrescimo: "Deus é fiel." });
+    const notes = async () => (await admin.from("igreja_carisma_lessons").select("notes").eq("id", id).single()).data!.notes;
+    expect(await notes()).toBe("Texto anterior da aula.");
+    expect(await confirm(p)).toEqual({ ok: true });
+    expect(await notes()).toBe("Texto anterior da aula.\nDeus é fiel.");
+
+    // Se a anotação mudou depois do painel (outro celular), o Confirmar não grava por cima.
+    const p2 = previewOf(await callOliTool(page, "alterar_igreja", { acao: "acrescentar", secao: "carisma", id, frase: "Outra frase." }));
+    expect((await admin.from("igreja_carisma_lessons").update({ notes: "Editado na tela." }).eq("id", id)).error).toBeNull();
+    expect(await confirm(p2)).toEqual({ ok: false, erro: "O item mudou desde que o Oli mostrou o painel. Nada foi gravado: peça de novo para conferir." });
+    expect(await notes()).toBe("Editado na tela.");
+  });
+
+  await test.step("apagar com Confirmar remove; só propor não remove", async () => {
+    const id = itemId(await callOliTool(page, "consultar_casa", { secao: "compras" }), "Leite");
+    const p = previewOf(await callOliTool(page, "alterar_casa", { acao: "apagar", secao: "compras", id }));
+    expect(p.campos).toEqual([{ rotulo: "Item", antes: "Leite", depois: null }]);
+    const leite = async () => (await admin.from("casa_shopping_items").select("id").eq("id", id)).data ?? [];
+    expect(await leite()).toHaveLength(1);
+    expect(await confirm(p)).toEqual({ ok: true });
+    expect(await leite()).toEqual([]);
+  });
+
+  await test.step("Pet: registra o peso do único pet", async () => {
+    const p = previewOf(await callOliTool(page, "alterar_pet", { acao: "criar", secao: "peso", peso_kg: 12.5 }));
+    expect(p.campos).toContainEqual({ rotulo: "Pet", antes: null, depois: "Moisés" });
+    expect(await confirm(p)).toEqual({ ok: true });
+    expect((await admin.from("casa_pet_weights").select("weight_kg").eq("household_id", hh)).data).toEqual([{ weight_kg: 12.5 }]);
+  });
+
+  await test.step("Igreja: aula compartilhada da Karen não é alterada nem apagada; a privada nem aparece", async () => {
+    const r = await callOliTool(page, "alterar_igreja", { acao: "acrescentar", secao: "carisma", id: karenShared, frase: "x" });
+    expect(r).toEqual({ ok: false, erro: "Esse item é de Karen (compartilhado com você): só quem criou pode alterar ou apagar." });
+    expect(await callOliTool(page, "alterar_igreja", { acao: "apagar", secao: "carisma", id: karenShared })).toMatchObject({ ok: false, erro: expect.stringContaining("só quem criou") });
+    expect(await callOliTool(page, "alterar_igreja", { acao: "editar", secao: "carisma", id: karenPrivate, titulo: "x" })).toMatchObject({ ok: false, erro: expect.stringContaining("não encontrad") });
+    // Painel forjado direto no Confirmar (cliente não confiável): recusado do mesmo jeito.
+    const forged = { aba: "igreja", secao: "carisma", acao: "apagar", id: karenShared, rotulo: "Aula", titulo: "Aula compartilhada da Karen", campos: [], anexo: null, aviso: null, args: { acao: "apagar", secao: "carisma", id: karenShared } };
+    expect(await confirm(forged as unknown as Preview)).toMatchObject({ ok: false, erro: expect.stringContaining("só quem criou") });
+    expect(await confirm({ ...forged, id: karenPrivate, args: { acao: "apagar", secao: "carisma", id: karenPrivate } } as unknown as Preview)).toMatchObject({ ok: false });
+    const { data } = await admin.from("igreja_carisma_lessons").select("id, notes").in("id", [karenShared, karenPrivate]).order("notes");
+    expect(data).toEqual([
+      { id: karenShared, notes: "Da Karen." },
+      { id: karenPrivate, notes: "Privado." },
+    ]);
+  });
+
+  await ctx.close();
+});
+
 test("Oli: ferramentas em família não liberada são recusadas no servidor", async ({ page }) => {
   await signUp(page, uniqueEmail("oli-leitura-x"));
   await page.getByLabel("Seu nome").fill("Gabriel");
@@ -354,4 +484,21 @@ test("Oli: ferramentas em família não liberada são recusadas no servidor", as
   ] as const) {
     expect(await callOliTool(page, name, args)).toEqual({ ok: false, erro: "O Oli ainda não está liberado para esta família." });
   }
+  // Escrita: nem o painel nem os Confirmar (chamados direto, sem passar pela ferramenta) funcionam.
+  expect(await callOliTool(page, "alterar_casa", { acao: "criar", secao: "compras", nome: "Bloqueado" })).toEqual({ ok: false, erro: "O Oli ainda não está liberado para esta família." });
+  const id = randomUUID();
+  const nome = `Bloqueado ${id}`;
+  for (const [action, arg] of [
+    ["confirmOliAlteracao", { aba: "casa", secao: "compras", acao: "criar", id: null, rotulo: "Item de compra", titulo: nome, campos: [{ rotulo: "Item", antes: null, depois: nome }], anexo: null, aviso: null, args: { acao: "criar", secao: "compras", nome } }],
+    ["confirmOliLancamento", { descricao: nome, valor: -1, tipo: "saida", data: "2026-11-13", categoria: { id, nome: "x" }, conta: { id, nome: "x" } }],
+    ["confirmOliMemoria", { conteudo: nome, categoria: "geral" }],
+    ["confirmOliEsquecer", id],
+    ["confirmOliEvento", { titulo: nome, dia_inteiro: true, inicio: "2026-11-13", fim: "2026-11-13", local: null, agenda: { id: "x", nome: "x" } }],
+    ["confirmOliConsulta", { pessoa: { id, nome: "x" }, tipo: "consulta", especialidade: null, medico: null, local: null, inicio: "2026-11-20T10:00", observacoes: null }],
+  ] as const) {
+    expect(await callOliAction(page, action, [arg]), action).toEqual({ ok: false, erro: "O Oli ainda não está liberado para esta família." });
+  }
+  const admin = adminClient();
+  expect((await admin.from("casa_shopping_items").select("id").eq("name", nome)).data).toEqual([]);
+  expect((await admin.from("oli_memories").select("id").eq("content", nome)).data).toEqual([]);
 });

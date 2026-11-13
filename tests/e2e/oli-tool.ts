@@ -4,28 +4,35 @@
 import { readFileSync } from "node:fs";
 import type { Page } from "@playwright/test";
 
-let actionId: string | null = null;
+const actionIds = new Map<string, string>();
 
-function runOliToolId() {
-  if (actionId) return actionId;
+/** Id de uma action exportada por oli-actions.ts (runOliTool, confirmOli*), lido do manifesto do build. */
+function oliActionId(exportedName: string) {
+  const cached = actionIds.get(exportedName);
+  if (cached) return cached;
   const manifest = JSON.parse(readFileSync(".next/server/server-reference-manifest.json", "utf8")) as {
     node: Record<string, { filename?: string; exportedName?: string }>;
   };
   const found = Object.entries(manifest.node).find(
-    ([, v]) => v.filename?.endsWith("src/app/(app)/inicio/oli-actions.ts") && v.exportedName === "runOliTool",
+    ([, v]) => v.filename?.endsWith("src/app/(app)/inicio/oli-actions.ts") && v.exportedName === exportedName,
   );
-  if (!found) throw new Error("runOliTool não está no manifesto do build (rode npm run build).");
-  actionId = found[0];
-  return actionId;
+  if (!found) throw new Error(`${exportedName} não está no manifesto do build (rode npm run build).`);
+  actionIds.set(exportedName, found[0]);
+  return found[0];
 }
 
 export type ToolResult = { ok: true; tool: string; data: Record<string, unknown> & { grupos?: { titulo: string; total: number; itens: { titulo: string; pessoa: string | null; arquivo: string | null }[] }[]; aviso?: string | null } } | { ok: false; erro: string };
 
 /** POST da server action na página /inicio (mesma origem e cookies da página). */
 export async function callOliTool(page: Page, name: string, args: Record<string, unknown> = {}): Promise<ToolResult> {
+  return (await callOliAction(page, "runOliTool", [name, args])) as ToolResult;
+}
+
+/** Qualquer action de oli-actions.ts, como a tela chama (ex.: confirmOliAlteracao com o painel recebido). */
+export async function callOliAction(page: Page, exportedName: string, args: unknown[]): Promise<unknown> {
   const res = await page.request.post("/inicio", {
-    headers: { "Next-Action": runOliToolId(), "Content-Type": "text/plain;charset=UTF-8", Accept: "text/x-component" },
-    data: JSON.stringify([name, args]),
+    headers: { "Next-Action": oliActionId(exportedName), "Content-Type": "text/plain;charset=UTF-8", Accept: "text/x-component" },
+    data: JSON.stringify(args),
     maxRedirects: 0,
   });
   if (res.status() !== 200) throw new Error(`action respondeu ${res.status()}`);
@@ -33,7 +40,7 @@ export async function callOliTool(page: Page, name: string, args: Record<string,
   // Resposta RSC: linhas "<id>:<json>"; o resultado da action é a linha 1 (a 0 aponta para ela).
   for (const line of text.split("\n")) {
     const m = /^1:(.*)$/.exec(line);
-    if (m) return JSON.parse(m[1]) as ToolResult;
+    if (m) return JSON.parse(m[1]) as unknown;
   }
   throw new Error(`resposta inesperada da action: ${text.slice(0, 200)}`);
 }
