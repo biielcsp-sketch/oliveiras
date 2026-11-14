@@ -53,6 +53,9 @@ function FileIcon({ mime }: { mime: string }) {
 function FileItem({ file: f, mine, pending, run }: { file: FileVM; mine: boolean; pending: boolean; run: ReturnType<typeof useRunner>["run"] }) {
   const [renaming, setRenaming] = useState(false);
   const [menu, setMenu] = useState(false);
+  // Perto do fim da tela o menu (e a confirmação de exclusão, que o faz crescer) abre para cima: aberto para baixo,
+  // o fim dele ficava sob a barra inferior fixa e o botão Apagar não podia ser tocado.
+  const [up, setUp] = useState(false);
   const [name, setName] = useState(baseName(f.name));
   const [err, setErr] = useState<string | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -60,6 +63,14 @@ function FileItem({ file: f, mine, pending, run }: { file: FileVM; mine: boolean
   const menuId = useId();
   const ext = extOf(f.name);
   const hasActions = Boolean(f.link) || mine;
+
+  useEffect(() => {
+    if (!menu || !btnRef.current) return;
+    const r = btnRef.current.getBoundingClientRect();
+    const NAV = 96; // barra inferior flutuante (62px + 14px do fundo + folga)
+    const MENU = 260; // altura máxima do menu com a confirmação aberta
+    setUp(window.innerHeight - NAV - r.bottom < MENU && r.top > MENU);
+  }, [menu]);
 
   useEffect(() => {
     if (!menu) return;
@@ -108,7 +119,8 @@ function FileItem({ file: f, mine, pending, run }: { file: FileVM; mine: boolean
             hidden={!menu}
             aria-label={`Ações de ${f.name}`}
             role="group"
-            className="absolute right-0 top-12 z-30 flex w-60 flex-col gap-0.5 rounded-[18px] border border-line bg-surface-solid p-1.5 shadow-lg"
+            data-placement={up ? "up" : "down"}
+            className={`absolute right-0 z-30 ${up ? "bottom-12" : "top-12"} flex w-60 flex-col gap-0.5 rounded-[18px] border border-line bg-surface-solid p-1.5 shadow-lg`}
           >
             {f.link && (
               <a href={f.link} target="_blank" rel="noopener noreferrer" className={item} onClick={() => setMenu(false)}>

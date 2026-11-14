@@ -446,8 +446,12 @@ test("Igreja: devocional pessoal com compartilhamento, Carisma com Google Drive 
       await item.getByRole("button", { name: `Ações de ${n}` }).click();
       await item.getByRole("button", { name: "Apagar" }).click();
       const confirmar = item.getByRole("group", { name: "Confirmar exclusão" }).getByRole("button", { name: "Apagar" });
-      // a barra inferior fixa cobre o fim da lista: centraliza o botão antes de tocar
-      await confirmar.evaluate((el) => el.scrollIntoView({ block: "center" }));
+      // a barra inferior fixa não pode cobrir o botão de confirmar (o menu abre para cima perto do fim da tela)
+      await confirmar.scrollIntoViewIfNeeded();
+      expect(await confirmar.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+      })).toBe(true);
       await confirmar.click();
       await expect(item).toHaveCount(0);
     }
