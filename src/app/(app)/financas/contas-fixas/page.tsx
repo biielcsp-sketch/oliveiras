@@ -55,10 +55,10 @@ export default async function ContasFixasPage({ searchParams }: { searchParams: 
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-col items-start gap-3">
         <MonthSwitcher month={month} basePath="/financas/contas-fixas" />
-        <LinkButton href="/financas/contas-fixas/nova">
-          <Plus size={16} /> Nova conta
+        <LinkButton href="/financas/contas-fixas/nova" size="sm">
+          <Plus size={15} aria-hidden /> Nova conta
         </LinkButton>
       </div>
 

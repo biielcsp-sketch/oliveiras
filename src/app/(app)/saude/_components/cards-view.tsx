@@ -85,11 +85,11 @@ export function CardsView({ people, cards, defaultMember }: { people: Person[]; 
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-muted">Disponíveis offline neste aparelho depois de abrir esta tela com internet.</p>
-        <Button onClick={() => setModal({})} className="shrink-0">
-          <Plus size={18} aria-hidden /> Nova carteirinha
+      <div className="flex flex-col items-start gap-2">
+        <Button size="sm" onClick={() => setModal({})}>
+          <Plus size={15} aria-hidden /> Nova carteirinha
         </Button>
+        <p className="text-sm text-muted">Disponíveis offline neste aparelho depois de abrir esta tela com internet.</p>
       </div>
       {notice && (
         <p role="status" className="text-sm text-primary">

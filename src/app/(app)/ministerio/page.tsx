@@ -56,7 +56,7 @@ export default async function Page() {
     <div className="flex flex-col gap-6">
       <ModuleHeroCard title="Conecte-se com a sua igreja" subtitle="Faça parte desta família." image="/ilustracoes/igreja.webp" />
       <section aria-labelledby="resumo-titulo" className="min-w-0">
-        <h2 id="resumo-titulo" className="mb-2 text-[15.5px] font-bold tracking-tight">
+        <h2 id="resumo-titulo" className="mb-2 text-[15.5px] font-semibold tracking-tight">
           Resumo
         </h2>
         <div className="grid gap-3 md:grid-cols-2">

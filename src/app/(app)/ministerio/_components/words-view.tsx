@@ -99,13 +99,13 @@ export function WordsView({ kind, items, today }: { kind: WordKind; items: Item[
   const { notice, setNotice, error, pending, run } = useRunner();
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-col items-start gap-3">
         <div>
           <h2 className="text-xl font-semibold tracking-tight">{c.title}</h2>
           <p className="text-sm text-muted">{c.intro}</p>
         </div>
-        <Button onClick={() => setModal({})}>
-          <Plus size={18} aria-hidden /> {c.add}
+        <Button size="sm" onClick={() => setModal({})}>
+          <Plus size={15} aria-hidden /> {c.add}
         </Button>
       </div>
       <Feedback notice={notice} error={error} />

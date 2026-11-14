@@ -83,13 +83,31 @@ test("navegação: barra inferior, logo para o Início e calendário da Agenda",
     await expect(page).toHaveURL(/\/inicio$/);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Olá, Gabriel!");
     const mods = page.getByRole("navigation", { name: "Módulos" }).getByRole("link");
-    await expect(mods).toHaveText(["Finanças", "Saúde", "Casa", "Igreja"]);
+    await expect(mods).toHaveText(["Finanças", "Saúde", "Agenda", "Casa", "Igreja"]);
+    await expect(mods.nth(2)).toHaveAttribute("href", "/agenda");
+    // Rótulos do arco inteiros dentro da área azul do cabeçalho (a onda não passa por cima)
+    const headBox = (await page.locator("header").first().boundingBox())!;
+    for (const box of await mods.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().toJSON()))) {
+      expect(box.left).toBeGreaterThanOrEqual(0);
+      expect(box.right).toBeLessThanOrEqual(page.viewportSize()!.width);
+      expect(box.bottom).toBeLessThanOrEqual(headBox.y + headBox.height - 40);
+    }
+    // Topo do celular: tema à esquerda, logo no centro, família à direita; sem botão de agenda
+    await expect(page.getByRole("button", { name: "Agenda", exact: true })).toHaveCount(0);
+    const theme = (await page.getByRole("button", { name: /Mudar para o modo/ }).boundingBox())!;
+    const logo = (await page.getByTestId("head-logo").boundingBox())!;
+    const fam = (await page.getByRole("link", { name: "Família" }).boundingBox())!;
+    expect(theme.x + theme.width).toBeLessThan(logo.x);
+    expect(logo.x + logo.width).toBeLessThan(fam.x);
+    expect(Math.abs(logo.x + logo.width / 2 - page.viewportSize()!.width / 2)).toBeLessThan(4);
+    expect(theme.height).toBeLessThanOrEqual(36);
     await expect(page.getByRole("link", { name: "Família" })).toHaveAttribute("href", "/familia");
     await page.getByRole("link", { name: /ir para o Início/ }).click();
     await expect(page).toHaveURL(/\/inicio$/);
   });
 
-  await test.step("botão Agenda abre o calendário do mês atual e fecha com Esc", async () => {
+  await test.step("botão Agenda (barra lateral do desktop) abre o calendário do mês atual e fecha com Esc", async () => {
+    await page.setViewportSize({ width: 1280, height: 800 });
     const today = todaySP();
     const current = yearMonthOf(today);
     const trigger = page.getByRole("button", { name: "Agenda", exact: true });

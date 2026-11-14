@@ -52,6 +52,15 @@ test("Android: card aparece, Instalar chama o prompt e Agora não esconde mesmo 
     const navBox = (await page.getByRole("navigation", { name: "Principal" }).boundingBox())!;
     const oliBtn = (await page.getByRole("link", { name: "Oli, o assistente" }).boundingBox())!;
     expect(cardBox.y + cardBox.height).toBeLessThanOrEqual(Math.min(navBox.y, oliBtn.y));
+    // Mede depois da animação de entrada (oli-rise usa escala; no meio dela a altura sai fracionada)
+    await card(page).evaluate((el) =>
+      Promise.all(
+        el
+          .getAnimations({ subtree: true })
+          .filter((a) => (a as CSSAnimation).animationName === "oli-rise")
+          .map((a) => a.finished),
+      ),
+    );
     for (const name of ["Instalar", "Agora não"]) {
       const b = (await card(page).getByRole("button", { name }).boundingBox())!;
       expect(b.height).toBeGreaterThanOrEqual(44);

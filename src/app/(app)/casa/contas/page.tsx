@@ -52,9 +52,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ m
   return (
     <div className="flex flex-col gap-4">
       <MonthSwitcher month={month} basePath="/casa/contas" />
-      <div className="flex flex-wrap items-center justify-end gap-3">
-        <LinkButton href="/financas/contas-fixas/nova?casa=1">
-          <Plus size={16} aria-hidden /> Nova conta da casa
+      <div className="flex flex-wrap items-center gap-3">
+        <LinkButton href="/financas/contas-fixas/nova?casa=1" size="sm">
+          <Plus size={15} aria-hidden /> Nova conta da casa
         </LinkButton>
       </div>
       <DocUpload pending={pendingDocs} origem="casa" mes={month} />

@@ -93,8 +93,8 @@ export function AgendaView({
       </div>
 
       {calendars.length > 0 && (
-        <Button type="button" className="w-full" onClick={() => setForm({})}>
-          <Plus size={18} aria-hidden /> Novo evento
+        <Button type="button" size="sm" className="self-start" onClick={() => setForm({})}>
+          <Plus size={15} aria-hidden /> Novo evento
         </Button>
       )}
 

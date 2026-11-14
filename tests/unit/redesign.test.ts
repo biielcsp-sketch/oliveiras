@@ -87,7 +87,8 @@ describe("navegação do redesign", () => {
   });
   it("os módulos abrem na raiz, inclusive a Saúde (Carteirinhas no centro da ferradura)", () => {
     expect(MODULES.every((m) => !m.entry)).toBe(true);
-    expect(HOME_MODULES.map((m) => m.href)).toEqual(["/financas", "/saude", "/casa", "/ministerio"]);
+    // Arco do Início com 5 itens: a Agenda entra no meio (saiu do topo no celular)
+    expect(HOME_MODULES.map((m) => m.href)).toEqual(["/financas", "/saude", "/agenda", "/casa", "/ministerio"]);
   });
   it("ferradura de volta: todas as seções de cada módulo estão nas abas", () => {
     expect(FINANCAS_TABS.map((t) => t.href)).toEqual([
@@ -128,6 +129,34 @@ describe("navegação do redesign", () => {
     expect(pts[1]).toEqual([195, ARC_BASE_Y + 35]);
     expect(pts[0][1]).toBeLessThan(pts[1][1]);
     expect(pts[0][1]).toBeCloseTo(pts[2][1]);
+  });
+});
+
+describe("visual leve (rodada 2)", () => {
+  const css = readFileSync("src/app/globals.css", "utf8");
+  const block = (name: string) => {
+    const a = css.indexOf(`@utility ${name} {`);
+    return css.slice(a, css.indexOf("\n}", a));
+  };
+  it("bolhas do arco/ferradura: borda fina, sem faixa de brilho nem reflexo", () => {
+    const orb = block("glass-orb");
+    expect(orb).toMatch(/border: 1px solid/);
+    expect(orb).not.toContain("::before");
+    expect(orb).not.toContain("::after");
+  });
+  it("primário sem faixa de brilho; topo sem botão de agenda; tema à esquerda e logo no centro", () => {
+    expect(block("glass-primary")).not.toContain("::before");
+    const head = readFileSync("src/components/head-bar.tsx", "utf8");
+    expect(head).not.toMatch(/AgendaCalendarButton|CalendarDays/);
+    expect(head.indexOf("ThemeToggle className")).toBeLessThan(head.indexOf("<Logo"));
+    expect(head.indexOf("<Logo")).toBeLessThan(head.indexOf('aria-label="Família"'));
+    expect(head).toMatch(/size-9/);
+    expect(head).toMatch(/<TapArea \/>/);
+  });
+  it("ferradura: item selecionado com contorno fino e trilho fino", () => {
+    const arc = readFileSync("src/components/arc-nav.tsx", "utf8");
+    expect(arc).toContain("outline-[1.5px]");
+    expect(arc).not.toContain("feGaussianBlur");
   });
 });
 
