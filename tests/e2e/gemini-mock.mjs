@@ -24,6 +24,19 @@ createServer((req, res) => {
       return send(res, 400, { error: { code: 400 } });
     }
     const parts = body?.contents?.[0]?.parts ?? [];
+    // "Estudar com o Oli" (Carisma): devolve o modo pedido, se as anotações vieram e quais arquivos de texto/docx e quantos inline.
+    if (JSON.stringify(body?.systemInstruction ?? "").includes("Você é o Oli, assistente do aluno")) {
+      const texts = parts.filter((p) => typeof p.text === "string").map((p) => p.text);
+      if (!texts.some((t) => t.includes("<dados_da_aula>"))) return send(res, 400, { error: { code: 400, message: "sem dados da aula" } });
+      const last = texts[texts.length - 1] ?? "";
+      const mode = /MODO: (\w+)/.exec(last)?.[1] ?? "?";
+      const q = /<pergunta_do_aluno>\n([\s\S]*?)\n<\/pergunta_do_aluno>/.exec(last)?.[1] ?? "";
+      const notes = /<anotacoes_do_aluno>\n([\s\S]*?)\n<\/anotacoes_do_aluno>/.exec(texts.join("\n"))?.[1] ?? "";
+      const named = [...texts.join("\n").matchAll(/<arquivo nome="([^"]+)">\n([\s\S]*?)\n<\/arquivo>/g)].map((m) => `${m[1]}=${m[2].slice(0, 40)}`);
+      const inline = parts.filter((p) => p.inlineData?.data).length;
+      const text = `Modo ${mode}\nPergunta: ${q}\nAnotações: ${notes.slice(0, 60)}\nArquivos de texto: ${named.join("; ")}\nInline: ${inline}`;
+      return send(res, 200, { candidates: [{ content: { role: "model", parts: [{ text }] }, finishReason: "STOP" }] });
+    }
     if (JSON.stringify(body?.systemInstruction ?? "").includes("seminário teológico")) {
       const texts = parts.filter((p) => typeof p.text === "string").map((p) => p.text);
       const inline = parts.filter((p) => p.inlineData?.data);

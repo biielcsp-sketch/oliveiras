@@ -42,6 +42,27 @@ async function googleAs(ctx: BrowserContext, user: string, denyDrive = false) {
   await ctx.addCookies(cookies);
 }
 
+
+/** Captura de tela 390px só quando SHOTS_DIR está definido (revisão visual); sem a variável não faz nada. */
+async function shot(page: Page, name: string) {
+  const dir = process.env.SHOTS_DIR;
+  if (!dir) return;
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: `${dir}/${name}.png`, fullPage: true });
+}
+
+/** Seleciona um trecho do caderno (como o usuário com o dedo ou o mouse). */
+async function selectIn(ta: ReturnType<Page["getByLabel"]>, word: string) {
+  await ta.evaluate((el: HTMLTextAreaElement, w: string) => {
+    const i = el.value.indexOf(w);
+    el.focus();
+    el.setSelectionRange(i, i + w.length);
+    el.dispatchEvent(new Event("select", { bubbles: true }));
+  }, word);
+}
+
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0, 0x49, 0x45, 0x4e, 0x44]);
+
 const PDF = Buffer.from("%PDF-1.4\n1 0 obj << >> endobj\nConteúdo da aula de Cristologia\n%%EOF\n");
 
 test("Igreja: devocional pessoal com compartilhamento, Carisma com Google Drive e resumo, Consolidação", async ({ page, browser }) => {
@@ -199,7 +220,7 @@ test("Igreja: devocional pessoal com compartilhamento, Carisma com Google Drive 
     await d.getByLabel("Título da aula").fill("Introdução à Cristologia");
     await d.getByLabel("Disciplina").fill("Teologia Sistemática");
     await d.getByLabel("Professor").fill("Pr. João");
-    await d.getByLabel("Anotações").fill("Jesus é o Verbo encarnado.\nJoão 1:14");
+    await d.getByLabel("Anotações").fill("Jesus é o Verbo encarnado.\nJoão 1:14 <b>x</b>");
     await d.getByRole("button", { name: "Salvar aula" }).click();
     await expect(page).toHaveURL(/\/ministerio\/carisma\/[0-9a-f-]{36}$/);
     lessonUrl = new URL(page.url()).pathname;
@@ -212,7 +233,7 @@ test("Igreja: devocional pessoal com compartilhamento, Carisma com Google Drive 
     page.on("request", (r) => {
       if (r.method() === "PUT") puts.push(r.url());
     });
-    await page.getByLabel("Escolher arquivo da aula").setInputFiles({ name: "apostila.pdf", mimeType: "application/pdf", buffer: PDF });
+    await page.getByLabel("Escolher PDF").setInputFiles({ name: "apostila.pdf", mimeType: "application/pdf", buffer: PDF });
     await expect(page.getByRole("status").filter({ hasText: "Arquivo guardado no seu Google Drive." })).toBeVisible();
     const card = page.getByTestId("arquivo-aula").filter({ hasText: "apostila.pdf" });
     // Lista compacta: o arquivo ocupa uma linha só; as ações ficam no "⋯"
@@ -250,8 +271,8 @@ test("Igreja: devocional pessoal com compartilhamento, Carisma com Google Drive 
   });
 
   await test.step("arquivo falso (HTML com nome .pdf) é recusado e vai para a lixeira do Drive", async () => {
-    await page.getByLabel("Escolher arquivo da aula").setInputFiles({ name: "falso.pdf", mimeType: "application/pdf", buffer: Buffer.from("<html><script>alert(1)</script></html>") });
-    await expect(page.getByText("não é um PDF, Word (.docx) ou imagem JPG/PNG válido e foi descartado")).toBeVisible();
+    await page.getByLabel("Escolher PDF").setInputFiles({ name: "falso.pdf", mimeType: "application/pdf", buffer: Buffer.from("<html><script>alert(1)</script></html>") });
+    await expect(page.getByText("não é um texto (.txt), Word (.docx), PDF ou imagem JPG/PNG válido e foi descartado")).toBeVisible();
     await expect(page.getByTestId("arquivo-aula").filter({ hasText: "falso.pdf" })).toHaveCount(0);
     const fake = (await driveFiles()).find((x) => x.name === "falso.pdf");
     expect(fake?.trashed).toBe(true);
@@ -278,8 +299,158 @@ test("Igreja: devocional pessoal com compartilhamento, Carisma com Google Drive 
   });
 
   await test.step(".doc antigo é recusado na tela com explicação", async () => {
-    await page.getByLabel("Escolher arquivo da aula").setInputFiles({ name: "antigo.doc", mimeType: "application/msword", buffer: Buffer.from([0xd0, 0xcf, 0x11, 0xe0]) });
+    await page.getByLabel("Escolher arquivo de texto").setInputFiles({ name: "antigo.doc", mimeType: "application/msword", buffer: Buffer.from([0xd0, 0xcf, 0x11, 0xe0]) });
     await expect(page.getByText("Arquivo .doc (Word antigo) não é aceito. Abra no Word")).toBeVisible();
+  });
+
+  await test.step("caderno: formatar na seleção, atalhos, pré-visualização, autosave e persistência", async () => {
+    const caderno = page.getByRole("region", { name: "Caderno de anotações" });
+    const ta = caderno.getByLabel("Anotações da aula");
+    await expect(ta).toHaveValue("Jesus é o Verbo encarnado.\nJoão 1:14 <b>x</b>");
+    await expect(caderno.getByTestId("notas-status")).toContainText("Salvo");
+    // barra de ferramentas ABAIXO da caixa de texto, com botões nomeados
+    const bar = caderno.getByRole("toolbar", { name: "Formatação do caderno" });
+    expect((await bar.boundingBox())!.y).toBeGreaterThan((await ta.boundingBox())!.y + (await ta.boundingBox())!.height - 1);
+    for (const n of ["Negrito", "Itálico", "Sublinhado", "Marca-texto", "Título", "Lista", "Desfazer", "Refazer"]) await expect(bar.getByRole("button", { name: n })).toBeVisible();
+    await expect(bar.getByRole("button", { name: "Desfazer" })).toBeDisabled();
+
+    await selectIn(ta, "Verbo");
+    await bar.getByRole("button", { name: "Negrito" }).click();
+    await expect(ta).toHaveValue("Jesus é o **Verbo** encarnado.\nJoão 1:14 <b>x</b>");
+    await expect(bar.getByRole("button", { name: "Negrito" })).toHaveAttribute("aria-pressed", "true");
+    await expect(caderno.getByTestId("notas-status")).toContainText("Alterações não salvas");
+    // atalho Ctrl+I no trecho selecionado
+    await selectIn(ta, "encarnado");
+    await page.keyboard.press("Control+i");
+    await expect(ta).toHaveValue("Jesus é o **Verbo** _encarnado_.\nJoão 1:14 <b>x</b>");
+    await selectIn(ta, "Jesus");
+    await bar.getByRole("button", { name: "Marca-texto" }).click();
+    await bar.getByRole("button", { name: "Sublinhado" }).click();
+    await selectIn(ta, "Jesus");
+    await bar.getByRole("button", { name: "Título" }).click();
+    await expect(ta).toHaveValue("# ==++Jesus++== é o **Verbo** _encarnado_.\nJoão 1:14 <b>x</b>");
+    await selectIn(ta, "João");
+    await bar.getByRole("button", { name: "Lista" }).click();
+    await expect(ta).toHaveValue("# ==++Jesus++== é o **Verbo** _encarnado_.\n- João 1:14 <b>x</b>");
+    // desfazer / refazer (botão e atalho)
+    await bar.getByRole("button", { name: "Desfazer" }).click();
+    await expect(ta).toHaveValue("# ==++Jesus++== é o **Verbo** _encarnado_.\nJoão 1:14 <b>x</b>");
+    await bar.getByRole("button", { name: "Refazer" }).click();
+    await expect(ta).toHaveValue("# ==++Jesus++== é o **Verbo** _encarnado_.\n- João 1:14 <b>x</b>");
+
+    // pré-visualização: elementos reais, HTML digitado só como texto
+    await bar.getByRole("button", { name: "Pré-visualizar" }).click();
+    const prev = caderno.getByTestId("notas-previa");
+    await expect(prev.locator("h4 mark u")).toHaveText("Jesus");
+    await expect(prev.locator("strong")).toHaveText("Verbo");
+    await expect(prev.locator("em")).toHaveText("encarnado");
+    await expect(prev.locator("li")).toContainText("João 1:14 <b>x</b>");
+    await expect(prev.locator("b, script")).toHaveCount(0);
+    await shot(page, "01-aula-caderno-barra");
+
+    // autosave com debounce: "Salvo" e persistido
+    await expect(caderno.getByTestId("notas-status")).toContainText("Salvo", { timeout: 10_000 });
+    const { data: row } = await admin.from("igreja_carisma_lessons").select("notes").eq("household_id", E2E_IGREJA_HOUSEHOLD_ID).single();
+    expect(row?.notes).toBe("# ==++Jesus++== é o **Verbo** _encarnado_.\n- João 1:14 <b>x</b>");
+    await page.reload();
+    await expect(page.getByLabel("Anotações da aula")).toHaveValue("# ==++Jesus++== é o **Verbo** _encarnado_.\n- João 1:14 <b>x</b>");
+
+    // limite de 10000 contando a marcação: o contador mostra e a formatação que estoura é bloqueada
+    const ta2 = page.getByLabel("Anotações da aula");
+    await ta2.fill("a".repeat(10000));
+    await expect(page.getByTestId("notas-contador")).toContainText("10000/10000");
+    await selectIn(ta2, "a");
+    await page.getByRole("button", { name: "Negrito" }).click();
+    await expect(page.getByTestId("notas-contador")).toContainText("Limite de 10000 caracteres");
+    expect(await ta2.inputValue()).toBe("a".repeat(10000));
+    await expect(page.getByTestId("notas-status")).toContainText("Salvo", { timeout: 10_000 });
+    const { data: full } = await admin.from("igreja_carisma_lessons").select("notes").eq("household_id", E2E_IGREJA_HOUSEHOLD_ID).single();
+    expect(full?.notes).toHaveLength(10000);
+    await ta2.fill("Jesus é o Verbo encarnado.\nJoão 1:14");
+    await expect(page.getByTestId("notas-status")).toContainText("Salvo", { timeout: 10_000 });
+  });
+
+  await test.step("anexos Texto, Imagem e PDF: .txt e .png entram; binário disfarçado de .txt é recusado", async () => {
+    const group = page.getByRole("group", { name: "Adicionar arquivo" });
+    for (const n of ["Texto", "Imagem", "PDF"]) await expect(group.getByRole("button", { name: n, exact: true })).toBeVisible();
+    await shot(page, "02-anexos-texto-imagem-pdf");
+    await page.getByLabel("Escolher arquivo de texto").setInputFiles({ name: "notas.txt", mimeType: "text/plain", buffer: Buffer.from("Texto da aula: o Verbo se fez carne.", "utf8") });
+    await expect(page.getByTestId("arquivo-aula").filter({ hasText: "notas.txt" })).toBeVisible();
+    await page.getByLabel("Escolher imagem").setInputFiles({ name: "quadro.png", mimeType: "image/png", buffer: PNG });
+    await expect(page.getByTestId("arquivo-aula").filter({ hasText: "quadro.png" })).toBeVisible();
+    const { data: rows } = await admin.from("igreja_carisma_files").select("display_name, file_mime, status").eq("household_id", E2E_IGREJA_HOUSEHOLD_ID).order("display_name");
+    expect(rows?.map((r) => [r.display_name, r.file_mime, r.status])).toEqual([
+      ["Apostila da aula 1.pdf", "application/pdf", "pronto"],
+      ["notas.txt", "text/plain", "pronto"],
+      ["quadro.png", "image/png", "pronto"],
+    ]);
+    // binário com nome .txt (assinatura PNG) e arquivo com byte nulo: recusados pelos bytes
+    await page.getByLabel("Escolher arquivo de texto").setInputFiles({ name: "falso.txt", mimeType: "text/plain", buffer: PNG });
+    await expect(page.getByText("não é um texto (.txt), Word (.docx), PDF ou imagem JPG/PNG válido e foi descartado")).toBeVisible();
+    await expect(page.getByTestId("arquivo-aula").filter({ hasText: "falso.txt" })).toHaveCount(0);
+    expect((await driveFiles()).find((x) => x.name === "falso.txt")?.trashed).toBe(true);
+    const { count } = await admin.from("igreja_carisma_files").select("id", { count: "exact", head: true }).eq("household_id", E2E_IGREJA_HOUSEHOLD_ID);
+    expect(count).toBe(3);
+  });
+
+  let studyCalls = 0;
+  await test.step("Estudar com o Oli: lê anotações e arquivos; só grava no caderno depois de confirmar", async () => {
+    const ta = page.getByLabel("Anotações da aula");
+    // texto ainda não salvo é salvo antes de o Oli ler
+    await ta.fill("Jesus é o Verbo encarnado.\nJoão 1:14 extra-novo");
+    await page.getByRole("button", { name: "Estudar com o Oli" }).click();
+    const d = page.getByRole("dialog", { name: "Estudar com o Oli" });
+    for (const n of ["Resumir a aula", "Perguntas de reflexão", "Fazer um teste"]) await expect(d.getByRole("button", { name: n })).toBeVisible();
+    await shot(page, "03-estudar-com-o-oli");
+    await d.getByRole("button", { name: "Fazer um teste" }).click();
+    studyCalls++;
+    const resposta = d.getByTestId("oli-resposta");
+    await expect(resposta).toContainText("Modo quiz", { timeout: 30_000 });
+    await expect(resposta).toContainText("extra-novo");
+    await expect(resposta).toContainText("notas.txt=Texto da aula: o Verbo se fez carne.");
+    await expect(resposta).toContainText("Inline: 2"); // PDF + PNG
+    await d.getByRole("button", { name: "Perguntas de reflexão" }).click();
+    studyCalls++;
+    await expect(resposta).toContainText("Modo reflexao", { timeout: 30_000 });
+    await d.getByLabel("Pergunta sobre a aula").fill("Quem é o Verbo?");
+    await d.getByRole("button", { name: "Enviar pergunta" }).click();
+    studyCalls++;
+    await expect(resposta).toContainText("Pergunta: Quem é o Verbo?", { timeout: 30_000 });
+    await expect(resposta).toContainText("Modo pergunta");
+
+    // propor → mostrar o texto → cancelar não grava
+    const before = "Jesus é o Verbo encarnado.\nJoão 1:14 extra-novo";
+    const notesInDb = async () => (await admin.from("igreja_carisma_lessons").select("notes").eq("household_id", E2E_IGREJA_HOUSEHOLD_ID).single()).data?.notes;
+    await d.getByRole("button", { name: "Anotar no caderno" }).click();
+    const conf = d.getByRole("group", { name: "Confirmar anotação no caderno" });
+    await expect(conf.getByLabel("Texto proposto para o caderno")).toHaveValue(/Modo pergunta/);
+    await shot(page, "04-oli-confirmar-anotacao");
+    expect(await notesInDb()).toBe(before);
+    await conf.getByRole("button", { name: "Cancelar" }).click();
+    await expect(conf).toHaveCount(0);
+    expect(await notesInDb()).toBe(before);
+    // propor de novo, editar e confirmar: só então grava (ao fim do caderno)
+    await d.getByRole("button", { name: "Anotar no caderno" }).click();
+    await conf.getByLabel("Texto proposto para o caderno").fill("- O Verbo é Jesus (João 1:1)");
+    await conf.getByRole("button", { name: "Confirmar e anotar" }).click();
+    await expect(d.getByText("Anotado no caderno.")).toBeVisible();
+    await expect.poll(notesInDb).toBe(before + "\n\n- O Verbo é Jesus (João 1:1)");
+    await page.keyboard.press("Escape");
+    await expect(ta).toHaveValue(before + "\n\n- O Verbo é Jesus (João 1:1)");
+    // cada pedido ao Oli conta no limite diário da família
+    const { count: logged } = await admin.from("igreja_summary_log").select("id", { count: "exact", head: true }).eq("household_id", E2E_IGREJA_HOUSEHOLD_ID);
+    expect(logged).toBe(studyCalls);
+    // limpa os anexos extras (vão para a lixeira do Drive) para os passos seguintes
+    for (const n of ["notas.txt", "quadro.png"]) {
+      const item = page.getByTestId("arquivo-aula").filter({ hasText: n });
+      await item.getByRole("button", { name: `Ações de ${n}` }).click();
+      await item.getByRole("button", { name: "Apagar" }).click();
+      const confirmar = item.getByRole("group", { name: "Confirmar exclusão" }).getByRole("button", { name: "Apagar" });
+      // a barra inferior fixa cobre o fim da lista: centraliza o botão antes de tocar
+      await confirmar.evaluate((el) => el.scrollIntoView({ block: "center" }));
+      await confirmar.click();
+      await expect(item).toHaveCount(0);
+    }
   });
 
   await test.step("compartilhar a aula: sem Google da Karen avisa; depois dá leitura na pasta para o e-mail dela", async () => {
@@ -310,7 +481,9 @@ test("Igreja: devocional pessoal com compartilhamento, Carisma com Google Drive 
     await expect(karen.getByTestId("arquivo-aula").getByRole("button", { name: "Renomear" })).toHaveCount(0);
     await expect(karen.getByRole("button", { name: "Editar aula" })).toHaveCount(0);
     await expect(karen.getByRole("button", { name: "Resumir aula" })).toHaveCount(0);
-    await expect(karen.getByLabel("Escolher arquivo da aula")).toHaveCount(0);
+    await expect(karen.getByLabel("Escolher PDF")).toHaveCount(0);
+    await expect(karen.getByLabel("Anotações da aula")).toHaveCount(0);
+    await expect(karen.getByRole("button", { name: "Estudar com o Oli" })).toHaveCount(0);
     await expect(karen.getByTestId("arquivo-aula").getByRole("button", { name: "Apagar" })).toHaveCount(0);
   });
 
@@ -326,8 +499,8 @@ test("Igreja: devocional pessoal com compartilhamento, Carisma com Google Drive 
     expect(data?.summary).not.toContain("<b>");
     // Cada tentativa fica no log imutável da família; com 20 no dia, a próxima é recusada antes da IA.
     const { count: logged } = await admin.from("igreja_summary_log").select("id", { count: "exact", head: true }).eq("household_id", E2E_IGREJA_HOUSEHOLD_ID);
-    expect(logged).toBe(1);
-    const { error: fillErr } = await admin.from("igreja_summary_log").insert(Array.from({ length: 19 }, () => ({ household_id: E2E_IGREJA_HOUSEHOLD_ID })));
+    expect(logged).toBe(studyCalls + 1);
+    const { error: fillErr } = await admin.from("igreja_summary_log").insert(Array.from({ length: 19 - studyCalls }, () => ({ household_id: E2E_IGREJA_HOUSEHOLD_ID })));
     expect(fillErr).toBeNull();
     await page.getByRole("button", { name: "Resumir aula" }).click();
     await expect(page.getByText("Limite de 20 resumos por dia atingido.")).toBeVisible();

@@ -3,8 +3,8 @@ import { GoogleGenAI } from "@google/genai";
 import mammoth from "mammoth";
 import { geminiBaseUrl } from "@/lib/financas/documentos/extraction";
 import { docsApiKey, DOCS_DEFAULT_MODEL } from "@/lib/financas/documentos/extract";
-import { isDocxZip } from "./files";
-import { runSummary, SUMMARY_TIMEOUT_MS, type LessonMeta, type SourceFile, type SummaryClient } from "./summary";
+import { DOCX_MIME, isDocxZip } from "./files";
+import { runStudy, runSummary, SUMMARY_TIMEOUT_MS, type StudyMode, type LessonMeta, type SourceFile, type SummaryClient } from "./summary";
 
 /**
  * Resumo da aula com o Gemini: mesma configuração da leitura de documentos de Finanças
@@ -60,13 +60,28 @@ export async function docxToText(bytes: Uint8Array): Promise<string | null> {
 
 export const summaryConfigured = () => Boolean(docsApiKey());
 
+/** mammoth é assíncrono: extrai antes e entrega ao planejador (puro) por arquivo. */
+async function docxTexts(files: SourceFile[]) {
+  const texts = new Map<SourceFile, string | null>();
+  for (const f of files) if (f.mime === DOCX_MIME) texts.set(f, await docxToText(f.bytes));
+  return texts;
+}
+
 export async function summarizeLesson(lesson: LessonMeta, files: SourceFile[]) {
   const apiKey = docsApiKey();
   if (!apiKey) return { ok: false as const, motivo: "erro" as const };
-  // mammoth é assíncrono: extrai antes e entrega ao planejador (puro) por arquivo.
-  const texts = new Map<SourceFile, string | null>();
-  for (const f of files) if (f.mime.includes("wordprocessingml")) texts.set(f, await docxToText(f.bytes));
+  const texts = await docxTexts(files);
   const r = await runSummary(geminiClient(apiKey), lesson, files, (f) => texts.get(f) ?? null);
   if (!r.ok) console.error("Carisma: resumo falhou:", r.motivo);
+  return r;
+}
+
+/** Estudar com o Oli: mesma chave, modelo, tempo limite e leitura de arquivos do resumo. Nada do conteúdo vai para log. */
+export async function studyLesson(lesson: LessonMeta, files: SourceFile[], mode: StudyMode, question: string) {
+  const apiKey = docsApiKey();
+  if (!apiKey) return { ok: false as const, motivo: "erro" as const };
+  const texts = await docxTexts(files);
+  const r = await runStudy(geminiClient(apiKey), lesson, files, (f) => texts.get(f) ?? null, mode, question);
+  if (!r.ok) console.error("Carisma: estudo com o Oli falhou:", r.motivo);
   return r;
 }

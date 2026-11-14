@@ -25,7 +25,8 @@ export type LessonListItem = {
 
 export type LessonFormValues = { id: string; title: string; lesson_date: string | null; subject: string | null; teacher: string | null; notes: string | null };
 
-export function LessonForm({ item, today, onDone }: { item?: LessonFormValues; today: string; onDone: (m?: string, id?: string) => void }) {
+/** `notesValue`: na tela da aula o caderno tem o seu próprio editor; o formulário só repassa o texto atual (não edita nem apaga). */
+export function LessonForm({ item, today, onDone, notesValue }: { item?: LessonFormValues; today: string; onDone: (m?: string, id?: string) => void; notesValue?: string }) {
   return (
     <ActionForm action={saveLesson} onDone={onDone} submit={item ? "Salvar alterações" : "Salvar aula"} label={item ? "Editar aula" : "Nova aula"}>
       {item && <input type="hidden" name="id" value={item.id} />}
@@ -43,9 +44,13 @@ export function LessonForm({ item, today, onDone }: { item?: LessonFormValues; t
       <Field label="Professor">
         <Input name="teacher" maxLength={IGREJA_LIMITS.teacher} defaultValue={item?.teacher ?? ""} autoComplete="off" />
       </Field>
-      <Field label="Anotações">
-        <Textarea name="notes" rows={8} maxLength={IGREJA_LIMITS.lessonNotes} defaultValue={item?.notes ?? ""} placeholder="O que você anotou na aula…" />
-      </Field>
+      {notesValue !== undefined ? (
+        <input type="hidden" name="notes" value={notesValue} />
+      ) : (
+        <Field label="Anotações">
+          <Textarea name="notes" rows={8} maxLength={IGREJA_LIMITS.lessonNotes} defaultValue={item?.notes ?? ""} placeholder="O que você anotou na aula…" />
+        </Field>
+      )}
     </ActionForm>
   );
 }

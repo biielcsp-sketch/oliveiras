@@ -13,7 +13,8 @@ export const DOCX_MAX_UNCOMPRESSED = 50 * 1024 * 1024;
 export const HEAD_BYTES = 16;
 
 export const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-export const CARISMA_MIMES = ["application/pdf", "image/jpeg", "image/png", DOCX_MIME] as const;
+export const TXT_MIME = "text/plain";
+export const CARISMA_MIMES = ["application/pdf", "image/jpeg", "image/png", DOCX_MIME, TXT_MIME] as const;
 export type CarismaMime = (typeof CARISMA_MIMES)[number];
 
 export const MIME_INFO: Record<CarismaMime, { ext: string; label: string }> = {
@@ -21,13 +22,20 @@ export const MIME_INFO: Record<CarismaMime, { ext: string; label: string }> = {
   "image/jpeg": { ext: "jpg", label: "Imagem" },
   "image/png": { ext: "png", label: "Imagem" },
   [DOCX_MIME]: { ext: "docx", label: "Word" },
+  [TXT_MIME]: { ext: "txt", label: "Texto" },
 };
 
 /** Extensão → tipo aceito. .doc (Word 97-2003) NÃO entra: é binário OLE, sem leitor confiável no servidor. */
-const BY_EXT: Record<string, CarismaMime> = { pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", docx: DOCX_MIME };
+const BY_EXT: Record<string, CarismaMime> = { pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", docx: DOCX_MIME, txt: TXT_MIME };
 
 export const OLD_DOC_MESSAGE = "Arquivo .doc (Word antigo) não é aceito. Abra no Word ou no Google Docs e salve como .docx ou PDF.";
-export const ACCEPT_ATTR = ".pdf,.jpg,.jpeg,.png,.docx,application/pdf,image/jpeg,image/png," + DOCX_MIME;
+export const ACCEPT_ATTR = ".pdf,.jpg,.jpeg,.png,.docx,.txt,application/pdf,image/jpeg,image/png,text/plain," + DOCX_MIME;
+/** Um seletor por botão da tela: Texto (.txt e .docx), Imagem (JPG/PNG) e PDF. */
+export const ACCEPT_BY_GROUP = {
+  texto: ".txt,.docx,text/plain," + DOCX_MIME,
+  imagem: ".jpg,.jpeg,.png,image/jpeg,image/png",
+  pdf: ".pdf,application/pdf",
+} as const;
 
 /* ---------- Nome exibido ---------- */
 
@@ -92,7 +100,7 @@ export function validateDeclaredUpload(raw: { name?: unknown; mime?: unknown; si
   const declared = typeof raw.mime === "string" ? raw.mime.trim().toLowerCase() : "";
   if (ext === "doc" || declared === "application/msword") return { ok: false, erro: OLD_DOC_MESSAGE };
   const mime = BY_EXT[ext];
-  if (!mime) return { ok: false, erro: "Envie PDF, Word (.docx) ou imagem JPG/PNG." };
+  if (!mime) return { ok: false, erro: "Envie texto (.txt), Word (.docx), PDF ou imagem JPG/PNG." };
   // Navegadores às vezes mandam vazio ou octet-stream; qualquer outro tipo diferente do da extensão é recusado.
   if (declared && declared !== "application/octet-stream" && declared !== mime && !(mime === "image/jpeg" && declared === "image/jpg")) {
     return { ok: false, erro: "O tipo do arquivo não confere com a extensão." };
@@ -122,15 +130,36 @@ export function detectKind(head: Uint8Array): DetectedKind | null {
   return null;
 }
 
-const EXPECTED: Record<CarismaMime, DetectedKind> = {
+const EXPECTED: Partial<Record<CarismaMime, DetectedKind>> = {
   "application/pdf": "pdf",
   "image/jpeg": "jpeg",
   "image/png": "png",
   [DOCX_MIME]: "zip",
 };
 
-/** Os primeiros bytes batem com o tipo registrado? (docx ainda precisa de `isDocxZip` com o arquivo inteiro.) */
-export const headMatches = (mime: CarismaMime, head: Uint8Array) => detectKind(head) === EXPECTED[mime];
+/** Os primeiros bytes batem com o tipo registrado? (docx ainda precisa de `isDocxZip` e txt de `isPlainText`, com o arquivo inteiro.) */
+export const headMatches = (mime: CarismaMime, head: Uint8Array) => EXPECTED[mime] !== undefined && detectKind(head) === EXPECTED[mime];
+
+/**
+ * .txt de verdade: até 20 MB, não vazio, UTF-8 válido (decodificação estrita) e sem bytes nulos (binário disfarçado).
+ * Aceita BOM de UTF-8. Não confia na extensão nem no tipo declarado.
+ */
+export function isPlainText(bytes: Uint8Array): boolean {
+  if (bytes.length === 0 || bytes.length > CARISMA_MAX_BYTES) return false;
+  if (bytes.includes(0)) return false;
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Texto de um .txt (UTF-8, sem BOM); inválido → null. */
+export function txtToText(bytes: Uint8Array): string | null {
+  if (!isPlainText(bytes)) return null;
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes).replace(/^\uFEFF/, "");
+}
 
 /**
  * docx de verdade: zip que começa com PK\x03\x04 e cujo DIRETÓRIO CENTRAL (lido a partir do registro

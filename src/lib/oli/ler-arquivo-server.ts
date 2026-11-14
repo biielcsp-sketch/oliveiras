@@ -7,7 +7,7 @@ import { DOC_BUCKET, isDocPath } from "@/lib/financas/documentos/rules";
 import { detectFileKind, isFileMime, isStoragePath } from "@/lib/saude/files";
 import { CASA_BUCKET, isCasaDocPath, isCasaPetPath } from "@/lib/casa/docs";
 import { carismaEnabled, myAccountById, runWithDrive, RevokedError } from "@/lib/igreja/carisma";
-import { DOCX_MIME, headMatches, isDriveId, type CarismaMime } from "@/lib/igreja/files";
+import { DOCX_MIME, headMatches, isDriveId, TXT_MIME, txtToText, type CarismaMime } from "@/lib/igreja/files";
 import { docxToText } from "@/lib/igreja/summarize";
 import { downloadFile } from "@/lib/google/drive";
 import { checkDailyLimit } from "./file-limit";
@@ -113,6 +113,11 @@ async function download(db: Db, ctx: Ctx, s: Source): Promise<{ ok: true; bytes:
     bytes = await runWithDrive(db, acc, (t) => downloadFile(t, s.driveId, OLI_READ_MAX_BYTES));
   } catch (e) {
     return e instanceof RevokedError ? { ok: false, erro: "O acesso ao Google Drive foi desconectado. Reconecte na tela do Carisma." } : fail;
+  }
+  if (s.mime === TXT_MIME) {
+    const text = txtToText(bytes);
+    if (!text?.trim()) return fail;
+    return { ok: true, bytes: new TextEncoder().encode(text.slice(0, OLI_READ_MAX_DOCX_CHARS)), mime: "text/plain" };
   }
   if (!headMatches(s.mime, bytes.subarray(0, 16))) return fail;
   if (s.mime === DOCX_MIME) {

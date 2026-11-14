@@ -20,20 +20,22 @@ import {
   startResumableUpload,
   trashFile,
 } from "@/lib/google/drive";
-import { isUuid, validateLessonInput, validateSummaryEdit } from "@/lib/igreja/input";
+import { isUuid, validateLessonInput, validateNotesEdit, validateSummaryEdit } from "@/lib/igreja/input";
 import {
   CARISMA_MAX_BYTES,
   DOCX_MIME,
   HEAD_BYTES,
   headMatches,
   isDocxZip,
+  isPlainText,
   renamedDisplayName,
   safeWebViewLink,
+  TXT_MIME,
   validateDeclaredUpload,
   type CarismaMime,
 } from "@/lib/igreja/files";
-import { selectSummaryFiles, SUMMARY_ERROR_MESSAGE, summaryLimitError, type SourceFile } from "@/lib/igreja/summary";
-import { docxToText, summarizeLesson, summaryConfigured } from "@/lib/igreja/summarize";
+import { selectSummaryFiles, SUMMARY_ERROR_MESSAGE, summaryLimitError, validateStudyRequest, type SourceFile } from "@/lib/igreja/summary";
+import { docxToText, studyLesson, summarizeLesson, summaryConfigured } from "@/lib/igreja/summarize";
 import {
   carismaEnabled,
   ensureLessonFolder,
@@ -261,11 +263,11 @@ export async function prepareDriveUpload(input: { lessonId: string; name: string
   }
 }
 
-const INVALID_FILE = "O arquivo enviado não é um PDF, Word (.docx) ou imagem JPG/PNG válido e foi descartado.";
+const INVALID_FILE = "O arquivo enviado não é um texto (.txt), Word (.docx), PDF ou imagem JPG/PNG válido e foi descartado.";
 
 /**
  * Depois do PUT do navegador: confere no Drive (metadados) que o arquivo é o preparado (appProperties + pasta da aula),
- * o tamanho REAL (≤ 20 MB) e os bytes (PDF/JPG/PNG pelos primeiros bytes; docx pelo zip com word/document.xml).
+ * o tamanho REAL (≤ 20 MB) e os bytes (PDF/JPG/PNG pelos primeiros bytes; docx pelo zip com word/document.xml; txt como UTF-8 válido sem bytes nulos).
  * Inválido → lixeira do Drive + linha apagada. Válido → 'pronto' com o link do Drive.
  */
 export async function confirmDriveUpload(fileId: string): Promise<Result> {
@@ -292,6 +294,9 @@ export async function confirmDriveUpload(fileId: string): Promise<Result> {
         if (mime === DOCX_MIME) {
           const bytes = await downloadFile(token, file.drive_file_id, CARISMA_MAX_BYTES);
           valid = isDocxZip(bytes) && (await docxToText(bytes)) !== null;
+        } else if (mime === TXT_MIME) {
+          // .txt não tem bytes mágicos: confere o arquivo inteiro (UTF-8 válido, sem bytes nulos, ≤ 20 MB).
+          valid = isPlainText(await downloadFile(token, file.drive_file_id, CARISMA_MAX_BYTES));
         } else {
           valid = headMatches(mime, await downloadRange(token, file.drive_file_id, 0, HEAD_BYTES - 1));
         }
@@ -390,17 +395,16 @@ export async function renameLessonFile(fileId: string, rawName: string): Promise
 
 /* ---------- Resumo ---------- */
 
-export async function summarizeLessonAction(lessonId: string): Promise<Result> {
-  const ctx = await getAppContext();
-  if (!carismaAllowedFor(ctx.household.id) || !summaryConfigured()) return { ok: false, erro: "Resumo por IA ainda não liberado para esta família." };
-  if (!isUuid(lessonId)) return { ok: false, erro: NO_LESSON };
-  const db = await createClient();
-  const lesson = await ownLesson(db, ctx, lessonId);
-  if (!lesson) return { ok: false, erro: NO_LESSON };
+type Db = Awaited<ReturnType<typeof createClient>>;
+type Ctx = Awaited<ReturnType<typeof getAppContext>>;
 
-  // Limite diário por família ANTES de baixar arquivos e de chamar a IA: registra a tentativa no log imutável
-  // (só household_id e lesson_id; created_at/created_by vêm do banco) e conta as do dia já com esta (padrão do Oli).
-  const { error: logError } = await db.from("igreja_summary_log").insert({ household_id: ctx.household.id, lesson_id: lesson.id });
+/**
+ * Limite diário por família ANTES de baixar arquivos e de chamar a IA: registra a tentativa no log imutável
+ * (só household_id e lesson_id; created_at/created_by vêm do banco) e conta as do dia já com esta (padrão do Oli).
+ * Resumo e "Estudar com o Oli" dividem o mesmo limite.
+ */
+async function dailyLimit(db: Db, ctx: Ctx, lessonId: string): Promise<string | null> {
+  const { error: logError } = await db.from("igreja_summary_log").insert({ household_id: ctx.household.id, lesson_id: lessonId });
   let countToday: number | null = null;
   if (!logError) {
     const { count, error } = await db
@@ -410,35 +414,56 @@ export async function summarizeLessonAction(lessonId: string): Promise<Result> {
       .gte("created_at", spDayStartIso(todaySP()));
     countToday = error ? null : count;
   }
-  const limit = summaryLimitError({ registered: !logError, countToday });
+  return summaryLimitError({ registered: !logError, countToday });
+}
+
+/**
+ * Arquivos prontos da aula, baixados do Drive com a sessão do usuário (RLS) e a conta Google do próprio arquivo.
+ * Seleção ANTES de baixar (quantidade e soma de file_size): nunca carrega centenas de MB na memória.
+ */
+async function loadLessonFiles(db: Db, ctx: Ctx, lessonId: string) {
+  const { data: rows } = await db
+    .from("igreja_carisma_files")
+    .select(FILE_COLS)
+    .eq("household_id", ctx.household.id)
+    .eq("lesson_id", lessonId)
+    .eq("status", "pronto")
+    .order("created_at");
+  const { picked, skipped: notPicked } = selectSummaryFiles((rows ?? []) as FileRow[]);
+  const files: SourceFile[] = [];
+  for (const f of picked) {
+    const acc = await myAccountById(db, ctx, f.google_account_id);
+    if (!acc) continue;
+    const bytes = await runWithDrive(db, acc, (t) => downloadFile(t, f.drive_file_id, CARISMA_MAX_BYTES));
+    files.push({ name: f.display_name, mime: f.file_mime as CarismaMime, bytes });
+  }
+  return { files, notPicked };
+}
+
+export async function summarizeLessonAction(lessonId: string): Promise<Result> {
+  const ctx = await getAppContext();
+  if (!carismaAllowedFor(ctx.household.id) || !summaryConfigured()) return { ok: false, erro: "Resumo por IA ainda não liberado para esta família." };
+  if (!isUuid(lessonId)) return { ok: false, erro: NO_LESSON };
+  const db = await createClient();
+  const lesson = await ownLesson(db, ctx, lessonId);
+  if (!lesson) return { ok: false, erro: NO_LESSON };
+
+  const limit = await dailyLimit(db, ctx, lesson.id);
   if (limit) return { ok: false, erro: limit };
 
   const now = new Date().toISOString();
   const mark = (fields: Record<string, unknown>) =>
     db.from("igreja_carisma_lessons").update(fields).eq("household_id", ctx.household.id).eq("owner_id", ctx.user.id).eq("id", lesson.id);
 
-  const { data: rows } = await db
-    .from("igreja_carisma_files")
-    .select(FILE_COLS)
-    .eq("household_id", ctx.household.id)
-    .eq("lesson_id", lesson.id)
-    .eq("status", "pronto")
-    .order("created_at");
-  // Seleção ANTES de baixar (quantidade e soma de file_size): nunca carrega centenas de MB na memória.
-  const { picked, skipped: notPicked } = selectSummaryFiles((rows ?? []) as FileRow[]);
-  const files: SourceFile[] = [];
+  let loaded: Awaited<ReturnType<typeof loadLessonFiles>>;
   try {
-    for (const f of picked) {
-      const acc = await myAccountById(db, ctx, f.google_account_id);
-      if (!acc) continue;
-      const bytes = await runWithDrive(db, acc, (t) => downloadFile(t, f.drive_file_id, CARISMA_MAX_BYTES));
-      files.push({ name: f.display_name, mime: f.file_mime as CarismaMime, bytes });
-    }
+    loaded = await loadLessonFiles(db, ctx, lesson.id);
   } catch (e) {
     await mark({ summary_status: "erro", summarized_at: now });
     done();
     return { ok: false, erro: `Não consegui baixar os arquivos do Google Drive. ${driveFail(e)}` };
   }
+  const { files, notPicked } = loaded;
 
   const r = await summarizeLesson(lesson, files);
   if (!r.ok) {
@@ -451,6 +476,64 @@ export async function summarizeLessonAction(lessonId: string): Promise<Result> {
   done();
   const out = r.skipped + notPicked;
   return { ok: true, aviso: out ? `${out} arquivo(s) ficaram de fora do resumo (limite de quantidade ou tamanho).` : undefined };
+}
+
+/* ---------- Estudar com o Oli ---------- */
+
+export type StudyResult = { ok: true; text: string; aviso?: string } | { ok: false; erro: string };
+
+/**
+ * Resumir, perguntas de reflexão, quiz ou pergunta livre sobre a aula. Lê as anotações do banco e os arquivos do Drive
+ * com a sessão do usuário (RLS; sem chave de serviço), no mesmo limite diário do resumo. NÃO grava nada: a resposta
+ * volta para a tela e só vai para o caderno se a pessoa confirmar ali.
+ */
+export async function studyWithOli(lessonId: string, mode: string, question?: string): Promise<StudyResult> {
+  const ctx = await getAppContext();
+  if (!carismaAllowedFor(ctx.household.id) || !summaryConfigured()) return { ok: false, erro: "O Oli ainda não está liberado para estudar esta aula." };
+  if (!isUuid(lessonId)) return { ok: false, erro: NO_LESSON };
+  const req = validateStudyRequest({ mode, question });
+  if (!req.ok) return req;
+  const db = await createClient();
+  const lesson = await ownLesson(db, ctx, lessonId);
+  if (!lesson) return { ok: false, erro: NO_LESSON };
+
+  const limit = await dailyLimit(db, ctx, lesson.id);
+  if (limit) return { ok: false, erro: limit };
+
+  let loaded: Awaited<ReturnType<typeof loadLessonFiles>>;
+  try {
+    loaded = await loadLessonFiles(db, ctx, lesson.id);
+  } catch (e) {
+    return { ok: false, erro: `Não consegui baixar os arquivos do Google Drive. ${driveFail(e)}` };
+  }
+  const r = await studyLesson(lesson, loaded.files, req.mode, req.question);
+  if (!r.ok) {
+    return { ok: false, erro: r.motivo === "sem_material" ? "Escreva anotações ou adicione arquivos à aula para o Oli estudar com você." : "O Oli não conseguiu responder agora. Tente de novo em instantes." };
+  }
+  const out = r.skipped + loaded.notPicked;
+  return { ok: true, text: r.summary, aviso: out ? `${out} arquivo(s) ficaram de fora (limite de quantidade ou tamanho).` : undefined };
+}
+
+/**
+ * Autosave do caderno (texto com marcação leve; até 10000 caracteres contando a marcação).
+ * Só o dono (RLS + owner_id). Não revalida a tela: quem edita já tem o texto.
+ */
+export async function saveLessonNotes(lessonId: string, notes: string): Promise<Result> {
+  const ctx = await getAppContext();
+  if (!isUuid(lessonId)) return { ok: false, erro: NO_LESSON };
+  const parsed = validateNotesEdit(notes);
+  if (!parsed.ok) return parsed;
+  const db = await createClient();
+  const { data, error } = await db
+    .from("igreja_carisma_lessons")
+    .update({ notes: parsed.value })
+    .eq("household_id", ctx.household.id)
+    .eq("owner_id", ctx.user.id)
+    .eq("id", lessonId)
+    .select("id");
+  if (error) return { ok: false, erro: GENERIC };
+  if (!data?.length) return { ok: false, erro: NO_LESSON };
+  return { ok: true };
 }
 
 /** Resumo editado à mão (texto simples). Vazio limpa e volta para "sem resumo". */
