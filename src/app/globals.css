@@ -777,6 +777,26 @@ dialog.calendar-dialog::backdrop {
   animation: oli-rise 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
+/* Painel de resumo do Início: entra suave quando o item do centro do arco muda (parado com movimento reduzido) */
+@keyframes homePanelIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.home-panel-in {
+  animation: homePanelIn 0.28s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-panel-in {
+    animation: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .oli-rise,
   .oli,

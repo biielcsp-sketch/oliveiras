@@ -1,9 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ExternalLink, FileText, Image as ImageIcon, Pencil, Sparkles, Upload } from "lucide-react";
+import { ArrowLeft, Ellipsis, ExternalLink, FileText, Image as ImageIcon, Pencil, Sparkles, Upload } from "lucide-react";
 import { Button, Card, EmptyState, Field, FormError, Input, Textarea } from "@/components/ui";
 import { Modal } from "@/components/modal";
 import { brDate } from "@/lib/agenda/dates";
@@ -43,44 +43,97 @@ function FileIcon({ mime }: { mime: string }) {
   return mime.startsWith("image/") ? <ImageIcon size={18} aria-hidden /> : <FileText size={18} aria-hidden />;
 }
 
-/** Uma linha da lista de arquivos: nome inteiro em cima, ações embaixo. Renomear e apagar só para o dono. */
+/**
+ * Uma linha compacta da lista de arquivos: ícone, nome (cortado; nome inteiro no title), tamanho e o "⋯" com as ações
+ * (Abrir no Drive; Renomear e Apagar só para o dono, com as mesmas confirmações). Esc ou toque fora fecha o menu.
+ */
 function FileItem({ file: f, mine, pending, run }: { file: FileVM; mine: boolean; pending: boolean; run: ReturnType<typeof useRunner>["run"] }) {
   const [renaming, setRenaming] = useState(false);
+  const [menu, setMenu] = useState(false);
   const [name, setName] = useState(baseName(f.name));
   const [err, setErr] = useState<string | null>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
   const ext = extOf(f.name);
+  const hasActions = Boolean(f.link) || mine;
+
+  useEffect(() => {
+    if (!menu) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setMenu(false);
+        btnRef.current?.focus();
+      }
+    };
+    const onDown = (e: PointerEvent) => {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setMenu(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onDown);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onDown);
+    };
+  }, [menu]);
+
+  const item = "flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-left text-[14.5px] font-medium text-ink hover:bg-accent-soft";
   return (
-    <li data-testid="arquivo-aula" className="flex flex-col gap-1 px-4 py-3">
-      <div className="flex items-start gap-3">
-        <span className="mt-0.5 shrink-0 text-primary">
-          <FileIcon mime={f.mime} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="font-medium [overflow-wrap:anywhere]">{f.name}</p>
-          <p className="text-[13px] text-muted">{formatBytes(f.size)}</p>
-        </div>
-      </div>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pl-9">
-        {f.link && (
-          <a href={f.link} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center gap-1 text-[15px] font-medium text-link">
-            Abrir no Drive <ExternalLink size={16} aria-hidden />
-          </a>
-        )}
-        {mine && (
+    <li data-testid="arquivo-aula" className="flex min-h-14 items-center gap-3 py-1.5 pl-4 pr-1.5">
+      <span className="shrink-0 text-primary">
+        <FileIcon mime={f.mime} />
+      </span>
+      <p className="min-w-0 flex-1 truncate text-[15px] font-medium" title={f.name}>
+        {f.name}
+      </p>
+      <span className="shrink-0 text-[12px] tabular-nums text-muted">{formatBytes(f.size)}</span>
+      {hasActions && (
+        <div ref={boxRef} className="relative shrink-0">
           <button
+            ref={btnRef}
             type="button"
-            className="inline-flex min-h-11 items-center gap-1 text-[15px] font-medium text-link"
-            onClick={() => {
-              setName(baseName(f.name));
-              setErr(null);
-              setRenaming(true);
-            }}
+            aria-label={`Ações de ${f.name}`}
+            aria-expanded={menu}
+            aria-controls={menuId}
+            onClick={() => setMenu((m) => !m)}
+            className="grid size-11 place-items-center rounded-full text-muted transition hover:bg-accent-soft hover:text-deep"
           >
-            <Pencil size={15} aria-hidden /> Renomear
+            <Ellipsis size={20} aria-hidden />
           </button>
-        )}
-        {mine && <ConfirmDelete what="este arquivo (vai para a lixeira do Drive)" pending={pending} onConfirm={() => run(() => deleteLessonFile(f.id), "Arquivo enviado para a lixeira do Google Drive.")} />}
-      </div>
+          <div
+            id={menuId}
+            hidden={!menu}
+            aria-label={`Ações de ${f.name}`}
+            role="group"
+            className="absolute right-0 top-12 z-30 flex w-60 flex-col gap-0.5 rounded-[18px] border border-line bg-surface-solid p-1.5 shadow-lg"
+          >
+            {f.link && (
+              <a href={f.link} target="_blank" rel="noopener noreferrer" className={item} onClick={() => setMenu(false)}>
+                <ExternalLink size={16} aria-hidden className="text-primary" /> Abrir no Drive
+              </a>
+            )}
+            {mine && (
+              <button
+                type="button"
+                className={item}
+                onClick={() => {
+                  setName(baseName(f.name));
+                  setErr(null);
+                  setMenu(false);
+                  setRenaming(true);
+                }}
+              >
+                <Pencil size={15} aria-hidden className="text-primary" /> Renomear
+              </button>
+            )}
+            {mine && (
+              <div className="px-1">
+                <ConfirmDelete what="este arquivo (vai para a lixeira do Drive)" pending={pending} onConfirm={() => run(() => deleteLessonFile(f.id), "Arquivo enviado para a lixeira do Google Drive.")} />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       {mine && (
         <Modal open={renaming} onClose={() => setRenaming(false)} title="Renomear arquivo">
           <form
@@ -335,6 +388,9 @@ export function LessonView({
         </section>
       )}
 
+      <SummarySection key={`${lesson.summary_status}-${lesson.summarized_at}-${lesson.summary?.length ?? 0}`} lesson={lesson} mine={mine} canSummarize={canSummarize} run={run} pending={pending} />
+
+      {/* Arquivos no fim da tela, em lista compacta (uma linha por arquivo, ações no "⋯") */}
       <section aria-label="Arquivos da aula" className="flex flex-col gap-3">
         <h3 className="text-lg font-medium">Arquivos</h3>
         {!mine && !viewerHasGoogle && ready.length > 0 && (
@@ -344,7 +400,7 @@ export function LessonView({
         )}
         {ready.length === 0 && pendingFiles.length === 0 && <p className="text-sm text-muted">Nenhum arquivo ainda.</p>}
         {ready.length > 0 && (
-          <Card className="p-0">
+          <Card className="relative z-20 overflow-visible p-0">
             <ul aria-label="Lista de arquivos" className="divide-y divide-line">
               {ready.map((f) => (
                 <FileItem key={f.id} file={f} mine={mine} pending={pending} run={run} />
@@ -375,8 +431,6 @@ export function LessonView({
           />
         )}
       </section>
-
-      <SummarySection key={`${lesson.summary_status}-${lesson.summarized_at}-${lesson.summary?.length ?? 0}`} lesson={lesson} mine={mine} canSummarize={canSummarize} run={run} pending={pending} />
 
       <Modal open={editing} onClose={() => setEditing(false)} title="Editar aula">
         {editing && (

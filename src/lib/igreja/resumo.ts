@@ -1,0 +1,57 @@
+import "server-only";
+import { getAppContext } from "@/lib/data";
+import { createClient } from "@/lib/supabase/server";
+import { brDate } from "@/lib/agenda/dates";
+import { todaySP } from "@/lib/financas/today";
+
+/** Card do Resumo da Igreja (sem ícone: o componente escolhe pelo `key`). */
+export type IgrejaTile = { key: "oracoes" | "propositos" | "anotacao" | "carisma" | "consolidacao"; href: string; title: string; testId: string; lines: string[] };
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** Dados do Resumo da Igreja: só os itens do próprio usuário (dados pessoais), com a sessão dele (RLS). */
+export async function getIgrejaResumo(): Promise<IgrejaTile[]> {
+  const ctx = await getAppContext();
+  const db = await createClient();
+  const hh = ctx.household.id;
+  const me = ctx.user.id;
+  const today = todaySP();
+  const [prayers, purposes, lastWord, promises, nextLesson, lastLesson] = await Promise.all([
+    db.from("igreja_prayers").select("id", { count: "exact", head: true }).eq("household_id", hh).eq("owner_id", me).eq("status", "orando"),
+    db.from("igreja_purposes").select("id", { count: "exact", head: true }).eq("household_id", hh).eq("owner_id", me).eq("status", "em_andamento"),
+    db.from("igreja_words").select("title, body, received_on").eq("household_id", hh).eq("owner_id", me).eq("kind", "anotacao").order("received_on", { ascending: false }).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+    db.from("igreja_words").select("id", { count: "exact", head: true }).eq("household_id", hh).eq("owner_id", me).eq("kind", "promessa").is("fulfilled_on", null),
+    db.from("igreja_carisma_lessons").select("title, lesson_date").eq("household_id", hh).eq("owner_id", me).gte("lesson_date", today).order("lesson_date").limit(1).maybeSingle(),
+    db.from("igreja_carisma_lessons").select("title, lesson_date").eq("household_id", hh).eq("owner_id", me).lt("lesson_date", today).order("lesson_date", { ascending: false }).limit(1).maybeSingle(),
+  ]);
+
+  const word = lastWord.data as { title: string | null; body: string; received_on: string } | null;
+  const next = nextLesson.data as { title: string; lesson_date: string } | null;
+  const last = lastLesson.data as { title: string; lesson_date: string } | null;
+  const preview = (s: string) => (s.length > 70 ? `${s.slice(0, 69)}…` : s);
+
+  return [
+    { key: "oracoes", href: "/ministerio/devocional/oracoes", title: "Orações", testId: "igreja-resumo-oracoes", lines: [prayers.count ? `${plural(prayers.count, "oração", "orações")} em andamento` : "Nenhuma oração em andamento"] },
+    { key: "propositos", href: "/ministerio/devocional/propositos", title: "Propósitos", testId: "igreja-resumo-propositos", lines: [purposes.count ? `${plural(purposes.count, "propósito", "propósitos")} em andamento` : "Nenhum propósito em andamento"] },
+    {
+      key: "anotacao",
+      href: "/ministerio/devocional",
+      title: "Última anotação",
+      testId: "igreja-resumo-anotacao",
+      lines: [
+        word ? `${brDate(word.received_on)} · ${preview(word.title ?? word.body.replace(/\s+/g, " "))}` : "Nenhuma anotação ainda",
+        promises.count ? `${plural(promises.count, "promessa aguardando", "promessas aguardando")} o cumprimento` : "",
+      ].filter(Boolean),
+    },
+    {
+      key: "carisma",
+      href: "/ministerio/carisma",
+      title: "Carisma",
+      testId: "igreja-resumo-carisma",
+      lines: [next ? `Próxima aula: ${brDate(next.lesson_date)} · ${next.title}` : "", last ? `Última aula: ${brDate(last.lesson_date)} · ${last.title}` : ""]
+        .filter(Boolean)
+        .concat(!next && !last ? ["Nenhuma aula com data ainda"] : []),
+    },
+    { key: "consolidacao", href: "/ministerio/consolidacao", title: "Consolidação", testId: "igreja-resumo-consolidacao", lines: ["Integração com o app da Consolidação em breve"] },
+  ];
+}

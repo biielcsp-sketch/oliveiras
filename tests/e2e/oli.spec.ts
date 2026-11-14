@@ -27,7 +27,13 @@ test("tela do Oli (/assistente): esfera, controles e família não autorizada re
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Olá, Gabriel!");
     await expect(page.getByText("Que Deus abençoe seu dia!")).toBeVisible();
     await expect(page.getByTestId("oli-stage")).toHaveCount(0);
-    // Sem contas nas Finanças: estado vazio no lugar do saldo
+    // Resumo do item do centro (Agenda); pelas setas, as Finanças: sem contas, estado vazio no lugar do saldo
+    await expect(page.getByTestId("home-panel")).toHaveAttribute("data-panel", "agenda");
+    await page.getByRole("navigation", { name: "Módulos" }).getByRole("link", { name: "Agenda" }).focus();
+    await page.keyboard.press("ArrowLeft");
+    await expect(page.getByRole("navigation", { name: "Módulos" }).getByRole("link", { name: "Saúde" })).toBeFocused();
+    await page.keyboard.press("ArrowLeft");
+    await expect(page.getByTestId("home-panel")).toHaveAttribute("data-panel", "financas");
     await expect(page.getByText("Cadastre uma conta nas Finanças")).toBeVisible();
   });
 

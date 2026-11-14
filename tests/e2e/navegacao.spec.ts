@@ -157,15 +157,43 @@ test("navegação: barra inferior, logo para o Início e calendário da Agenda",
     // Bolhas grandes (~64px)
     const orb = (await homeArc.getByRole("link", { name: "Agenda" }).locator("span").first().boundingBox())!;
     expect(orb.width).toBeGreaterThanOrEqual(62);
-    // Arrastar só desliza (não navega); o novo centro fica destacado
+    // Resumo abaixo do arco = item do centro (Agenda), com título visível e região aria-live
+    const panel = page.getByTestId("home-panel");
+    await expect(panel).toHaveAttribute("data-panel", "agenda");
+    await expect(panel).toHaveAttribute("aria-live", "polite");
+    await expect(panel.getByRole("heading", { name: "Próximos eventos" })).toBeVisible();
+    // Arrastar só desliza (não navega); o novo centro fica destacado e o resumo troca sozinho (sem clique)
     await dragArc(page, homeArc, -90);
     await expect.poll(() => visibleArc(homeArc)).toEqual(["Agenda", "Casa", "Igreja"]);
     await expectCentered(homeArc, "Casa");
     await expect(page).toHaveURL(/\/inicio$/);
+    await expect(panel).toHaveAttribute("data-panel", "casa");
+    await expect(panel.getByRole("heading", { name: "Resumo da Casa" })).toBeVisible();
+    await expect(panel.getByTestId("resumo-compras")).toBeVisible();
+    await expect(panel.getByTestId("resumo-pet")).toBeVisible();
+    await expect(panel.getByTestId("resumo-prestadores")).toHaveCount(0);
+    // Seta do teclado também troca o resumo
+    await homeArc.getByRole("link", { name: "Casa" }).focus();
+    await page.keyboard.press("ArrowLeft");
+    await expect(panel).toHaveAttribute("data-panel", "agenda");
+    // O foco acompanha o item só no próximo quadro: espera antes da próxima seta (senão a seta parte do item antigo)
+    await expect(homeArc.getByRole("link", { name: "Agenda" })).toBeFocused();
+    await page.keyboard.press("ArrowLeft");
+    await expect(panel).toHaveAttribute("data-panel", "saude");
+    await expect(homeArc.getByRole("link", { name: "Saúde" })).toBeFocused();
+    await expect(panel.getByRole("heading", { name: "Próximas consultas e exames" })).toBeVisible();
+    await expect(panel.getByText("Nenhuma consulta ou exame marcado.")).toBeVisible();
+    await page.keyboard.press("ArrowRight");
+    await expect(homeArc.getByRole("link", { name: "Agenda" })).toBeFocused();
+    await page.keyboard.press("ArrowRight");
+    await expect(panel).toHaveAttribute("data-panel", "casa");
+    await expectCentered(homeArc, "Casa");
     // Circular também no Início: depois de Igreja vem Finanças (sempre 3 visíveis)
     await dragArc(page, homeArc, -90);
     await expect.poll(() => visibleArc(homeArc)).toEqual(["Casa", "Igreja", "Finanças"]);
     await expectCentered(homeArc, "Igreja");
+    await expect(panel).toHaveAttribute("data-panel", "ministerio");
+    await expect(panel.getByTestId("igreja-resumo-carisma")).toBeVisible();
     await dragArc(page, homeArc, 90);
     await expect.poll(() => visibleArc(homeArc)).toEqual(["Agenda", "Casa", "Igreja"]);
     await expectCentered(homeArc, "Casa");

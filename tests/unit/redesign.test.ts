@@ -11,6 +11,9 @@ import { btnSize } from "@/components/ui";
 import { isPetAlert, petAlertRank, petTileLines, tileRows } from "@/lib/summary-tile";
 import { ASSISTANT, HOME_MODULES, MOBILE_NAV_LEFT, MOBILE_NAV_RIGHT, MODULES, SIDEBAR_NAV } from "@/lib/modules";
 import { THEME_COLOR } from "@/lib/theme";
+import { HOME_PANELS, HOME_PANEL_INFO, homePanelAt, initialHomeIndex, nextAgendaEvents, nextHealthItems } from "@/lib/home-panels";
+import type { AgendaEvent } from "@/lib/agenda/view";
+import type { HealthAppointment } from "@/lib/saude/types";
 
 describe("donut de despesas por categoria", () => {
   const name = (id: string | null) => (id ? `Cat ${id}` : "Sem categoria");
@@ -156,17 +159,18 @@ describe("visual leve (rodada 2)", () => {
     expect(tile).toContain('"line-clamp-2 font-medium text-danger"');
     expect(tile).toContain('"truncate text-muted"');
     expect(tile).toContain("tileRows(lines, isAlert, alertRank)");
-    for (const page of ["src/app/(app)/casa/page.tsx", "src/app/(app)/ministerio/page.tsx"]) {
-      const src = readFileSync(page, "utf8");
-      expect(src).toContain("SummaryTile as Tile");
-      expect(src).not.toMatch(/function Tile\(/);
+    // Casa e Igreja montam os cards num componente só (usado também no painel do Início)
+    for (const comp of ["src/app/(app)/casa/_components/resumo-tiles.tsx", "src/app/(app)/ministerio/_components/resumo-tiles.tsx"]) {
+      const src = readFileSync(comp, "utf8");
+      expect(src).toContain("<SummaryTile");
       expect(src).toContain("auto-rows-fr");
     }
   });
   it("Início usa a ferradura deslizante só de atalhos, começando na Agenda", () => {
     const arc = readFileSync("src/components/home-arc.tsx", "utf8");
     expect(arc).toContain("slideOnly");
-    expect(arc).toMatch(/href === "\/agenda"/);
+    expect(arc).toContain("onCenter={setIndex}");
+    expect(HOME_PANELS[initialHomeIndex(false)]).toBe("agenda");
   });
   it("primário sem faixa de brilho; topo sem botão de agenda; tema à esquerda e logo no centro", () => {
     expect(block("glass-primary")).not.toContain("::before");
@@ -250,6 +254,67 @@ describe("cabeçalhos: mesma onda e sem a setinha", () => {
     // Botão renderizado no servidor: não depende de o painel já ter montado (hasPanel)
     const btn = drawer.slice(drawer.indexOf("export function HeroDrawerButton"), drawer.indexOf("export function HeroDrawer("));
     expect(btn).not.toContain("hasPanel");
+  });
+});
+
+describe("Início: resumo do item centralizado no arco", () => {
+  it("cada item do arco tem o seu resumo, na mesma ordem (e o índice dá a volta, como o arco)", () => {
+    expect(HOME_PANELS).toEqual(["financas", "saude", "agenda", "casa", "ministerio"]);
+    expect(HOME_MODULES.map((m) => m.href)).toEqual(["/financas", "/saude", "/agenda", "/casa", "/ministerio"]);
+    expect([0, 1, 2, 3, 4].map(homePanelAt)).toEqual(["financas", "saude", "agenda", "casa", "ministerio"]);
+    expect(homePanelAt(-1)).toBe("ministerio");
+    expect(homePanelAt(5)).toBe("financas");
+    for (const k of HOME_PANELS) expect(HOME_PANEL_INFO[k].title.length).toBeGreaterThan(3);
+  });
+  it("começa na Agenda; com ?mes= (seletor de mês das Finanças) começa nas Finanças", () => {
+    expect(homePanelAt(initialHomeIndex(false))).toBe("agenda");
+    expect(homePanelAt(initialHomeIndex(true))).toBe("financas");
+  });
+  it("Saúde: próximas consultas/retornos e exames futuros, mais cedo primeiro, até 3, com pessoa", () => {
+    const now = Date.parse("2026-11-14T12:00:00-03:00");
+    const appt = (id: string, iso: string, kind: "consulta" | "retorno", status = "agendada"): HealthAppointment =>
+      ({ id, member_id: "m1", kind, specialty: "Cardiologia", doctor: null, place: null, starts_at: iso, status, notes: null, return_of: null, agenda_event_id: null }) as HealthAppointment;
+    const items = nextHealthItems(
+      [
+        appt("a1", "2026-11-20T09:30:00-03:00", "consulta"),
+        appt("a2", "2026-11-14T08:00:00-03:00", "consulta"), // já passou hoje
+        appt("a3", "2026-11-16T15:00:00-03:00", "retorno"),
+        appt("a4", "2026-11-15T10:00:00-03:00", "consulta", "cancelada"),
+      ],
+      [
+        { id: "e1", member_id: "m2", name: "Hemograma", exam_date: "2026-11-16" },
+        { id: "e2", member_id: "m2", name: "Antigo", exam_date: "2026-11-01" },
+      ],
+      (id) => (id === "m1" ? "Gabriel" : "Karen"),
+      "2026-11-14",
+      now,
+    );
+    expect(items).toEqual([
+      { id: "a3", when: "16/11/2026 às 15:00", title: "Retorno: Cardiologia", person: "Gabriel" },
+      { id: "e1", when: "16/11/2026", title: "Exame: Hemograma", person: "Karen" },
+      { id: "a1", when: "20/11/2026 às 09:30", title: "Consulta: Cardiologia", person: "Gabriel" },
+    ]);
+  });
+  it("Agenda: próximos eventos que ainda não terminaram, até 3, com 'Hoje' e dia todo", () => {
+    const now = Date.parse("2026-11-14T12:00:00-03:00");
+    const ev = (id: string, start: string, end: string, allDay = false) =>
+      ({ id, title: `E ${id}`, allDay, startsAt: start, endsAt: end, owner: "Você" }) as AgendaEvent;
+    const list = nextAgendaEvents(
+      [
+        ev("2", "2026-11-15T03:00:00.000Z", "2026-11-16T03:00:00.000Z", true),
+        ev("1", "2026-11-14T10:00:00-03:00", "2026-11-14T11:00:00-03:00"), // já terminou
+        ev("3", "2026-11-14T19:00:00-03:00", "2026-11-14T20:00:00-03:00"),
+        ev("4", "2026-11-17T08:00:00-03:00", "2026-11-17T09:00:00-03:00"),
+        ev("5", "2026-11-18T08:00:00-03:00", "2026-11-18T09:00:00-03:00"),
+      ],
+      "2026-11-14",
+      now,
+    );
+    expect(list).toEqual([
+      { id: "3", when: "Hoje às 19:00", title: "E 3", owner: "Você" },
+      { id: "2", when: "15/11/2026 · dia todo", title: "E 2", owner: "Você" },
+      { id: "4", when: "17/11/2026 às 08:00", title: "E 4", owner: "Você" },
+    ]);
   });
 });
 

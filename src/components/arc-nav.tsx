@@ -28,6 +28,7 @@ export function ArcNav({
   label,
   fallback = 0,
   slideOnly = false,
+  onCenter,
   className,
 }: {
   items: ArcItem[];
@@ -37,6 +38,8 @@ export function ArcNav({
   /** Botão do centro quando `active` é -1 (página fora das abas) ou, com `slideOnly`, o inicial. */
   fallback?: number;
   slideOnly?: boolean;
+  /** Com `slideOnly`: avisa qual botão parou no centro (ao soltar o arraste ou pelas setas do teclado). */
+  onCenter?: (index: number) => void;
   className?: string;
 }) {
   // Atalhos (slideOnly): o centro é o último onde a pessoa deixou o arco.
@@ -136,7 +139,10 @@ export function ArcNav({
       const next = indexAt(pos.current);
       target.current = circular ? Math.round(pos.current) : next;
       animate();
-      if (slideOnly) setRest(next);
+      if (slideOnly) {
+        setRest(next);
+        onCenter?.(next);
+      }
       else if (next !== active) onChange?.(next);
     }
     window.addEventListener("pointermove", move);
@@ -147,7 +153,7 @@ export function ArcNav({
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
     };
-  }, [active, home, animate, layout, max, onChange, slideOnly, circular, indexAt]);
+  }, [active, home, animate, layout, max, onChange, onCenter, slideOnly, circular, indexAt]);
 
   // Foco pelo teclado: leva o item focado ao centro para ele ficar visível
   function focusItem(i: number) {
@@ -170,7 +176,10 @@ export function ArcNav({
     const step = base + (e.key === "ArrowRight" ? 1 : -1);
     // Circular: da última vai para a primeira (e vice-versa)
     const next = circular ? wrapIndex(step, n) : clampIndex(step, max);
-    if (slideOnly) setRest(next);
+    if (slideOnly) {
+      setRest(next);
+      onCenter?.(next);
+    }
     else if (next !== active) onChange?.(next);
     requestAnimationFrame(() => itemRefs.current[next]?.focus());
   }
