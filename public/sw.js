@@ -7,12 +7,12 @@
 // em src/lib/saude/offline-cards.ts. Aqui o SW apenas LÊ desse cache, e só quando a rede falha,
 // para GET de /saude/arquivo/carteirinhas/<uuid>. Consultas, exames e páginas HTML do app nunca
 // são guardados. O cache é apagado ao sair da conta, ao entrar outro usuário e ao apagar a carteirinha.
-const CACHE = "oliveiras-v4";
+const CACHE = "oliveiras-v5";
 const CARDS_CACHE = "oliveiras-carteirinhas-v1";
 const OFFLINE_URL = "/offline.html";
 const CARDS_PAGE = "/offline-carteirinhas.html";
 // Só páginas estáticas, sem dado pessoal.
-const PRECACHE = [OFFLINE_URL, CARDS_PAGE, "/offline-carteirinhas.js", "/offline-carteirinhas.css", "/icons/icon-192.png"];
+const PRECACHE = [OFFLINE_URL, CARDS_PAGE, "/offline-carteirinhas.js", "/offline-carteirinhas.css", "/icons/icon-192.png?v=2"];
 const CARD_FILE = /^\/saude\/arquivo\/carteirinhas\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 self.addEventListener("install", (event) => {
