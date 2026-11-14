@@ -23,4 +23,9 @@ describe("ícones do app (esfera do Oli)", () => {
     expect(sw).toContain('"/icons/icon-192.png?v=2"');
     expect(sw).not.toContain('"oliveiras-v4"');
   });
+  it("o pop-up de instalar mostra o logo do app, não a esfera", () => {
+    const src = readFileSync(fileURLToPath(new URL("../../src/components/install-prompt.tsx", import.meta.url)), "utf8");
+    expect(src).toContain("/icons/icon-192.png?v=2");
+    expect(src).not.toContain("OliSphere");
+  });
 });
