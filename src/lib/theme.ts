@@ -12,4 +12,4 @@ export function nextTheme(current: Theme): Theme {
 }
 
 /** Cor da barra do navegador/PWA (igual ao --bg de cada tema). */
-export const THEME_COLOR: Record<Theme, string> = { light: "#eef1f4", dark: "#0a141c" };
+export const THEME_COLOR: Record<Theme, string> = { light: "#eef3fd", dark: "#0a1226" };

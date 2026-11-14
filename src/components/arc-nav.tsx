@@ -4,16 +4,19 @@ import Link from "next/link";
 import clsx from "clsx";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import type { LucideIcon } from "lucide-react";
-import { arcPlacement, clampIndex, dragToPosition } from "@/lib/arc-nav";
+import { arcPlacement, arcTrackPath, clampIndex, dragToPosition } from "@/lib/arc-nav";
 
 export type ArcItem = { key: string; label: string; icon: LucideIcon; href?: string };
 
 const ITEM_W = 96;
+/** Centro vertical da bolha (56px) dentro do item: pt-1 (4px) + metade da bolha. */
+const ORB_CENTER_Y = 4 + 28;
 
 /**
  * Menu em ferradura: botões redondos num arco que desliza para os lados.
  * O botão no centro (ponto mais baixo do arco) é o selecionado e ganha o contorno.
  * Ao soltar o arraste, o centralizado vira o ativo (`onChange`) sem precisar tocar nele.
+ * Visual: bolhas de vidro com reflexo e halo (glass-orb, as mesmas do arco do Início) sobre um trilho de luz.
  */
 export function ArcNav({
   items,
@@ -40,6 +43,7 @@ export function ArcNav({
   const drag = useRef<{ x: number; start: number; moved: boolean } | null>(null);
   const suppressClick = useRef(false);
   const [centered, setCentered] = useState(home);
+  const [trackW, setTrackW] = useState(0);
   const max = items.length - 1;
 
   const layout = useCallback(() => {
@@ -73,6 +77,7 @@ export function ArcNav({
     if (!el) return;
     const ro = new ResizeObserver(() => {
       width.current = el.clientWidth;
+      setTrackW(el.clientWidth);
       layout();
     });
     ro.observe(el);
@@ -151,7 +156,7 @@ export function ArcNav({
   }
 
   return (
-    <nav aria-label={label} className="-mx-5 md:mx-0">
+    <nav aria-label={label} className="-mx-4 md:mx-0">
       <div
         ref={wrapRef}
         onPointerDown={onPointerDown}
@@ -165,6 +170,12 @@ export function ArcNav({
         onDragStart={(e) => e.preventDefault()}
         className="relative h-[156px] touch-pan-y select-none overflow-x-clip"
       >
+        {/* Trilho fino da ferradura: passa pelo centro das bolhas (só decoração) */}
+        {trackW > 0 && (
+          <svg aria-hidden="true" className="pointer-events-none absolute inset-0 size-full" viewBox={`0 0 ${trackW} 156`}>
+            <path d={arcTrackPath(trackW, ORB_CENTER_Y)} fill="none" stroke="#ffffff" strokeOpacity=".28" strokeWidth="1" />
+          </svg>
+        )}
         <ul>
           {items.map((item, i) => {
             const Icon = item.icon;
@@ -173,15 +184,15 @@ export function ArcNav({
               <>
                 <span
                   className={clsx(
-                    "glass-orb grid size-[62px] place-items-center rounded-full text-white transition-[outline-color,box-shadow]",
-                    "outline-[2.5px] outline-offset-[4px]",
-                    isCentered ? "outline-solid outline-white" : "outline-solid outline-transparent",
+                    "glass-orb grid size-[56px] place-items-center rounded-full text-white transition-[outline-color,box-shadow]",
+                    "outline-[1.5px] outline-offset-[3px]",
+                    isCentered ? "outline-solid outline-white/90" : "outline-solid outline-transparent",
                   )}
                   data-selected={isCentered}
                 >
-                  <Icon size={25} strokeWidth={1.8} aria-hidden />
+                  <Icon size={22} strokeWidth={1.7} aria-hidden />
                 </span>
-                <span className={clsx("text-on-image text-center text-[12.5px] leading-tight text-white", isCentered ? "font-semibold" : "font-medium")}>
+                <span className={clsx("text-on-image text-center text-[12.5px] leading-tight text-white", isCentered ? "font-semibold" : "font-normal")}>
                   {item.label}
                 </span>
               </>

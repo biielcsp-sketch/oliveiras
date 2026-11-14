@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 
 /**
  * <dialog> modal nativo (foco preso, Esc fecha). Fecha também no clique fora e no X.
+ * Visual de folha: no celular sobe do rodapé (cantos de 28px e alça); no desktop fica centralizado.
  * Aberto enquanto `open` for true; `onClose` avisa quem controla o estado.
  */
 export function Modal({
@@ -32,23 +33,29 @@ export function Modal({
     <dialog
       ref={ref}
       aria-labelledby={titleId}
-      className="calendar-dialog m-auto max-h-[90dvh] w-[min(94vw,440px)] overflow-y-auto rounded-[24px] border border-line bg-surface-solid p-0 text-ink shadow-card"
-      onClose={onClose}
+      className="calendar-dialog mx-auto mb-0 mt-auto max-h-[92dvh] w-full max-w-[520px] overflow-y-auto rounded-t-[28px] border-0 bg-[linear-gradient(180deg,var(--sheet-from),var(--sheet-to))] p-0 text-ink shadow-[0_-10px_30px_rgb(10_60_160/0.18)] md:m-auto md:w-[min(94vw,480px)] md:rounded-[28px]"
+      onClose={(e) => {
+        // O evento "close" chega depois (tarefa assíncrona): se o modal já foi reaberto nesse meio tempo
+        // (toque rápido em "Editar" logo após salvar), ignora, para não fechar o modal novo.
+        if (e.currentTarget.open) return;
+        onClose();
+      }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       {open && (
-        <div className="p-5">
-          <div className="mb-4 flex items-start justify-between gap-3">
-            <h2 id={titleId} className="pt-2 text-lg font-semibold tracking-tight">
+        <div className="px-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-2.5 md:pb-6">
+          <span aria-hidden="true" className="mx-auto mb-2 block h-1 w-10 rounded-full bg-line md:hidden" />
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h2 id={titleId} className="text-lg font-bold tracking-tight">
               {title}
             </h2>
             <button
               type="button"
               onClick={onClose}
               aria-label="Fechar"
-              className="grid size-11 shrink-0 place-items-center rounded-full bg-surface-2 transition hover:bg-accent-soft"
+              className="grid size-11 shrink-0 place-items-center rounded-full bg-[var(--bg)] text-ink transition hover:bg-accent-soft"
             >
               <X size={20} aria-hidden />
             </button>

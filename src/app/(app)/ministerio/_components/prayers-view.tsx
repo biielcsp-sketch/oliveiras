@@ -71,13 +71,13 @@ export function PrayersView({ items, today }: { items: Item[]; today: string }) 
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-col items-start gap-3">
         <div>
           <h2 className="text-xl font-semibold tracking-tight">Orações</h2>
           <p className="text-sm text-muted">Orações e pessoas por quem orar.</p>
         </div>
-        <Button onClick={() => setModal({})}>
-          <Plus size={18} aria-hidden /> Nova oração
+        <Button size="sm" onClick={() => setModal({})}>
+          <Plus size={15} aria-hidden /> Nova oração
         </Button>
       </div>
       <div role="group" aria-label="Filtrar orações" className="flex gap-2">

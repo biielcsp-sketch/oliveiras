@@ -165,9 +165,9 @@ export function MedicationsView({ people, items, defaultMember }: { people: Pers
   return (
     <div className="flex flex-col gap-6">
       <PushNotifications />
-      <div className="flex justify-end">
-        <Button onClick={() => setModal({})}>
-          <Plus size={18} aria-hidden /> Novo medicamento
+      <div className="flex">
+        <Button size="sm" onClick={() => setModal({})}>
+          <Plus size={15} aria-hidden /> Novo medicamento
         </Button>
       </div>
       {notice && (

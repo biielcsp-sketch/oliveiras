@@ -2,7 +2,9 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { monthLabel, shiftMonth } from "@/lib/financas/period";
 
-/** Troca de mês preservando os demais filtros da URL. Ocupa a linha toda, com o mês no centro. */
+const circle = "glass-card grid size-11 shrink-0 place-items-center rounded-full text-deep transition hover:text-primary active:scale-95";
+
+/** Troca de mês preservando os demais filtros da URL: botões de vidro e o mês numa pílula de vidro no centro. */
 export function MonthSwitcher({ month, basePath, params = {} }: { month: string; basePath: string; params?: Record<string, string | undefined> }) {
   const href = (m: string) => {
     const q = new URLSearchParams();
@@ -10,13 +12,13 @@ export function MonthSwitcher({ month, basePath, params = {} }: { month: string;
     return `${basePath}?${q.toString()}`;
   };
   return (
-    <div className="flex w-full items-center justify-between gap-2">
-      <Link href={href(shiftMonth(month, -1))} aria-label="Mês anterior" className="glass glass-shine grid size-11 shrink-0 place-items-center rounded-full border border-[var(--glass-edge)] text-ink shadow-glass transition hover:text-primary">
-        <ChevronLeft size={18} />
+    <div className="flex w-full items-center gap-2.5">
+      <Link href={href(shiftMonth(month, -1))} aria-label="Mês anterior" className={circle}>
+        <ChevronLeft size={18} strokeWidth={2.2} aria-hidden />
       </Link>
-      <span className="flex-1 text-center text-base font-semibold">{monthLabel(month)}</span>
-      <Link href={href(shiftMonth(month, 1))} aria-label="Próximo mês" className="glass glass-shine grid size-11 shrink-0 place-items-center rounded-full border border-[var(--glass-edge)] text-ink shadow-glass transition hover:text-primary">
-        <ChevronRight size={18} />
+      <span className="glass-card grid h-11 flex-1 place-items-center rounded-full text-[15px] font-bold">{monthLabel(month)}</span>
+      <Link href={href(shiftMonth(month, 1))} aria-label="Próximo mês" className={circle}>
+        <ChevronRight size={18} strokeWidth={2.2} aria-hidden />
       </Link>
     </div>
   );

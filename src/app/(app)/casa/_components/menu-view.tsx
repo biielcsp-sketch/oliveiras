@@ -45,7 +45,7 @@ function MealForm({ slot, onDone }: { slot: Slot; onDone: (msg?: string) => void
 }
 
 const navBtn =
-  "glass glass-shine grid size-11 shrink-0 place-items-center rounded-full border border-[var(--glass-edge)] text-ink shadow-glass transition hover:text-primary";
+  "glass-card grid size-11 shrink-0 place-items-center rounded-full text-ink transition hover:text-primary";
 
 export function MenuView({ monday, today, meals }: { monday: string; today: string; meals: MealPlan[] }) {
   const [slot, setSlot] = useState<Slot | null>(null);

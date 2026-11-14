@@ -23,7 +23,7 @@ export function RememberedLogin({ email, notice }: { email: string; notice?: str
           {notice}
         </p>
       )}
-      <p className="text-center text-base text-white">
+      <p className="text-center text-base text-ink">
         Olá, <span className="font-medium">{maskEmail(email)}</span>
       </p>
       <PasskeySignIn prominent autoPrompt />

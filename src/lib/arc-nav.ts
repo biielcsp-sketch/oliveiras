@@ -55,3 +55,19 @@ export function rootIndex(items: { href: string }[]) {
   const i = items.findIndex((it) => items.some((o) => o !== it && o.href.startsWith(it.href + "/")));
   return i < 0 ? 0 : i;
 }
+
+/**
+ * Trilho de luz da ferradura (SVG): curva que passa pelo centro das bolhas, de ponta a ponta do container.
+ * `centerY`: distância do topo do botão até o centro da bolha.
+ */
+export function arcTrackPath(width: number, centerY: number, steps = 24) {
+  const half = width / 2;
+  const pts: string[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const x = -half + (width * i) / steps;
+    const theta = Math.asin(Math.max(-1, Math.min(1, x / ARC_RADIUS)));
+    const y = ARC_BASE_Y - ARC_RADIUS * (1 - Math.cos(theta)) + centerY;
+    pts.push(`${i === 0 ? "M" : "L"}${(x + half).toFixed(1)} ${y.toFixed(1)}`);
+  }
+  return pts.join(" ");
+}

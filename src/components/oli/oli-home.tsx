@@ -13,8 +13,7 @@ import { saveCard, saveExam, saveMedication, saveProcedure, saveVaccine } from "
 import { saveCasaDocument } from "@/app/(app)/casa/documentos-actions";
 import { savePetHealth } from "@/app/(app)/casa/pet-actions";
 import { documentoLidoText, formFieldsFor, OLI_FILE_KEEPS_FILE, type OliFileDest } from "@/lib/oli/arquivo";
-import type { Oli3D, OliState } from "./oli3d";
-import { OliStage } from "./oli-stage";
+import { OliSphere, type OliSphereState as OliState } from "./oli-sphere";
 import { OliPanels } from "./oli-panels";
 import { OliAddFile } from "./oli-arquivo";
 import { useOliSession, type LogEntry, type ToolCall } from "./use-oli-session";
@@ -37,7 +36,8 @@ const MODULE_SAVE: Record<Exclude<OliFileDest, "financas" | "nenhum">, (prev: nu
 };
 
 export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
-  const avatar = useRef<Oli3D | null>(null);
+  // Volume da fala vai direto para uma variável CSS (sem re-renderizar a cada quadro).
+  const levelRef = useRef<HTMLSpanElement>(null);
   const [panels, setPanels] = useState<OliPanel[]>([]);
   const [text, setText] = useState("");
   const [showLog, setShowLog] = useState(false);
@@ -225,8 +225,8 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
   }, [patch, settle]);
 
   const onFrame = useCallback((s: OliState, level: number) => {
-    avatar.current?.setState(s);
-    avatar.current?.setLevel(level);
+    const lvl = s === "speak" || s === "listen" ? Math.max(0, Math.min(1, level)) : 0;
+    levelRef.current?.style.setProperty("--lvl", lvl.toFixed(3));
   }, []);
 
   const oli = useOliSession({ onTool, onFrame, onEnd, initialLog });
@@ -318,35 +318,36 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
   };
 
   return (
-    <section aria-label="Oli, assistente da família" className="flex flex-col gap-5">
-      <div className="-mx-5 md:mx-0">
-        <OliStage apiRef={avatar} />
+    <section aria-label="Oli, assistente da família" className="flex flex-col gap-4">
+      {/* Esfera solta, centralizada sobre o fundo da página; o estado fica logo abaixo, discreto e sem caixa. */}
+      <div className="oli-stage" data-testid="oli-stage">
+        <span ref={levelRef} className="oli-level">
+          <OliSphere size={200} state={oli.state} label="Oli, o assistente da família" />
+        </span>
+        <span className="text-[12.5px] font-medium tracking-wide text-muted" data-testid="oli-estado">
+          {LABELS[oli.state]}
+        </span>
       </div>
 
-      <div className="-mt-2 text-center">
-        <p className="text-xl font-semibold tracking-tight" data-testid="oli-estado">
-          {LABELS[oli.state]}
-        </p>
-        <p
-          role="status"
-          className={clsx(
-            "mt-0.5 min-h-5 text-sm",
-            oli.status.tone === "err" ? "text-danger" : oli.status.tone === "ok" ? "text-primary" : "text-muted",
-          )}
-        >
-          {oli.status.text}
-        </p>
-      </div>
+      <p
+        role="status"
+        className={clsx(
+          "-mt-1 min-h-5 text-center text-sm",
+          oli.status.tone === "err" ? "text-danger" : oli.status.tone === "ok" ? "text-primary" : "text-muted",
+        )}
+      >
+        {oli.status.text}
+      </p>
 
       <Button
         type="button"
         onClick={() => (oli.active ? oli.stop() : void oli.start())}
         disabled={oli.busy}
         variant={oli.active ? "ghost" : "primary"}
-        className="h-14 w-full text-base"
+        className="self-center"
         aria-pressed={oli.active}
       >
-        {oli.active ? <Square size={20} aria-hidden /> : <Mic size={22} aria-hidden />}
+        {oli.active ? <Square size={16} aria-hidden /> : <Mic size={18} aria-hidden />}
         {oli.active ? "Encerrar conversa" : oli.busy ? "Conectando…" : "Conversar"}
       </Button>
 
@@ -361,8 +362,9 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
             maxLength={1000}
             autoComplete="off"
             enterKeyHint="send"
+            className="rounded-full px-4"
           />
-          <Button type="submit" aria-label="Enviar" className="w-12 shrink-0 px-0" disabled={!text.trim() || oli.busy}>
+          <Button type="submit" aria-label="Enviar" size="icon" disabled={!text.trim() || oli.busy}>
             <SendHorizontal size={20} aria-hidden />
           </Button>
         </form>
@@ -393,7 +395,7 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
           <ChevronDown size={18} aria-hidden className={clsx("transition", showLog && "rotate-180")} />
         </button>
         {showLog && (
-          <div id="oli-conversa" className="glass mt-2 flex max-h-72 flex-col gap-2 overflow-y-auto rounded-[24px] border border-line/70 p-4">
+          <div id="oli-conversa" className="mt-2 flex max-h-72 flex-col gap-2 overflow-y-auto rounded-[20px] border border-line bg-surface-solid/90 p-4">
             {oli.log.length === 0 ? (
               <p className="text-sm text-muted">As falas aparecem aqui.</p>
             ) : (
@@ -402,7 +404,7 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
                   key={e.id}
                   className={clsx(
                     "max-w-[90%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-[15px] leading-snug",
-                    e.role === "user" && "self-end bg-accent-soft",
+                    e.role === "user" && "self-end bg-accent-soft text-ink",
                     e.role === "model" && "self-start bg-surface-2",
                     e.role === "sys" && "self-center px-0 text-[12px] text-muted",
                   )}

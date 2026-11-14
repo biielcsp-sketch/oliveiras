@@ -223,7 +223,7 @@ describe("service worker: strings (nada de cache novo; carteirinhas intactas)", 
   it("o trecho de push não mexe em cache e a regra do activate segue igual", () => {
     const push = sw.slice(sw.indexOf("Avisos por notificação push"));
     expect(push).not.toMatch(/caches|\.put\(|addAll|cache\.add/);
-    expect(sw).toContain('const CACHE = "oliveiras-v2"');
+    expect(sw).toContain('const CACHE = "oliveiras-v3"');
     expect(sw).toMatch(/k !== CACHE && k !== CARDS_CACHE/);
   });
 });

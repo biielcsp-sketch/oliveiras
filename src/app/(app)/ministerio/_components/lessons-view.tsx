@@ -55,9 +55,9 @@ export function LessonsView({ lessons, today }: { lessons: LessonListItem[]; tod
   const [open, setOpen] = useState(false);
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex justify-end">
-        <Button onClick={() => setOpen(true)}>
-          <Plus size={18} aria-hidden /> Nova aula
+      <div className="flex">
+        <Button size="sm" onClick={() => setOpen(true)}>
+          <Plus size={15} aria-hidden /> Nova aula
         </Button>
       </div>
       {lessons.length === 0 && <EmptyState title="Nenhuma aula ainda.">Crie a aula, anote o que aprendeu e anexe PDFs, documentos do Word ou fotos do quadro.</EmptyState>}

@@ -145,9 +145,9 @@ export function DocumentsView({ docs, today }: { docs: DocumentVM[]; today: stri
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex justify-end">
-        <Button onClick={() => setModal({})}>
-          <Plus size={18} aria-hidden /> Novo documento
+      <div className="flex">
+        <Button size="sm" onClick={() => setModal({})}>
+          <Plus size={15} aria-hidden /> Novo documento
         </Button>
       </div>
       <Feedback notice={notice} error={error} />

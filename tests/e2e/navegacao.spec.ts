@@ -10,22 +10,21 @@ test("navegação: barra inferior, logo para o Início e calendário da Agenda",
   await page.locator("form").getByRole("button", { name: "Criar família" }).click();
   await expect(page).toHaveURL(/\/inicio$/);
 
-  await test.step("barra inferior: 5 itens na ordem, mini Oli no centro levando ao Início", async () => {
+  await test.step("barra inferior: 5 ícones na ordem, esfera do Oli no centro levando à tela do assistente", async () => {
     const nav = page.getByRole("navigation", { name: "Principal" });
     const links = nav.getByRole("link");
-    await expect(links).toHaveText(["Finanças", "Saúde", "", "Casa", "Igreja"]);
-    const names = await links.evaluateAll((els) => els.map((e) => e.getAttribute("aria-label") ?? e.textContent?.trim()));
-    expect(names).toEqual(["Finanças", "Saúde", "Oli, tela inicial", "Casa", "Igreja"]);
-    const oli = nav.getByRole("link", { name: "Oli, tela inicial" });
-    await expect(oli).toHaveAttribute("href", "/inicio");
-    // Saúde abre em Consultas (Carteirinhas continua em /saude)
-    await expect(nav.getByRole("link", { name: "Saúde" })).toHaveAttribute("href", "/saude/consultas");
-    await expect(oli).toHaveAttribute("aria-current", "page");
-    // Imagem estática do avatar (não 3D), carregada de verdade
-    const img = oli.locator("img");
-    await expect(img).toHaveAttribute("src", "/oli/oli-mini.webp");
-    await expect.poll(() => img.evaluate((i: HTMLImageElement) => (i.complete ? i.naturalWidth : 0))).toBe(192);
-    // Início não fica na barra inferior
+    const names = await links.evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")));
+    expect(names).toEqual(["Finanças", "Saúde", "Oli, o assistente", "Casa", "Igreja"]);
+    const oli = nav.getByRole("link", { name: "Oli, o assistente" });
+    await expect(oli).toHaveAttribute("href", "/assistente");
+    // Saúde abre na raiz (Carteirinhas no centro da ferradura)
+    await expect(nav.getByRole("link", { name: "Saúde" })).toHaveAttribute("href", "/saude");
+    await expect(oli).not.toHaveAttribute("aria-current", "page");
+    // Esfera animada só com CSS (sem imagem do avatar antigo)
+    await expect(oli.getByTestId("oli-sphere")).toBeVisible();
+    await expect(oli.locator("img")).toHaveCount(0);
+    // Área de toque de pelo menos 44px em cada ícone
+    for (const box of await links.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height))) expect(box).toBeGreaterThanOrEqual(44);
     await expect(nav.getByRole("link", { name: "Início" })).toHaveCount(0);
 
     await nav.getByRole("link", { name: "Igreja" }).click();
@@ -36,22 +35,79 @@ test("navegação: barra inferior, logo para o Início e calendário da Agenda",
     // Menu em ferradura: o botão central é o selecionado e troca o conteúdo abaixo
     const arc = page.getByRole("navigation", { name: "Seções de Igreja" });
     await expect(arc.locator('[aria-current="page"]')).toContainText("Resumo");
+    await expect(page.getByRole("button", { name: /Todas as seções/ })).toHaveCount(0);
     await arc.getByRole("link", { name: "Consolidação" }).click();
     await expect(page).toHaveURL(/\/ministerio\/consolidacao$/);
     await expect(arc.getByRole("link", { name: "Consolidação" })).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Igreja");
     await expect(page.getByText("Integração com o app da Consolidação em breve").first()).toBeVisible();
 
-    await nav.getByRole("link", { name: "Oli, tela inicial" }).click();
+    // Arrastar o arco para a direita e soltar: o botão que para no centro abre sozinho (sem toque)
+    const box = (await arc.boundingBox())!;
+    const y = box.y + box.height / 2;
+    const center = box.x + box.width / 2;
+    // Espera a Consolidação terminar de deslizar até o centro antes de arrastar
+    await expect
+      .poll(async () => {
+        const b = (await arc.getByRole("link", { name: "Consolidação" }).boundingBox())!;
+        return Math.abs(b.x + b.width / 2 - center);
+      })
+      .toBeLessThan(2);
+    // ~2 botões para a direita (95px por botão): para no Resumo
+    await page.mouse.move(center - 90, y);
+    await page.mouse.down();
+    for (let i = 1; i <= 10; i++) await page.mouse.move(center - 90 + i * 18, y);
+    await page.mouse.up();
+    await expect(page).toHaveURL(/\/ministerio$/);
+    await expect(arc.locator('[aria-current="page"]')).toContainText("Resumo");
+
+    // Teclado: seta para a direita leva à próxima seção e mantém o foco no botão dela
+    await arc.getByRole("link", { name: "Resumo" }).focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(page).toHaveURL(/\/ministerio\/carisma$/);
+    await expect(arc.getByRole("link", { name: "Carisma" })).toHaveAttribute("aria-current", "page");
+    await expect(arc.getByRole("link", { name: "Carisma" })).toBeFocused();
+
+    // Logo do cabeçalho do módulo leva ao Início
+    await page.getByRole("link", { name: /ir para o Início/ }).click();
     await expect(page).toHaveURL(/\/inicio$/);
+
+    await nav.getByRole("link", { name: "Oli, o assistente" }).click();
+    await expect(page).toHaveURL(/\/assistente$/);
+    await expect(oli).toHaveAttribute("aria-current", "page");
     await expect(page.getByTestId("oli-stage")).toBeVisible();
   });
 
-  await test.step("logo leva ao Início", async () => {
+  await test.step("Início: atalhos e módulos no cabeçalho; logo leva ao Início", async () => {
+    await page.getByRole("link", { name: "Voltar para o Início" }).click();
+    await expect(page).toHaveURL(/\/inicio$/);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Olá, Gabriel!");
+    const mods = page.getByRole("navigation", { name: "Módulos" }).getByRole("link");
+    await expect(mods).toHaveText(["Finanças", "Saúde", "Agenda", "Casa", "Igreja"]);
+    await expect(mods.nth(2)).toHaveAttribute("href", "/agenda");
+    // Rótulos do arco inteiros dentro da área azul do cabeçalho (a onda não passa por cima)
+    const headBox = (await page.locator("header").first().boundingBox())!;
+    for (const box of await mods.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().toJSON()))) {
+      expect(box.left).toBeGreaterThanOrEqual(0);
+      expect(box.right).toBeLessThanOrEqual(page.viewportSize()!.width);
+      expect(box.bottom).toBeLessThanOrEqual(headBox.y + headBox.height - 40);
+    }
+    // Topo do celular: tema à esquerda, logo no centro, família à direita; sem botão de agenda
+    await expect(page.getByRole("button", { name: "Agenda", exact: true })).toHaveCount(0);
+    const theme = (await page.getByRole("button", { name: /Mudar para o modo/ }).boundingBox())!;
+    const logo = (await page.getByTestId("head-logo").boundingBox())!;
+    const fam = (await page.getByRole("link", { name: "Família" }).boundingBox())!;
+    expect(theme.x + theme.width).toBeLessThan(logo.x);
+    expect(logo.x + logo.width).toBeLessThan(fam.x);
+    expect(Math.abs(logo.x + logo.width / 2 - page.viewportSize()!.width / 2)).toBeLessThan(4);
+    expect(theme.height).toBeLessThanOrEqual(36);
+    await expect(page.getByRole("link", { name: "Família" })).toHaveAttribute("href", "/familia");
     await page.getByRole("link", { name: /ir para o Início/ }).click();
     await expect(page).toHaveURL(/\/inicio$/);
   });
 
-  await test.step("botão Agenda abre o calendário do mês atual e fecha com Esc", async () => {
+  await test.step("botão Agenda (barra lateral do desktop) abre o calendário do mês atual e fecha com Esc", async () => {
+    await page.setViewportSize({ width: 1280, height: 800 });
     const today = todaySP();
     const current = yearMonthOf(today);
     const trigger = page.getByRole("button", { name: "Agenda", exact: true });
@@ -83,4 +139,23 @@ test("navegação: barra inferior, logo para o Início e calendário da Agenda",
   });
 
   expect(problems).toEqual([]);
+});
+
+test("página não encontrada: visual do app, sem violar a CSP", async ({ page }) => {
+  const problems = watchConsole(page);
+  // Sem login, o proxy manda para /login; com login, a rota inexistente mostra a 404 do app.
+  await signUp(page, uniqueEmail("404"));
+  await page.getByLabel("Seu nome").fill("Gabriel");
+  await page.locator("form").getByRole("button", { name: "Criar família" }).click();
+  await expect(page).toHaveURL(/\/inicio$/);
+  const res = await page.goto("/pagina-que-nao-existe");
+  expect(res?.status()).toBe(404);
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Conte sempre");
+  await expect(page.getByText("com propósito e fé.")).toBeVisible();
+  await expect(page.getByRole("img", { name: "Oli" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Voltar para o início" })).toHaveAttribute("href", "/inicio");
+  // O único erro aceito é o próprio 404 do documento.
+  expect(problems.filter((p) => !/status of 404/.test(p))).toEqual([]);
+  // Sem rolagem lateral (as manchas de luz do fundo ficam dentro da tela)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });

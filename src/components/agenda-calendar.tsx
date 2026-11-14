@@ -85,7 +85,7 @@ export function AgendaCalendarButton({
       <dialog
         ref={dialogRef}
         aria-labelledby={titleId}
-        className="calendar-dialog m-auto w-[min(92vw,380px)] rounded-[24px] border border-line bg-surface-solid p-0 text-ink shadow-card"
+        className="calendar-dialog m-auto w-[min(92vw,380px)] rounded-[28px] border-0 bg-[linear-gradient(180deg,var(--sheet-from),var(--sheet-to))] p-0 text-ink shadow-[0_14px_40px_rgb(10_60_160/0.22)]"
         onClose={() => {
           setIsOpen(false);
           triggerRef.current?.focus();
@@ -156,7 +156,7 @@ export function AgendaCalendarButton({
                             aria-current={isToday ? "date" : undefined}
                             className={clsx(
                               "relative mx-auto grid size-10 place-items-center rounded-full tabular-nums transition",
-                              isToday ? "bg-hero font-semibold text-on-primary shadow-soft" : "text-ink hover:bg-accent-soft",
+                              isToday ? "bg-hero font-bold text-white shadow-[0_4px_10px_rgb(10_85_190/0.35)]" : "text-ink hover:bg-accent-soft",
                               isSel && !isToday && "bg-accent-soft font-semibold",
                               isSel && "ring-2 ring-primary",
                             )}

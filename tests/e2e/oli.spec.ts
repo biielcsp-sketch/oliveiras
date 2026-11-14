@@ -16,37 +16,44 @@ test("token do Oli: outra origem → 403", async ({ request }) => {
   expect(res.status()).toBe(403);
 });
 
-test("Início é a tela do Oli: palco 3D, controles e família não autorizada recebe 403", async ({ page }) => {
+test("tela do Oli (/assistente): esfera, controles e família não autorizada recebe 403", async ({ page }) => {
   const problems = watchConsole(page);
   await signUp(page, uniqueEmail("oli"));
   await page.getByLabel("Seu nome").fill("Gabriel");
   await page.locator("form").getByRole("button", { name: "Criar família" }).click();
   await expect(page).toHaveURL(/\/inicio$/);
 
-  await test.step("cabeçalho mantido, cards antigos removidos", async () => {
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText(/^(Bom dia|Boa tarde|Boa noite), Gabriel\.$/);
-    await expect(page.getByText("Como está a vida da família?")).toHaveCount(0);
-    await expect(page.getByText("Áreas da família")).toHaveCount(0);
+  await test.step("Início é o painel: saudação, sem o Oli", async () => {
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Olá, Gabriel!");
+    await expect(page.getByText("Que Deus abençoe seu dia!")).toBeVisible();
+    await expect(page.getByTestId("oli-stage")).toHaveCount(0);
+    // Sem contas nas Finanças: estado vazio no lugar do saldo
+    await expect(page.getByText("Cadastre uma conta nas Finanças")).toBeVisible();
   });
 
-  await test.step("avatar aparece em Repouso sem conectar (3D, imagem estática sem GPU ou aviso)", async () => {
+  await test.step("esfera do Oli aparece em Repouso sem conectar", async () => {
+    await page.goto("/assistente");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Oli");
     const stage = page.getByTestId("oli-stage");
     await expect(stage).toBeVisible();
-    await expect(
-      stage
-        .locator("canvas")
-        .or(stage.locator('img[src="/oli/oli-poster.webp"]'))
-        .or(stage.getByText("Não foi possível carregar o Oli em 3D")),
-    ).toBeVisible({ timeout: 15_000 });
-    // Sem GPU (Chromium headless usa SwiftShader), a imagem estática substitui o WebGL e carrega de verdade.
-    const poster = stage.locator('img[src="/oli/oli-poster.webp"]');
-    if (await poster.count()) {
-      await expect.poll(() => poster.evaluate((i: HTMLImageElement) => (i.complete ? i.naturalWidth : 0))).toBe(780);
-      await expect(stage.locator("canvas")).toHaveCount(0);
-    }
+    await expect(stage.getByRole("img", { name: "Oli, o assistente da família" })).toBeVisible();
+    await expect(stage.getByTestId("oli-sphere")).toHaveAttribute("data-state", "idle");
+    await expect(stage.locator("canvas, img")).toHaveCount(0);
     await expect(page.getByTestId("oli-estado")).toHaveText("Repouso");
     await expect(page.getByRole("status").first()).toHaveText("Toque em Conversar para falar com o Oli");
     await expect(page.getByRole("button", { name: "Conversar" })).toBeVisible();
+    // Esfera solta sobre o fundo da página: sem quadro (borda, fundo ou sombra) em volta
+    const frame = await stage.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { border: cs.borderTopWidth, bg: cs.backgroundImage, color: cs.backgroundColor, shadow: cs.boxShadow };
+    });
+    expect(frame).toEqual({ border: "0px", bg: "none", color: "rgba(0, 0, 0, 0)", shadow: "none" });
+    // Botão Conversar compacto: largura do conteúdo, centralizado, 44px de altura
+    const vw = page.viewportSize()!.width;
+    const talk = (await page.getByRole("button", { name: "Conversar" }).boundingBox())!;
+    expect(talk.height).toBeLessThanOrEqual(44);
+    expect(talk.width).toBeLessThan(vw / 2);
+    expect(Math.abs(talk.x + talk.width / 2 - vw / 2)).toBeLessThan(4);
     await expect(page.getByPlaceholder("Ou digite aqui")).toBeVisible();
   });
 
@@ -89,9 +96,10 @@ test("Início é a tela do Oli: palco 3D, controles e família não autorizada r
     expect(problems.filter((p) => !/status of 403/.test(p))).toEqual([]);
   });
 
-  await test.step("/assistente redireciona para o Início", async () => {
-    await page.goto("/assistente");
-    await expect(page).toHaveURL(/\/inicio$/);
+  await test.step("/assistente continua sendo a tela do Oli depois de recarregar", async () => {
+    await page.reload();
+    await expect(page).toHaveURL(/\/assistente$/);
+    await expect(page.getByTestId("oli-stage")).toBeVisible();
   });
 });
 

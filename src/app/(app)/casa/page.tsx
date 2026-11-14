@@ -3,7 +3,7 @@ import { FileText, ListChecks, PawPrint, Phone, Receipt, ShoppingCart, UtensilsC
 import { getAppContext } from "@/lib/data";
 import { createClient } from "@/lib/supabase/server";
 import { brDate, toSpDate } from "@/lib/agenda/dates";
-import { Card } from "@/components/ui";
+import { ModuleHeroCard } from "@/components/module-home";
 import { choreBuckets, maintenanceStatus } from "@/lib/casa/view";
 import { homeBillCounts, homeBillsForMonth } from "@/lib/casa/contas";
 import { warrantyAlerts } from "@/lib/casa/docs";
@@ -18,19 +18,19 @@ export const metadata = { title: "Casa" };
 function Tile({ href, icon: Icon, title, lines, testId }: { href: string; icon: LucideIcon; title: string; lines: string[]; testId: string }) {
   return (
     <Link href={href} className="block" data-testid={testId}>
-      <Card className="flex h-full items-start gap-4 transition hover:brightness-105">
-        <span className="grid size-12 shrink-0 place-items-center rounded-full border border-line bg-accent-soft text-primary">
-          <Icon size={22} aria-hidden />
+      <div className="glass-card flex h-full items-start gap-3.5 rounded-[20px] px-4 py-3.5 transition hover:brightness-105">
+        <span className="tic size-[42px]">
+          <Icon size={20} aria-hidden />
         </span>
         <div>
-          <p className="text-lg font-semibold tracking-tight">{title}</p>
+          <p className="text-[15px] font-semibold tracking-tight">{title}</p>
           {lines.map((l) => (
-            <p key={l} className="text-sm text-muted">
+            <p key={l} className="text-[13px] text-muted">
               {l}
             </p>
           ))}
         </div>
-      </Card>
+      </div>
     </Link>
   );
 }
@@ -85,7 +85,13 @@ export default async function Page() {
   const todayMeals = ((meals.data ?? []) as { meal: Meal; title: string }[]).sort((a, b) => MEALS.indexOf(a.meal) - MEALS.indexOf(b.meal));
 
   return (
-    <div className="grid gap-4 md:grid-cols-2">
+    <div className="flex flex-col gap-6">
+      <ModuleHeroCard title="Sua casa sempre organizada" subtitle="Tudo sob controle." image="/ilustracoes/casa.webp" />
+      <section aria-labelledby="resumo-titulo" className="min-w-0">
+        <h2 id="resumo-titulo" className="mb-2 text-[15.5px] font-semibold tracking-tight">
+          Resumo
+        </h2>
+        <div className="grid gap-3 md:grid-cols-2">
       <Tile
         href="/casa/compras"
         icon={ShoppingCart}
@@ -144,6 +150,8 @@ export default async function Page() {
         testId="resumo-prestadores"
         lines={[providers.count ? plural(providers.count, "contato", "contatos") : "Nenhum contato ainda."]}
       />
+        </div>
+      </section>
     </div>
   );
 }

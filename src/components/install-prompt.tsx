@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useEffect, useId, useState, useSyncExternalStore } from "react";
 import { Share } from "lucide-react";
 import { Button } from "@/components/ui";
@@ -13,6 +12,7 @@ import {
   parseDismissedUntil,
 } from "@/lib/install-prompt";
 import { consumeInstallPrompt, getInstallPrompt, subscribeInstall, wasAppInstalled } from "@/lib/install-events";
+import { OliSphere } from "@/components/oli/oli-sphere";
 
 type Env = { iosSafari: boolean; standalone: boolean; dismissedUntil: number | null; now: number };
 
@@ -101,9 +101,9 @@ export function InstallPrompt() {
       className="oli-rise fixed inset-x-4 bottom-[calc(7.25rem+env(safe-area-inset-bottom))] z-40 mx-auto max-w-md md:inset-x-auto md:bottom-6 md:right-6 md:w-[380px]"
     >
       {/* Fundo sólido (não vidro): fica por cima do conteúdo e precisa ser legível. */}
-      <div className="flex gap-4 rounded-[24px] border border-line/70 bg-surface-solid p-4 shadow-card">
-        <div className="grid size-14 shrink-0 place-items-center rounded-2xl bg-[#0a141c]">
-          <Image src="/oli/oli-mini.webp" alt="" width={46} height={46} unoptimized className="size-[46px]" />
+      <div className="flex gap-4 rounded-[24px] border border-line bg-surface-solid p-4 shadow-card">
+        <div className="grid size-14 shrink-0 place-items-center rounded-full bg-accent-soft">
+          <OliSphere size={46} />
         </div>
         <div className="min-w-0 flex-1">
           <h2 id={titleId} className="text-[17px] font-semibold tracking-tight">

@@ -5,19 +5,32 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Sem conexão · Oliveira's</title>
     <style>
-      body { margin: 0; min-height: 100dvh; display: grid; place-items: center; font-family: system-ui, sans-serif;
-        background: #f7f7f3; color: #1b1c18; text-align: center; padding: 24px; }
-      @media (prefers-color-scheme: dark) { body { background: #121310; color: #ecede6; } }
-      img { width: 64px; height: 64px; border-radius: 16px; }
-      p { color: #5c5e55; font-size: 14px; }
-      button { margin-top: 16px; height: 44px; padding: 0 20px; border-radius: 12px; border: 0;
-        background: #1b1c18; color: #f7f7f3; font-size: 14px; }
+      body { margin: 0; min-height: 100dvh; display: grid; place-items: center; font-family: Inter, system-ui, sans-serif;
+        color: #0f1b3d; text-align: center; padding: 24px; box-sizing: border-box;
+        background: radial-gradient(60% 28% at 100% 12%, rgba(150,190,255,.55), transparent 70%),
+          radial-gradient(70% 30% at 90% 80%, rgba(140,200,255,.45), transparent 70%),
+          linear-gradient(180deg, #e3ecfd 0%, #eef3fd 40%, #f2f5fe 100%); }
+      @media (prefers-color-scheme: dark) { body { color: #e8eefc; background: #0a1226; } p { color: #9aa8c7 !important; } a { color: #8db9ff !important; } }
+      .halo { width: 168px; height: 168px; margin: 0 auto; border-radius: 999px; display: grid; place-items: center;
+        background: radial-gradient(circle, #ffffff 0%, #dce8fe 58%, rgba(220,232,254,0) 72%); }
+      .oli { position: relative; width: 120px; height: 120px; border-radius: 999px; overflow: hidden; isolation: isolate;
+        background: radial-gradient(circle at 50% 38%, #fff 0%, #f4eeff 45%, #e4dafb 78%, #d6ccf6 100%);
+        box-shadow: inset 0 -10px 24px rgba(140,110,255,.28), inset 0 8px 16px rgba(255,255,255,.95), 0 14px 34px rgba(110,90,255,.28); }
+      .oli i { position: absolute; border-radius: 50%; }
+      .w1 { left: 4%; right: 10%; top: 22%; height: 42%; background: radial-gradient(55% 60% at 28% 45%, #c57bff 0%, rgba(197,123,255,0) 72%); filter: blur(8px); }
+      .w2 { left: 14%; right: 2%; top: 36%; height: 36%; background: radial-gradient(60% 55% at 62% 55%, #2f7bff 0%, rgba(47,123,255,.6) 35%, rgba(47,123,255,0) 72%); filter: blur(7px); }
+      .w3 { left: 52%; right: 4%; top: 26%; height: 30%; background: radial-gradient(50% 55% at 60% 45%, #4a3be0 0%, rgba(74,59,224,0) 72%); filter: blur(6px); }
+      h1 { font-size: 22px; margin: 16px 0 0; }
+      p { color: #5a6683; font-size: 14px; }
+      button { margin-top: 16px; height: 46px; padding: 0 28px; border-radius: 999px; border: 0; color: #fff; font-size: 15px; font-weight: 600;
+        background: linear-gradient(180deg, #3a86ec 0%, #0a5cc8 55%, #0848a6 100%); box-shadow: 0 8px 18px rgba(10,85,190,.38); }
+      a { color: #0a5cc8; font-weight: 600; display: inline-flex; min-height: 44px; align-items: center; }
     </style>
   </head>
   <body>
     <div>
-      <img src="/icons/icon-192.png" alt="" />
-      <h1 style="font-size: 20px">Sem conexão</h1>
+      <div class="halo"><span class="oli" aria-hidden="true"><i class="w1"></i><i class="w2"></i><i class="w3"></i></span></div>
+      <h1>Sem conexão</h1>
       <p>Assim que a internet voltar, o app abre normalmente.</p>
       <button onclick="location.reload()">Tentar de novo</button>
       <p><a href="/offline-carteirinhas.html">Ver carteirinhas do convênio</a></p>
