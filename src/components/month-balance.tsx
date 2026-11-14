@@ -66,7 +66,7 @@ export function MonthBalance({
               {hidden ? <EyeOff size={18} aria-hidden /> : <Eye size={18} aria-hidden />}
             </button>
           </p>
-          <p className="mt-1 text-[30px] font-bold tracking-tight tabular-nums" data-testid="saldo-do-mes">
+          <p className="mt-1 text-[30px] font-semibold tracking-tight tabular-nums" data-testid="saldo-do-mes">
             {show(result)}
           </p>
           {caption && <p className={clsx("mt-1.5 text-[13px]", hero ? "text-info" : "text-muted")}>{caption}</p>}
@@ -76,14 +76,14 @@ export function MonthBalance({
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-[18px] border border-[var(--glass-edge)] bg-success-soft px-4 py-3.5 shadow-[0_8px_20px_rgb(30_120_90/0.08)]">
           <p className="text-[13.5px] font-medium">Entradas</p>
-          <p className="mt-1 flex items-center justify-between gap-2 text-[18px] font-bold tabular-nums text-success">
+          <p className="mt-1 flex items-center justify-between gap-2 text-[18px] font-semibold tabular-nums text-success">
             <span className="truncate">{show(income)}</span>
             <ArrowUp size={17} strokeWidth={2.2} className="shrink-0 text-deep" aria-hidden />
           </p>
         </div>
         <div className="rounded-[18px] border border-[var(--glass-edge)] bg-danger-soft px-4 py-3.5 shadow-[0_8px_20px_rgb(190_60_60/0.08)]">
           <p className="text-[13.5px] font-medium">Saídas</p>
-          <p className="mt-1 flex items-center justify-between gap-2 text-[18px] font-bold tabular-nums text-danger">
+          <p className="mt-1 flex items-center justify-between gap-2 text-[18px] font-semibold tabular-nums text-danger">
             <span className="truncate">{show(expense)}</span>
             <ArrowDown size={17} strokeWidth={2.2} className="shrink-0" aria-hidden />
           </p>

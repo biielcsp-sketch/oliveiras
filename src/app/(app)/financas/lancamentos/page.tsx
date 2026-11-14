@@ -28,10 +28,10 @@ export default async function LancamentosPage({ searchParams }: { searchParams: 
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-col items-start gap-3">
         <MonthSwitcher month={month} basePath="/financas/lancamentos" params={{ conta: sp.conta, categoria: sp.categoria, q: sp.q }} />
-        <LinkButton href="/financas/lancamentos/novo" className="ml-auto">
-          <Plus size={16} /> Lançar
+        <LinkButton href="/financas/lancamentos/novo" size="sm">
+          <Plus size={15} aria-hidden /> Lançar
         </LinkButton>
       </div>
 

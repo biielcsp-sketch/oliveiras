@@ -112,12 +112,12 @@ export default async function FinancasPage({ searchParams }: { searchParams: Pro
 
         <div className="flex flex-col gap-3">
           <MonthSwitcher month={month} basePath="/financas" />
-          <div className="flex items-center justify-between gap-2">
-            <LinkButton href="/financas/importar" variant="ghost">
-              <Upload size={16} /> Importar
+          <div className="flex items-center gap-2">
+            <LinkButton href="/financas/lancamentos/novo" size="sm">
+              <Plus size={15} aria-hidden /> Lançar
             </LinkButton>
-            <LinkButton href="/financas/lancamentos/novo">
-              <Plus size={16} /> Lançar
+            <LinkButton href="/financas/importar" variant="ghost" size="sm">
+              <Upload size={15} aria-hidden /> Importar
             </LinkButton>
           </div>
         </div>

@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 export function ModuleHeroCard({ title, subtitle, image }: { title: string; subtitle: string; image: string }) {
   return (
     <div className="glass-card relative flex h-[118px] flex-col justify-center overflow-hidden rounded-[20px] p-[18px]">
-      <h2 className="relative z-10 max-w-[60%] text-[17px] font-bold leading-snug tracking-tight">{title}</h2>
+      <h2 className="relative z-10 max-w-[60%] text-[17px] font-semibold leading-snug tracking-tight">{title}</h2>
       <p className="relative z-10 mt-1.5 max-w-[60%] text-[12.5px] text-muted">{subtitle}</p>
       <Image
         src={image}
@@ -23,7 +23,7 @@ export function ModuleHeroCard({ title, subtitle, image }: { title: string; subt
 export function BlockTitle({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
     <div className="mb-2 flex items-center justify-between gap-3">
-      <h2 className="text-[15.5px] font-bold tracking-tight">{children}</h2>
+      <h2 className="text-[15.5px] font-semibold tracking-tight">{children}</h2>
       {action}
     </div>
   );

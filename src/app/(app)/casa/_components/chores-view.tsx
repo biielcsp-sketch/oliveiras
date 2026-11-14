@@ -195,9 +195,9 @@ export function ChoresView({ chores, people, today }: { chores: ChoreVM[]; peopl
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex justify-end">
-        <Button onClick={() => setModal({})}>
-          <Plus size={18} aria-hidden /> Nova tarefa
+      <div className="flex">
+        <Button size="sm" onClick={() => setModal({})}>
+          <Plus size={15} aria-hidden /> Nova tarefa
         </Button>
       </div>
       <Feedback notice={notice} error={error} />

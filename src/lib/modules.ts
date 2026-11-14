@@ -42,7 +42,7 @@ export const FAMILY: ModuleDef = { href: "/familia", label: "Família", icon: Us
 
 const byHref = (href: string) => MODULES.find((m) => m.href === href)!;
 
-/** Barra inferior do celular: Finanças · Saúde · [Oli] · Casa · Igreja. Início fica no logo; Agenda no topo do Início. */
+/** Barra inferior do celular: Finanças · Saúde · [Oli] · Casa · Igreja. Início fica no logo; Agenda no arco do Início. */
 export const MOBILE_NAV_LEFT = [byHref("/financas"), byHref("/saude")];
 export const MOBILE_NAV_RIGHT = [byHref("/casa"), byHref("/ministerio")];
 export const AGENDA = byHref("/agenda");
@@ -50,5 +50,5 @@ export const AGENDA = byHref("/agenda");
 /** Barra lateral no desktop (Agenda abre o calendário, separado). */
 export const SIDEBAR_NAV = [HOME, ASSISTANT, ...MODULES.filter((m) => m.href !== "/agenda")];
 
-/** Módulos do arco do Início, na ordem da prévia aprovada. */
-export const HOME_MODULES = [byHref("/financas"), byHref("/saude"), byHref("/casa"), byHref("/ministerio")];
+/** Itens do arco do Início: os módulos com a Agenda no meio (no celular, a Agenda é aberta por aqui). */
+export const HOME_MODULES = [byHref("/financas"), byHref("/saude"), byHref("/agenda"), byHref("/casa"), byHref("/ministerio")];

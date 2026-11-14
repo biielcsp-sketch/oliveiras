@@ -201,9 +201,9 @@ export function MaintenanceView({ items, providers, today }: { items: Maintenanc
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex justify-end">
-        <Button onClick={() => setModal({ kind: "edit" })}>
-          <Plus size={18} aria-hidden /> Nova manutenção
+      <div className="flex">
+        <Button size="sm" onClick={() => setModal({ kind: "edit" })}>
+          <Plus size={15} aria-hidden /> Nova manutenção
         </Button>
       </div>
       <Feedback notice={notice} error={error} />

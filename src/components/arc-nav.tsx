@@ -9,8 +9,8 @@ import { arcPlacement, arcTrackPath, clampIndex, dragToPosition } from "@/lib/ar
 export type ArcItem = { key: string; label: string; icon: LucideIcon; href?: string };
 
 const ITEM_W = 96;
-/** Centro vertical da bolha (62px) dentro do item: pt-1 (4px) + metade da bolha. */
-const ORB_CENTER_Y = 4 + 31;
+/** Centro vertical da bolha (56px) dentro do item: pt-1 (4px) + metade da bolha. */
+const ORB_CENTER_Y = 4 + 28;
 
 /**
  * Menu em ferradura: botões redondos num arco que desliza para os lados.
@@ -170,16 +170,10 @@ export function ArcNav({
         onDragStart={(e) => e.preventDefault()}
         className="relative h-[156px] touch-pan-y select-none overflow-x-clip"
       >
-        {/* Trilho de luz da ferradura: passa pelo centro das bolhas (só decoração) */}
+        {/* Trilho fino da ferradura: passa pelo centro das bolhas (só decoração) */}
         {trackW > 0 && (
           <svg aria-hidden="true" className="pointer-events-none absolute inset-0 size-full" viewBox={`0 0 ${trackW} 156`}>
-            <defs>
-              <filter id="arc-track-glow" x="-10%" y="-50%" width="120%" height="200%">
-                <feGaussianBlur stdDeviation="4" />
-              </filter>
-            </defs>
-            <path d={arcTrackPath(trackW, ORB_CENTER_Y)} fill="none" stroke="#BFE0FF" strokeOpacity=".45" strokeWidth="7" filter="url(#arc-track-glow)" />
-            <path d={arcTrackPath(trackW, ORB_CENTER_Y)} fill="none" stroke="#ffffff" strokeOpacity=".55" strokeWidth="1.3" />
+            <path d={arcTrackPath(trackW, ORB_CENTER_Y)} fill="none" stroke="#ffffff" strokeOpacity=".28" strokeWidth="1" />
           </svg>
         )}
         <ul>
@@ -190,15 +184,15 @@ export function ArcNav({
               <>
                 <span
                   className={clsx(
-                    "glass-orb grid size-[62px] place-items-center rounded-full text-white transition-[outline-color,box-shadow]",
-                    "outline-[2.5px] outline-offset-[4px]",
-                    isCentered ? "outline-solid outline-white" : "outline-solid outline-transparent",
+                    "glass-orb grid size-[56px] place-items-center rounded-full text-white transition-[outline-color,box-shadow]",
+                    "outline-[1.5px] outline-offset-[3px]",
+                    isCentered ? "outline-solid outline-white/90" : "outline-solid outline-transparent",
                   )}
                   data-selected={isCentered}
                 >
-                  <Icon size={25} strokeWidth={1.8} aria-hidden />
+                  <Icon size={22} strokeWidth={1.7} aria-hidden />
                 </span>
-                <span className={clsx("text-on-image text-center text-[12.5px] leading-tight text-white", isCentered ? "font-semibold" : "font-medium")}>
+                <span className={clsx("text-on-image text-center text-[12.5px] leading-tight text-white", isCentered ? "font-semibold" : "font-normal")}>
                   {item.label}
                 </span>
               </>

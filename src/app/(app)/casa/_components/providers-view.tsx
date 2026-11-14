@@ -68,9 +68,9 @@ export function ProvidersView({ items }: { items: ProviderVM[] }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex justify-end">
-        <Button onClick={() => setModal({})}>
-          <Plus size={18} aria-hidden /> Novo prestador
+      <div className="flex">
+        <Button size="sm" onClick={() => setModal({})}>
+          <Plus size={15} aria-hidden /> Novo prestador
         </Button>
       </div>
       <Feedback notice={notice} error={error} />

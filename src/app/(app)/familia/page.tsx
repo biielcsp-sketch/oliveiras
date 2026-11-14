@@ -64,7 +64,7 @@ export default async function FamiliaPage() {
             >
               {initials(name)}
             </span>
-            <h1 className="mt-3 max-w-full truncate text-[19px] font-bold">{name}</h1>
+            <h1 className="mt-3 max-w-full truncate text-[19px] font-semibold">{name}</h1>
             <p className="mt-0.5 max-w-full truncate text-[13px] opacity-90">{user.email || household.name}</p>
           </div>
         </div>
@@ -83,7 +83,7 @@ export default async function FamiliaPage() {
       </nav>
 
       <Card id="membros" className="scroll-mt-4">
-        <h2 className="font-bold">Membros</h2>
+        <h2 className="font-semibold">Membros</h2>
         <p className="mt-0.5 text-[13px] text-muted">{household.name}</p>
         <ul className="mt-3 divide-y divide-line">
           {members.map((m) => {
@@ -125,14 +125,14 @@ export default async function FamiliaPage() {
       </Card>
 
       <Card id="dependente" className="scroll-mt-4">
-        <h2 className="font-bold">Adicionar dependente</h2>
+        <h2 className="font-semibold">Adicionar dependente</h2>
         <p className="mb-4 mt-1 text-sm text-muted">Para quem não tem login, como o seu filho.</p>
         <AddDependentForm />
       </Card>
 
       {!hasSpouse && (
         <Card id="convidar" className="scroll-mt-4">
-          <h2 className="font-bold">Convidar sua esposa</h2>
+          <h2 className="font-semibold">Convidar sua esposa</h2>
           <p className="mt-1 text-sm text-muted">
             Ela cria a conta no app e, na tela de boas-vindas, escolhe &quot;Entrar com código&quot;.
           </p>

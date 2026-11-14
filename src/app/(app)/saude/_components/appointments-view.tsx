@@ -181,9 +181,9 @@ export function AppointmentsView({ people, upcoming, past, origins, defaultMembe
 
   return (
     <div className="flex flex-col gap-8">
-      <div className="flex justify-end">
-        <Button onClick={() => setModal({})}>
-          <Plus size={18} aria-hidden /> Nova consulta
+      <div className="flex">
+        <Button size="sm" onClick={() => setModal({})}>
+          <Plus size={15} aria-hidden /> Nova consulta
         </Button>
       </div>
       {notice && (

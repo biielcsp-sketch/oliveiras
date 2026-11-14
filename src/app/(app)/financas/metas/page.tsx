@@ -16,9 +16,9 @@ export default async function MetasPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex justify-end">
-        <LinkButton href="/financas/metas/nova">
-          <Plus size={16} /> Nova meta
+      <div className="flex">
+        <LinkButton href="/financas/metas/nova" size="sm">
+          <Plus size={15} aria-hidden /> Nova meta
         </LinkButton>
       </div>
       {goals.length === 0 ? (
