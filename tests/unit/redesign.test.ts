@@ -8,6 +8,7 @@ import { SAUDE_TABS } from "@/lib/saude/nav";
 import { CASA_TABS } from "@/lib/casa/nav";
 import { IGREJA_TABS } from "@/lib/igreja/nav";
 import { btnSize } from "@/components/ui";
+import { isPetAlert, petAlertRank, petTileLines, tileRows } from "@/lib/summary-tile";
 import { ASSISTANT, HOME_MODULES, MOBILE_NAV_LEFT, MOBILE_NAV_RIGHT, MODULES, SIDEBAR_NAV } from "@/lib/modules";
 import { THEME_COLOR } from "@/lib/theme";
 
@@ -138,11 +139,34 @@ describe("visual leve (rodada 2)", () => {
     const a = css.indexOf(`@utility ${name} {`);
     return css.slice(a, css.indexOf("\n}", a));
   };
-  it("bolhas do arco/ferradura: borda fina, sem faixa de brilho nem reflexo", () => {
+  it("bolhas do arco/ferradura: vidro fosco com borda fina clara, reflexo suave no topo e sem reflexo embaixo", () => {
     const orb = block("glass-orb");
-    expect(orb).toMatch(/border: 1px solid/);
-    expect(orb).not.toContain("::before");
+    expect(orb).toMatch(/border: 1px solid rgb\(255 255 255 \/ 0\.4\d?\)/);
+    expect(orb).toMatch(/backdrop-filter: blur\(/);
+    expect(orb).toContain("::before");
     expect(orb).not.toContain("::after");
+    const alpha = Number(orb.match(/::before[\s\S]*?rgb\(255 255 255 \/ (0\.\d+)\)/)![1]);
+    expect(alpha).toBeLessThanOrEqual(0.35);
+  });
+  it("cards de resumo: mesma altura fixa, conteúdo centralizado e subtítulo em até 2 linhas", () => {
+    const home = readFileSync("src/components/module-home.tsx", "utf8");
+    const tile = home.slice(home.indexOf("export function SummaryTile"));
+    expect(tile).toMatch(/h-\[88px\] items-center/);
+    // Alertas podem ocupar até 2 linhas; o resto corta em 1 linha (cabe tudo nos 88px)
+    expect(tile).toContain('"line-clamp-2 font-medium text-danger"');
+    expect(tile).toContain('"truncate text-muted"');
+    expect(tile).toContain("tileRows(lines, isAlert, alertRank)");
+    for (const page of ["src/app/(app)/casa/page.tsx", "src/app/(app)/ministerio/page.tsx"]) {
+      const src = readFileSync(page, "utf8");
+      expect(src).toContain("SummaryTile as Tile");
+      expect(src).not.toMatch(/function Tile\(/);
+      expect(src).toContain("auto-rows-fr");
+    }
+  });
+  it("Início usa a ferradura deslizante só de atalhos, começando na Agenda", () => {
+    const arc = readFileSync("src/components/home-arc.tsx", "utf8");
+    expect(arc).toContain("slideOnly");
+    expect(arc).toMatch(/href === "\/agenda"/);
   });
   it("primário sem faixa de brilho; topo sem botão de agenda; tema à esquerda e logo no centro", () => {
     expect(block("glass-primary")).not.toContain("::before");
@@ -157,6 +181,75 @@ describe("visual leve (rodada 2)", () => {
     const arc = readFileSync("src/components/arc-nav.tsx", "utf8");
     expect(arc).toContain("outline-[1.5px]");
     expect(arc).not.toContain("feGaussianBlur");
+  });
+});
+
+describe("linhas do card de resumo (tileRows)", () => {
+  it("Pet: alertas (cuidados vencidos e ração acabando) vão para a linha 1, antes da próxima dose longa", () => {
+    const lines = ["Próxima dose: Moisés: Vacina V10 - Reforço anual com nome comprido (em 3 dias)", "2 cuidados vencidos", "Ração acabando"];
+    const rows = tileRows(lines, isPetAlert);
+    expect(rows).toEqual(["2 cuidados vencidos · Ração acabando", "Próxima dose: Moisés: Vacina V10 - Reforço anual com nome comprido (em 3 dias)"]);
+  });
+  it("Pet sem alerta: 0 cuidados vencidos não é alerta; a próxima dose fica na linha 1", () => {
+    expect(tileRows(["Próxima dose: Vacina V10 (em 3 dias)", "0 cuidados vencidos"], isPetAlert)).toEqual([
+      "Próxima dose: Vacina V10 (em 3 dias)",
+      "0 cuidados vencidos",
+    ]);
+    expect(isPetAlert("1 cuidado vencido")).toBe(true);
+    expect(isPetAlert("Ração acabando: Moisés, Bob")).toBe(true);
+  });
+  it("Pet: dose atrasada vira alerta com o status antes do nome (o atraso não some no corte)", () => {
+    const lines = petTileLines(["Próxima dose: Vacina V10 - Reforço (atrasada há 3 dias)", "0 cuidados vencidos"]);
+    expect(lines).toEqual(["Dose atrasada há 3 dias: Vacina V10 - Reforço", "0 cuidados vencidos"]);
+    expect(isPetAlert(lines[0])).toBe(true);
+    expect(tileRows(lines, isPetAlert)[0]).toBe("Dose atrasada há 3 dias: Vacina V10 - Reforço");
+    // Com o nome do pet (vários pets) e 1 dia
+    expect(petTileLines(["Próxima dose: Moisés: Vacina V10 (atrasada há 1 dia)"])).toEqual(["Dose atrasada há 1 dia: Moisés: Vacina V10"]);
+    // Dose no prazo continua igual e não é alerta
+    expect(petTileLines(["Próxima dose: Vacina V10 (em 3 dias)"])).toEqual(["Próxima dose: Vacina V10 (em 3 dias)"]);
+    expect(isPetAlert("Próxima dose: Vacina V10 (em 3 dias)")).toBe(false);
+  });
+  it("Pet com os três alertas juntos: curtos primeiro (cuidados vencidos, ração), dose atrasada (nome livre) por último", () => {
+    const lines = petTileLines(["Próxima dose: Vacina Antirrábica com nome bem comprido (atrasada há 35 dias)", "2 cuidados vencidos", "Ração acabando"]);
+    const rows = tileRows(lines, isPetAlert, petAlertRank);
+    expect(rows).toEqual(["2 cuidados vencidos · Ração acabando · Dose atrasada há 35 dias: Vacina Antirrábica com nome bem comprido"]);
+    expect(rows[0].indexOf("2 cuidados vencidos")).toBe(0);
+    expect(rows[0].indexOf("Ração acabando")).toBeLessThan(rows[0].indexOf("Dose atrasada"));
+    // Sem rank, a ordem original (dose primeiro) seria mantida — o rank é que garante os curtos à frente
+    expect(tileRows(lines, isPetAlert)[0].startsWith("Dose atrasada")).toBe(true);
+  });
+  it("Carisma: próxima e última aula ficam cada uma na sua linha (nenhuma some)", () => {
+    expect(tileRows(["Próxima aula: 20/11/2026 · Eclesiologia", "Última aula: 13/11/2026 · Hermenêutica"])).toEqual([
+      "Próxima aula: 20/11/2026 · Eclesiologia",
+      "Última aula: 13/11/2026 · Hermenêutica",
+    ]);
+  });
+  it("no máximo 2 linhas; o excedente vai junto na linha 2", () => {
+    expect(tileRows(["a", "b", "c"])).toEqual(["a", "b · c"]);
+    expect(tileRows(["só uma"])).toEqual(["só uma"]);
+  });
+});
+
+describe("cabeçalhos: mesma onda e sem a setinha", () => {
+  it("Início e módulos usam o mesmo fundo/onda (HeroBackground) e a mesma altura", () => {
+    const inicio = readFileSync("src/app/(app)/inicio/page.tsx", "utf8");
+    const hero = readFileSync("src/components/module-hero.tsx", "utf8");
+    for (const src of [inicio, hero]) {
+      expect(src).toContain("<HeroBackground />");
+      expect(src).toContain("h-[calc(350px+env(safe-area-inset-top))]");
+      expect(src).not.toMatch(/<path d="M0 0H390/);
+    }
+  });
+  it("a setinha redonda saiu dos cabeçalhos; o saldo das contas abre por uma linha na página", () => {
+    expect(readFileSync("src/components/module-hero.tsx", "utf8")).not.toContain("HeroDrawerButton");
+    const fin = readFileSync("src/app/(app)/financas/page.tsx", "utf8");
+    expect(fin).toContain('<HeroDrawerButton label="saldo das contas" title="Saldo das contas" />');
+    const drawer = readFileSync("src/components/hero-drawer.tsx", "utf8");
+    expect(drawer).not.toContain("glass-orb absolute");
+    expect(drawer).toContain("aria-expanded={ctx.open}");
+    // Botão renderizado no servidor: não depende de o painel já ter montado (hasPanel)
+    const btn = drawer.slice(drawer.indexOf("export function HeroDrawerButton"), drawer.indexOf("export function HeroDrawer("));
+    expect(btn).not.toContain("hasPanel");
   });
 });
 

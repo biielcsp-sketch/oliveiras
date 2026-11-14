@@ -1,7 +1,41 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { signUp, uniqueEmail, watchConsole } from "./helpers";
 import { monthLabel, shiftMonth, yearMonthOf } from "../../src/lib/calendar";
 import { todaySP } from "../../src/lib/financas/today";
+
+/** Rótulos dos botões visíveis da ferradura (opacidade > 0,5), da esquerda para a direita. */
+async function visibleArc(arc: Locator) {
+  return arc.getByRole("link").evaluateAll((els) =>
+    els
+      .filter((e) => Number(getComputedStyle(e).opacity) > 0.5)
+      .sort((a, b) => a.getBoundingClientRect().x - b.getBoundingClientRect().x)
+      .map((e) => e.textContent?.trim()),
+  );
+}
+
+/** O botão `name` está no centro do arco (parado) e com o contorno de selecionado. */
+async function expectCentered(arc: Locator, name: string) {
+  const box = (await arc.boundingBox())!;
+  await expect
+    .poll(async () => {
+      const b = (await arc.getByRole("link", { name }).boundingBox())!;
+      return Math.abs(b.x + b.width / 2 - (box.x + box.width / 2));
+    })
+    .toBeLessThan(2);
+  await expect(arc.getByRole("link", { name }).locator('[data-selected="true"]')).toHaveCount(1);
+  await expect(arc.locator('[data-selected="true"]')).toHaveCount(1);
+}
+
+/** Arrasta o arco `dx` px na horizontal (positivo = para a direita), em passos, e solta. */
+async function dragArc(page: Page, arc: Locator, dx: number) {
+  const box = (await arc.boundingBox())!;
+  const y = box.y + box.height / 2;
+  const x0 = box.x + box.width / 2 - dx / 2;
+  await page.mouse.move(x0, y);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i++) await page.mouse.move(x0 + (dx * i) / 10, y);
+  await page.mouse.up();
+}
 
 test("navegação: barra inferior, logo para o Início e calendário da Agenda", async ({ page }) => {
   const problems = watchConsole(page);
@@ -32,32 +66,20 @@ test("navegação: barra inferior, logo para o Início e calendário da Agenda",
     await expect(nav.getByRole("link", { name: "Igreja" })).toHaveAttribute("aria-current", "page");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Igreja");
 
-    // Menu em ferradura: o botão central é o selecionado e troca o conteúdo abaixo
+    // Menu em ferradura: só 3 botões visíveis, o do meio é o selecionado e troca o conteúdo abaixo
     const arc = page.getByRole("navigation", { name: "Seções de Igreja" });
     await expect(arc.locator('[aria-current="page"]')).toContainText("Resumo");
+    await expect.poll(() => visibleArc(arc)).toEqual(["Devocional", "Resumo", "Carisma"]);
     await expect(page.getByRole("button", { name: /Todas as seções/ })).toHaveCount(0);
-    await arc.getByRole("link", { name: "Consolidação" }).click();
-    await expect(page).toHaveURL(/\/ministerio\/consolidacao$/);
-    await expect(arc.getByRole("link", { name: "Consolidação" })).toHaveAttribute("aria-current", "page");
+    await arc.getByRole("link", { name: "Carisma" }).click();
+    await expect(page).toHaveURL(/\/ministerio\/carisma$/);
+    await expect(arc.getByRole("link", { name: "Carisma" })).toHaveAttribute("aria-current", "page");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Igreja");
-    await expect(page.getByText("Integração com o app da Consolidação em breve").first()).toBeVisible();
+    await expect.poll(() => visibleArc(arc)).toEqual(["Resumo", "Carisma", "Consolidação"]);
+    await expectCentered(arc, "Carisma");
 
     // Arrastar o arco para a direita e soltar: o botão que para no centro abre sozinho (sem toque)
-    const box = (await arc.boundingBox())!;
-    const y = box.y + box.height / 2;
-    const center = box.x + box.width / 2;
-    // Espera a Consolidação terminar de deslizar até o centro antes de arrastar
-    await expect
-      .poll(async () => {
-        const b = (await arc.getByRole("link", { name: "Consolidação" }).boundingBox())!;
-        return Math.abs(b.x + b.width / 2 - center);
-      })
-      .toBeLessThan(2);
-    // ~2 botões para a direita (95px por botão): para no Resumo
-    await page.mouse.move(center - 90, y);
-    await page.mouse.down();
-    for (let i = 1; i <= 10; i++) await page.mouse.move(center - 90 + i * 18, y);
-    await page.mouse.up();
+    await dragArc(page, arc, 90);
     await expect(page).toHaveURL(/\/ministerio$/);
     await expect(arc.locator('[aria-current="page"]')).toContainText("Resumo");
 
@@ -78,6 +100,37 @@ test("navegação: barra inferior, logo para o Início e calendário da Agenda",
     await expect(page.getByTestId("oli-stage")).toBeVisible();
   });
 
+  await test.step("Saúde: ferradura circular, sempre 3 visíveis na primeira e na última aba; teclado dá a volta", async () => {
+    await page.goto("/saude");
+    const arc = page.getByRole("navigation", { name: "Seções de Saúde" });
+    // Primeira aba: a vizinha da esquerda é a última (Vacinas)
+    await expect.poll(() => visibleArc(arc)).toEqual(["Vacinas", "Carteirinhas", "Consultas"]);
+    await expectCentered(arc, "Carteirinhas");
+    await expect(arc.locator('[aria-current="page"]')).toHaveText("Carteirinhas");
+    // Leitores de tela/Tab: cada aba uma vez, na ordem real (sem clones)
+    await expect(arc.getByRole("link")).toHaveText(["Carteirinhas", "Consultas", "Exames", "Procedimentos", "Medicamentos", "Vacinas"]);
+    // Seta para a esquerda na primeira vai para a última
+    await arc.getByRole("link", { name: "Carteirinhas" }).focus();
+    await page.keyboard.press("ArrowLeft");
+    await expect(page).toHaveURL(/\/saude\/vacinas$/);
+    await expect(arc.getByRole("link", { name: "Vacinas" })).toHaveAttribute("aria-current", "page");
+    await expect(arc.getByRole("link", { name: "Vacinas" })).toBeFocused();
+    // Última aba: também 3, com a primeira à direita
+    await expect.poll(() => visibleArc(arc)).toEqual(["Medicamentos", "Vacinas", "Carteirinhas"]);
+    await expectCentered(arc, "Vacinas");
+    // Seta para a direita na última volta para a primeira
+    await page.keyboard.press("ArrowRight");
+    await expect(page).toHaveURL(/\/saude$/);
+    await expect(arc.getByRole("link", { name: "Carteirinhas" })).toHaveAttribute("aria-current", "page");
+    await expect(arc.getByRole("link", { name: "Carteirinhas" })).toBeFocused();
+    // Arrastar para a direita a partir da primeira também dá a volta (para na última e troca a tela)
+    await expectCentered(arc, "Carteirinhas");
+    await dragArc(page, arc, 90);
+    await expect(page).toHaveURL(/\/saude\/vacinas$/);
+    await expect.poll(() => visibleArc(arc)).toEqual(["Medicamentos", "Vacinas", "Carteirinhas"]);
+    await page.goto("/assistente");
+  });
+
   await test.step("Início: atalhos e módulos no cabeçalho; logo leva ao Início", async () => {
     await page.getByRole("link", { name: "Voltar para o Início" }).click();
     await expect(page).toHaveURL(/\/inicio$/);
@@ -85,13 +138,42 @@ test("navegação: barra inferior, logo para o Início e calendário da Agenda",
     const mods = page.getByRole("navigation", { name: "Módulos" }).getByRole("link");
     await expect(mods).toHaveText(["Finanças", "Saúde", "Agenda", "Casa", "Igreja"]);
     await expect(mods.nth(2)).toHaveAttribute("href", "/agenda");
-    // Rótulos do arco inteiros dentro da área azul do cabeçalho (a onda não passa por cima)
+    // Arco do Início = ferradura com 3 visíveis; começa com a Agenda no centro (destacada), sem aba "atual"
+    const homeArc = page.getByRole("navigation", { name: "Módulos" });
+    await expect.poll(() => visibleArc(homeArc)).toEqual(["Saúde", "Agenda", "Casa"]);
+    await expectCentered(homeArc, "Agenda");
+    await expect(homeArc.locator("[aria-current]")).toHaveCount(0);
+    // Rótulos e bolhas visíveis inteiros dentro da tela e da área azul do cabeçalho (a onda não passa por cima)
     const headBox = (await page.locator("header").first().boundingBox())!;
-    for (const box of await mods.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().toJSON()))) {
+    const boxes = await mods.evaluateAll((els) =>
+      els.filter((e) => Number(getComputedStyle(e).opacity) > 0.5).map((e) => e.getBoundingClientRect().toJSON()),
+    );
+    expect(boxes).toHaveLength(3);
+    for (const box of boxes) {
       expect(box.left).toBeGreaterThanOrEqual(0);
       expect(box.right).toBeLessThanOrEqual(page.viewportSize()!.width);
-      expect(box.bottom).toBeLessThanOrEqual(headBox.y + headBox.height - 40);
+      expect(box.bottom).toBeLessThanOrEqual(headBox.y + headBox.height - 30);
     }
+    // Bolhas grandes (~64px)
+    const orb = (await homeArc.getByRole("link", { name: "Agenda" }).locator("span").first().boundingBox())!;
+    expect(orb.width).toBeGreaterThanOrEqual(62);
+    // Arrastar só desliza (não navega); o novo centro fica destacado
+    await dragArc(page, homeArc, -90);
+    await expect.poll(() => visibleArc(homeArc)).toEqual(["Agenda", "Casa", "Igreja"]);
+    await expectCentered(homeArc, "Casa");
+    await expect(page).toHaveURL(/\/inicio$/);
+    // Circular também no Início: depois de Igreja vem Finanças (sempre 3 visíveis)
+    await dragArc(page, homeArc, -90);
+    await expect.poll(() => visibleArc(homeArc)).toEqual(["Casa", "Igreja", "Finanças"]);
+    await expectCentered(homeArc, "Igreja");
+    await dragArc(page, homeArc, 90);
+    await expect.poll(() => visibleArc(homeArc)).toEqual(["Agenda", "Casa", "Igreja"]);
+    await expectCentered(homeArc, "Casa");
+    await expect(page).toHaveURL(/\/inicio$/);
+    // Tocar abre o módulo
+    await homeArc.getByRole("link", { name: "Casa" }).click();
+    await expect(page).toHaveURL(/\/casa$/);
+    await page.goto("/inicio");
     // Topo do celular: tema à esquerda, logo no centro, família à direita; sem botão de agenda
     await expect(page.getByRole("button", { name: "Agenda", exact: true })).toHaveCount(0);
     const theme = (await page.getByRole("button", { name: /Mudar para o modo/ }).boundingBox())!;

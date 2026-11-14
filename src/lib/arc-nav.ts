@@ -1,7 +1,7 @@
 /** Geometria do menu em ferradura (src/components/arc-nav.tsx). Funções puras, testadas em tests/unit/arc-nav.test.ts. */
 
 /** Distância, em px, entre dois botões vizinhos medida sobre o arco. */
-export const ARC_SPACING = 104;
+export const ARC_SPACING = 112;
 /** Raio do arco: quanto maior, mais suave a curva. */
 export const ARC_RADIUS = 380;
 /** Topo do botão central (o mais baixo do arco), em px. */
@@ -16,7 +16,7 @@ export function clampIndex(i: number, max: number) {
 /**
  * Posição de um botão a `offset` botões do centro.
  * x: deslocamento horizontal a partir do centro; y: topo do botão (pontas sobem);
- * opacity: some perto da borda do container de largura `width`.
+ * opacity: só o central e os dois vizinhos ficam visíveis; some também perto da borda do container de largura `width`.
  */
 export function arcPlacement(offset: number, width: number) {
   const theta = (offset * ARC_SPACING) / ARC_RADIUS;
@@ -24,8 +24,8 @@ export function arcPlacement(offset: number, width: number) {
   const y = ARC_BASE_Y - ARC_RADIUS * (1 - Math.cos(theta));
   const half = width / 2;
   const edge = Math.max(0, Math.min(1, (half + 30 - Math.abs(x)) / 60));
-  // No máximo dois botões para cada lado (em telas largas o arco subiria demais)
-  const far = Math.max(0, Math.min(1, 3 - Math.abs(offset)));
+  // Só 3 botões de cada vez (o do meio e um de cada lado); durante o arraste o próximo vai aparecendo
+  const far = Math.max(0, Math.min(1, 2 - Math.abs(offset)));
   const opacity = Math.abs(theta) >= Math.PI / 2 ? 0 : Math.min(edge, far);
   return { x, y, opacity };
 }
@@ -70,4 +70,21 @@ export function arcTrackPath(width: number, centerY: number, steps = 24) {
     pts.push(`${i === 0 ? "M" : "L"}${(x + half).toFixed(1)} ${y.toFixed(1)}`);
   }
   return pts.join(" ");
+}
+
+/* ---------- Modo circular (a ferradura dá a volta: depois da última aba vem a primeira) ---------- */
+
+/** Resto sempre positivo: índice dentro de 0..n-1. */
+export function wrapIndex(i: number, n: number) {
+  return ((i % n) + n) % n;
+}
+
+/** Distância circular de um botão `i` até a posição `pos`, no intervalo [-n/2, n/2): o caminho mais curto. */
+export function wrapOffset(i: number, pos: number, n: number) {
+  return wrapIndex(i - pos + n / 2, n) - n / 2;
+}
+
+/** Posição (contínua) mais próxima de `pos` onde o botão `i` fica no centro: o arco gira pelo lado mais curto. */
+export function nearestPosition(i: number, pos: number, n: number) {
+  return pos + wrapOffset(i, pos, n);
 }

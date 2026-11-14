@@ -78,12 +78,20 @@ test("finanças: contas, lançamento manual, importação OFX/CSV sem duplicar e
   await test.step("resumo de novembro/2026 confere", async () => {
     await page.goto("/financas?mes=2026-11");
     const main = page.locator("main");
-    // Saldo das contas começa escondido e abre pela setinha da ponta do cabeçalho
+    // Saldo das contas começa escondido e abre pela linha recolhível "Saldo das contas" (na página, não no cabeçalho)
     const seta = page.getByRole("button", { name: "Mostrar saldo das contas" });
+    // Já vem no HTML do servidor (não aparece só depois da hidratação empurrando o conteúdo)
+    const html = await (await page.request.get("/financas?mes=2026-11")).text();
+    expect(html).toContain('aria-label="Mostrar saldo das contas"');
+    await expect(seta).toHaveText("Saldo das contas");
     await expect(seta).toHaveAttribute("aria-expanded", "false");
+    // Fechado: o painel controlado pela linha fica inerte (fora do foco e da leitura)
+    const panel = page.locator(`[id="${await seta.getAttribute("aria-controls")}"]`);
+    await expect(panel).toHaveAttribute("inert", "");
     await seta.click();
     await expect(page.getByRole("button", { name: "Ocultar saldo das contas" })).toHaveAttribute("aria-expanded", "true");
     await expect(page.getByText("Disponível nas contas")).toBeVisible();
+    await expect(panel).not.toHaveAttribute("inert");
     // Conta: 1000 − 150,50 − 152,30 + 3500 − 89,90 = 4.107,30
     await expect(main).toContainText("R$ 4.107,30", { useInnerText: true });
     // Cartão: −45,90 −45,90 −23,10 +10 +500 (pagamento) = 395,10

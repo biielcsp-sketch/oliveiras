@@ -1,39 +1,20 @@
-import Link from "next/link";
-import { FileText, ListChecks, PawPrint, Phone, Receipt, ShoppingCart, UtensilsCrossed, Wrench, type LucideIcon } from "lucide-react";
+import { FileText, ListChecks, PawPrint, Phone, Receipt, ShoppingCart, UtensilsCrossed, Wrench } from "lucide-react";
 import { getAppContext } from "@/lib/data";
 import { createClient } from "@/lib/supabase/server";
 import { brDate, toSpDate } from "@/lib/agenda/dates";
-import { ModuleHeroCard } from "@/components/module-home";
+import { ModuleHeroCard, SummaryTile as Tile } from "@/components/module-home";
 import { choreBuckets, maintenanceStatus } from "@/lib/casa/view";
 import { homeBillCounts, homeBillsForMonth } from "@/lib/casa/contas";
 import { warrantyAlerts } from "@/lib/casa/docs";
 import { MEALS, MEAL_LABEL, type Meal } from "@/lib/casa/types";
 import { petSummary } from "@/lib/casa/pet";
+import { isPetAlert, petAlertRank, petTileLines } from "@/lib/summary-tile";
 import { getBillPayments, getBills, getOneOffBillsForMonth } from "@/lib/financas/planning-data";
 import { getConfirmedBillDocs } from "@/lib/financas/documentos/data";
 import { currentMonth } from "@/lib/financas/period";
 
 export const metadata = { title: "Casa" };
 
-function Tile({ href, icon: Icon, title, lines, testId }: { href: string; icon: LucideIcon; title: string; lines: string[]; testId: string }) {
-  return (
-    <Link href={href} className="block" data-testid={testId}>
-      <div className="glass-card flex h-full items-start gap-3.5 rounded-[20px] px-4 py-3.5 transition hover:brightness-105">
-        <span className="tic size-[42px]">
-          <Icon size={20} aria-hidden />
-        </span>
-        <div>
-          <p className="text-[15px] font-semibold tracking-tight">{title}</p>
-          {lines.map((l) => (
-            <p key={l} className="text-[13px] text-muted">
-              {l}
-            </p>
-          ))}
-        </div>
-      </div>
-    </Link>
-  );
-}
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
@@ -91,7 +72,7 @@ export default async function Page() {
         <h2 id="resumo-titulo" className="mb-2 text-[15.5px] font-semibold tracking-tight">
           Resumo
         </h2>
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid auto-rows-fr gap-3 md:grid-cols-2">
       <Tile
         href="/casa/compras"
         icon={ShoppingCart}
@@ -99,7 +80,7 @@ export default async function Page() {
         testId="resumo-compras"
         lines={[shopping.count ? plural(shopping.count, "item para comprar", "itens para comprar") : "Nada para comprar."]}
       />
-      <Tile href="/casa/pet" icon={PawPrint} title="Pet" testId="resumo-pet" lines={pet} />
+      <Tile href="/casa/pet" icon={PawPrint} title="Pet" testId="resumo-pet" lines={petTileLines(pet)} isAlert={isPetAlert} alertRank={petAlertRank} />
       <Tile
         href="/casa/tarefas"
         icon={ListChecks}

@@ -1,33 +1,12 @@
-import Link from "next/link";
-import { BookHeart, GraduationCap, HandHeart, Target, Users, type LucideIcon } from "lucide-react";
+import { BookHeart, GraduationCap, HandHeart, Target, Users } from "lucide-react";
 import { getAppContext } from "@/lib/data";
 import { createClient } from "@/lib/supabase/server";
 import { brDate } from "@/lib/agenda/dates";
 import { todaySP } from "@/lib/financas/today";
-import { ModuleHeroCard } from "@/components/module-home";
+import { ModuleHeroCard, SummaryTile as Tile } from "@/components/module-home";
 
 export const metadata = { title: "Igreja" };
 
-function Tile({ href, icon: Icon, title, lines, testId }: { href: string; icon: LucideIcon; title: string; lines: string[]; testId: string }) {
-  // min-w-0: sem ele o item da grade cresce até a largura do texto com truncate e a página rola para os lados
-  return (
-    <Link href={href} className="block min-w-0" data-testid={testId}>
-      <div className="glass-card flex h-full items-start gap-3.5 rounded-[20px] px-4 py-3.5 transition hover:brightness-105">
-        <span className="tic size-[42px]">
-          <Icon size={20} aria-hidden />
-        </span>
-        <div className="min-w-0">
-          <p className="text-[15px] font-semibold tracking-tight">{title}</p>
-          {lines.map((l) => (
-            <p key={l} className="truncate text-[13px] text-muted">
-              {l}
-            </p>
-          ))}
-        </div>
-      </div>
-    </Link>
-  );
-}
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
@@ -59,7 +38,7 @@ export default async function Page() {
         <h2 id="resumo-titulo" className="mb-2 text-[15.5px] font-semibold tracking-tight">
           Resumo
         </h2>
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid auto-rows-fr gap-3 md:grid-cols-2">
       <Tile
         href="/ministerio/devocional/oracoes"
         icon={HandHeart}

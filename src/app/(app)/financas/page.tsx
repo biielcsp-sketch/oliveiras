@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Plus, Upload, Wallet } from "lucide-react";
 import { Card, EmptyState, IncompleteNotice, LinkButton, SectionHeader, SeeAll, Tag } from "@/components/ui";
-import { HeroDrawer } from "@/components/hero-drawer";
+import { HeroDrawer, HeroDrawerButton } from "@/components/hero-drawer";
 import { MonthBalance } from "@/components/month-balance";
 import { BlockTitle } from "@/components/module-home";
 import { donutSlices } from "@/lib/financas/donut";
@@ -80,28 +80,31 @@ export default async function FinancasPage({ searchParams }: { searchParams: Pro
 
   return (
     <>
-      {/* Saldo das contas: escondido; abre pela setinha da ponta do cabeçalho */}
-      <HeroDrawer>
-        <div className="pb-6">
-          <Card tone="hero">
-            <div className="flex items-start justify-between">
-              <span className="grid size-12 place-items-center rounded-full border border-white/25">
-                <Wallet size={22} aria-hidden />
-              </span>
-              {cards.length > 0 && <Tag tone="info">{cards.length === 1 ? "1 cartão" : `${cards.length} cartões`}</Tag>}
-            </div>
-            <p className="mt-4 text-[15px] font-medium">Disponível nas contas</p>
-            <p className="mt-1 text-[32px] font-bold tracking-tight tabular-nums">{formatBRL(available)}</p>
-            {cards.length > 0 && (
-              <p className="mt-1 text-[13px] text-info">
-                Cartões: <span className="tabular-nums">{formatBRL(cardDebt)}</span>
-              </p>
-            )}
-          </Card>
-        </div>
-      </HeroDrawer>
-
       <div className="flex flex-col gap-6">
+        {/* Saldo das contas: escondido; abre pela linha recolhível "Saldo das contas" */}
+        <div>
+          <HeroDrawerButton label="saldo das contas" title="Saldo das contas" />
+          <HeroDrawer>
+            <div className="pt-3">
+              <Card tone="hero">
+                <div className="flex items-start justify-between">
+                  <span className="grid size-12 place-items-center rounded-full border border-white/25">
+                    <Wallet size={22} aria-hidden />
+                  </span>
+                  {cards.length > 0 && <Tag tone="info">{cards.length === 1 ? "1 cartão" : `${cards.length} cartões`}</Tag>}
+                </div>
+                <p className="mt-4 text-[15px] font-medium">Disponível nas contas</p>
+                <p className="mt-1 text-[32px] font-bold tracking-tight tabular-nums">{formatBRL(available)}</p>
+                {cards.length > 0 && (
+                  <p className="mt-1 text-[13px] text-info">
+                    Cartões: <span className="tabular-nums">{formatBRL(cardDebt)}</span>
+                  </p>
+                )}
+              </Card>
+            </div>
+          </HeroDrawer>
+        </div>
+
         <MonthBalance
           tone="hero"
           result={formatBRL(result)}

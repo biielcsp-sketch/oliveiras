@@ -205,6 +205,10 @@ test("Pet: Moisés com vacina, veterinário, cuidados, peso e ração (isolado d
     await expect(tile).toContainText("Próxima dose: Vacina V10 - Reforço (em 3 dias)");
     await expect(tile).toContainText("0 cuidados vencidos");
     await expect(tile).toContainText("Ração acabando");
+    // Alerta numa linha própria (a 1ª), sem corte: a próxima dose longa vem depois e é que corta
+    const alert = tile.locator('[data-alert="true"]');
+    await expect(alert).toHaveText("Ração acabando");
+    expect(await alert.evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(true);
   });
 
   await test.step("dose nova da mesma vacina: a antiga vira histórico e deixa de aparecer como atrasada", async () => {
@@ -224,6 +228,36 @@ test("Pet: Moisés com vacina, veterinário, cuidados, peso e ração (isolado d
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText("Atrasada");
     await expect(a.getByRole("region", { name: "Próximas doses em destaque" })).toContainText("Vacina Antirrábica: atrasada há 35 dias");
+    // Um cuidado vencido também, para ter os três alertas juntos (cuidado vencido, ração acabando e dose atrasada)
+    await a.getByRole("region", { name: "Cuidados" }).getByRole("button", { name: "Novo cuidado" }).click();
+    const nc = a.getByRole("dialog", { name: "Novo cuidado" });
+    await nc.getByLabel("Cuidado", { exact: true }).fill("Vermífugo");
+    await nc.getByLabel("A cada").fill("30");
+    await nc.getByLabel("Última vez feita").fill(addDays(today, -40));
+    await nc.getByRole("button", { name: "Salvar cuidado" }).click();
+    await expect(status(a, "Cuidado salvo.")).toBeVisible();
+    // Resumo da Casa: alertas curtos inteiros na frente; a dose atrasada (status antes do nome) por último
+    await a.goto("/casa");
+    const petAlert = a.getByTestId("resumo-pet").locator('[data-alert="true"]');
+    await expect(petAlert).toContainText("1 cuidado vencido · Ração acabando · Dose atrasada há 35 dias: Vacina Antirrábica");
+    expect((await petAlert.innerText()).startsWith("1 cuidado vencido · Ração acabando")).toBe(true);
+    // "1 cuidado vencido" e "Ração acabando" ficam inteiros na área visível (o corte, se houver, é no fim da dose)
+    const box = (await petAlert.boundingBox())!;
+    const visible = await petAlert.evaluate((el) => {
+      const r = document.createRange();
+      const node = el.firstChild!;
+      const txt = node.textContent!;
+      const end = txt.indexOf("Ração acabando") + "Ração acabando".length;
+      r.setStart(node, 0);
+      r.setEnd(node, end);
+      const rects = [...r.getClientRects()];
+      return rects.map((x) => ({ bottom: x.bottom, right: x.right }));
+    });
+    for (const rc of visible) {
+      expect(rc.bottom).toBeLessThanOrEqual(box.y + box.height + 0.5);
+      expect(rc.right).toBeLessThanOrEqual(box.x + box.width + 0.5);
+    }
+    await a.goto("/casa/pet");
 
     await add("antirrabica", today, addDays(today, 365));
     await expect(rows).toHaveCount(2);

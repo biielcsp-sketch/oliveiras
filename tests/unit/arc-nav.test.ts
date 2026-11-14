@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ARC_BASE_Y, activeRouteIndex, arcPlacement, clampIndex, dragToPosition, rootIndex } from "../../src/lib/arc-nav";
+import { ARC_BASE_Y, activeRouteIndex, arcPlacement, clampIndex, dragToPosition, nearestPosition, rootIndex, wrapIndex, wrapOffset } from "../../src/lib/arc-nav";
 
 describe("menu em ferradura", () => {
   it("botão central fica no ponto mais baixo e as pontas sobem simetricamente", () => {
@@ -14,19 +14,26 @@ describe("menu em ferradura", () => {
     expect(arcPlacement(2, 390).y).toBeLessThan(r.y);
   });
 
-  it("no celular mostra o central e os vizinhos inteiros; os seguintes somem na borda", () => {
-    expect(arcPlacement(0, 390).opacity).toBe(1);
-    expect(arcPlacement(1, 390).opacity).toBe(1);
-    const edge = arcPlacement(2, 390).opacity;
-    expect(edge).toBeGreaterThan(0);
-    expect(edge).toBeLessThan(1);
-    expect(arcPlacement(3, 390).opacity).toBe(0);
+  it("mostra só 3 botões: o central e um vizinho de cada lado, inteiros; os seguintes ficam invisíveis", () => {
+    for (const w of [360, 390, 700]) {
+      expect(arcPlacement(0, w).opacity).toBe(1);
+      expect(arcPlacement(1, w).opacity).toBe(1);
+      expect(arcPlacement(-1, w).opacity).toBe(1);
+      expect(arcPlacement(2, w).opacity).toBe(0);
+      expect(arcPlacement(-2, w).opacity).toBe(0);
+      expect(arcPlacement(3, w).opacity).toBe(0);
+    }
   });
 
-  it("em tela larga mostra no máximo dois botões para cada lado", () => {
-    expect(arcPlacement(2, 700).opacity).toBe(1);
-    expect(arcPlacement(3, 700).opacity).toBe(0);
-    expect(arcPlacement(-3, 700).opacity).toBe(0);
+  it("no celular os vizinhos cabem inteiros na tela (bolha de 96px de largura de item)", () => {
+    const x = arcPlacement(1, 360).x;
+    expect(180 + x + 48).toBeLessThanOrEqual(360);
+  });
+
+  it("durante o arraste o próximo botão aparece aos poucos", () => {
+    const o = arcPlacement(1.5, 390).opacity;
+    expect(o).toBeGreaterThan(0);
+    expect(o).toBeLessThan(1);
   });
 
   it("arrastar para a esquerda avança e há resistência nas pontas", () => {
@@ -58,4 +65,27 @@ describe("menu em ferradura", () => {
     // Fora das abas, o centro volta para o Resumo (raiz), não para a primeira da lista
     expect(rootIndex(tabs)).toBe(2);
   });
+
+  it("circular: a primeira aba tem a última como vizinha à esquerda (sempre 3 visíveis, inclusive nas pontas)", () => {
+    const n = 6; // Saúde
+    const visible = (pos: number) =>
+      Array.from({ length: n }, (_, i) => i).filter((i) => arcPlacement(wrapOffset(i, pos, n), 390).opacity > 0.5);
+    expect(visible(0)).toEqual([0, 1, 5]); // Carteirinhas no meio, Vacinas à esquerda, Consultas à direita
+    expect(wrapOffset(5, 0, n)).toBe(-1);
+    expect(visible(5)).toEqual([0, 4, 5]); // última aba: Medicamentos, Vacinas, Carteirinhas
+    expect(wrapOffset(0, 5, n)).toBe(1);
+    for (const n2 of [4, 5, 6, 9]) for (let p = 0; p < n2; p++) expect(Array.from({ length: n2 }, (_, i) => arcPlacement(wrapOffset(i, p, n2), 390).opacity > 0.5).filter(Boolean)).toHaveLength(3);
+  });
+
+  it("circular: índice dá a volta e o arco gira pelo lado mais curto", () => {
+    expect(wrapIndex(-1, 6)).toBe(5);
+    expect(wrapIndex(6, 6)).toBe(0);
+    expect(wrapIndex(13, 6)).toBe(1);
+    // da primeira (pos 0) para a última: um passo para a esquerda, não 5 para a direita
+    expect(nearestPosition(5, 0, 6)).toBe(-1);
+    // de uma posição já "girada" (pos 6 = aba 0) para a aba 1: um passo
+    expect(nearestPosition(1, 6, 6)).toBe(7);
+    expect(nearestPosition(3, 3, 6)).toBe(3);
+  });
 });
+

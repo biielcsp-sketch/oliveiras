@@ -10,6 +10,7 @@ import { LIMITS } from "@/lib/saude/input";
 import { formatSize } from "@/lib/saude/files";
 import { deleteCard, saveCard, type SaudeState } from "../actions";
 import { ConfirmDelete, FileLink, type Person } from "./shared";
+import { CardImage } from "./card-image";
 
 export type CardVM = {
   id: string;
@@ -115,7 +116,11 @@ export function CardsView({ people, cards, defaultMember }: { people: Person[]; 
                     {c.notes && <p className="mt-2 whitespace-pre-wrap text-sm">{c.notes}</p>}
                   </div>
                 </div>
-                <FileLink href={`/saude/arquivo/carteirinhas/${c.id}`} mime={c.mime} label={`Carteirinha ${c.operator} de ${p.name}`} preview />
+                {c.mime === "image/jpeg" ? (
+                  <CardImage src={`/saude/arquivo/carteirinhas/${c.id}`} alt={`Carteirinha ${c.operator} de ${p.name}`} />
+                ) : (
+                  <FileLink href={`/saude/arquivo/carteirinhas/${c.id}`} mime={c.mime} label={`Carteirinha ${c.operator} de ${p.name}`} />
+                )}
                 <p className="mt-1 text-xs text-muted">{c.mime === "application/pdf" ? "PDF" : "JPG"} · {formatSize(c.size)}</p>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <Button type="button" variant="ghost" className="h-11 px-3 text-sm" onClick={() => setModal({ card: c })}>
