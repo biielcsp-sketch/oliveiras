@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useState, useSyncExternalStore } from "react";
+import Image from "next/image";
 import { Share } from "lucide-react";
 import { Button } from "@/components/ui";
 import {
@@ -12,7 +13,6 @@ import {
   parseDismissedUntil,
 } from "@/lib/install-prompt";
 import { consumeInstallPrompt, getInstallPrompt, subscribeInstall, wasAppInstalled } from "@/lib/install-events";
-import { OliSphere } from "@/components/oli/oli-sphere";
 
 type Env = { iosSafari: boolean; standalone: boolean; dismissedUntil: number | null; now: number };
 
@@ -102,9 +102,7 @@ export function InstallPrompt() {
     >
       {/* Fundo sólido (não vidro): fica por cima do conteúdo e precisa ser legível. */}
       <div className="flex gap-4 rounded-[24px] border border-line bg-surface-solid p-4 shadow-card">
-        <div className="grid size-14 shrink-0 place-items-center rounded-full bg-accent-soft">
-          <OliSphere size={46} />
-        </div>
+        <Image src="/icons/icon-192.png?v=2" alt="" width={56} height={56} unoptimized className="size-14 shrink-0 rounded-[16px]" />
         <div className="min-w-0 flex-1">
           <h2 id={titleId} className="text-[17px] font-semibold tracking-tight">
             Instalar o Oli
