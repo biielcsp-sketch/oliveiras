@@ -246,17 +246,30 @@ test("Agenda: conectar Google, sincronizar nas duas vias e ver a agenda do cônj
     await p.getByRole("heading", { name: "Contas Google" }).evaluate((e) => e.scrollIntoView({ block: "start" }));
   });
 
-  await test.step("calendário do topo: pontinhos e lista do dia", async () => {
-    await page.goto("/agenda");
+  await test.step("Agenda no arco do Início (celular) abre a agenda com o evento", async () => {
+    await page.goto("/inicio");
+    await expect(page.getByRole("button", { name: "Agenda", exact: true })).toHaveCount(0);
+    await page.getByRole("navigation", { name: "Módulos" }).getByRole("link", { name: "Agenda" }).click();
+    await expect(page).toHaveURL(/\/agenda$/);
+    await expect(page.getByText("Culto de domingo").first()).toBeVisible();
+  });
+
+  await test.step("calendário da barra lateral (desktop): pontinhos e lista do dia", async () => {
+    const mobile = page.viewportSize()!;
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/inicio");
     await page.getByRole("button", { name: "Agenda", exact: true }).click();
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByTestId("ponto-evento").first()).toBeVisible();
     await expect(dialog.getByRole("list", { name: "Eventos do dia" })).toContainText("Culto de domingo");
     await expect(dialog.getByRole("link", { name: "Abrir agenda" })).toBeVisible();
     await page.keyboard.press("Escape");
+    await page.setViewportSize(mobile);
   });
 
   await shot(browser, page.context(), "calendario-topo-eventos-claro.png", "/agenda", false, async (p) => {
+    // O calendário do topo fica na barra lateral do desktop
+    await p.setViewportSize({ width: 1280, height: 800 });
     await p.getByRole("button", { name: "Agenda", exact: true }).click();
     await expect(p.getByRole("list", { name: "Eventos do dia" })).toBeVisible();
   });

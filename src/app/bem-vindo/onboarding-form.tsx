@@ -23,7 +23,7 @@ export function OnboardingForm() {
             key={m}
             type="button"
             onClick={() => setMode(m)}
-            className={clsx("h-11 rounded-full transition", mode === m ? "bg-surface-solid font-medium text-ink shadow-soft" : "text-muted")}
+            className={clsx("h-11 rounded-full transition", mode === m ? "bg-surface-solid font-semibold text-deep shadow-soft" : "font-medium text-muted")}
           >
             {label}
           </button>

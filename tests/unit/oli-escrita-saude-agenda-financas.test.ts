@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
@@ -690,6 +690,14 @@ describe("Oli escrita (etapa 3): servidor, recusas por consulta que falha", () =
 });
 
 describe("Oli escrita (etapa 3): servidor, gravação pelas actions das telas", () => {
+  // "Pago em" e o mês do orçamento usam o dia de hoje (todaySP): data fixa para não depender do dia em que roda
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-13T15:00:00Z"));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
   beforeEach(() => {
     calls.list = [];
     calls.redirect = false;
@@ -812,6 +820,14 @@ describe("Oli escrita (etapa 3): servidor, gravação pelas actions das telas", 
 });
 
 describe("Oli escrita (etapa 3): revisão, delete que falha e redirect fora de Finanças", () => {
+  // "Pago em" e o mês do orçamento usam o dia de hoje (todaySP): data fixa para não depender do dia em que roda
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-13T15:00:00Z"));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
   beforeEach(() => {
     calls.list = [];
     calls.redirect = false;

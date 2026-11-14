@@ -53,13 +53,13 @@ export function PurposesView({ items }: { items: Item[] }) {
   const { notice, setNotice, error, pending, run } = useRunner();
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-col items-start gap-3">
         <div>
           <h2 className="text-xl font-semibold tracking-tight">Propósitos</h2>
           <p className="text-sm text-muted">Propósitos em que participo ou vou começar.</p>
         </div>
-        <Button onClick={() => setModal({})}>
-          <Plus size={18} aria-hidden /> Novo propósito
+        <Button size="sm" onClick={() => setModal({})}>
+          <Plus size={15} aria-hidden /> Novo propósito
         </Button>
       </div>
       <Feedback notice={notice} error={error} />

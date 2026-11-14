@@ -215,8 +215,22 @@ test("Igreja: devocional pessoal com compartilhamento, Carisma com Google Drive 
     await page.getByLabel("Escolher arquivo da aula").setInputFiles({ name: "apostila.pdf", mimeType: "application/pdf", buffer: PDF });
     await expect(page.getByRole("status").filter({ hasText: "Arquivo guardado no seu Google Drive." })).toBeVisible();
     const card = page.getByTestId("arquivo-aula").filter({ hasText: "apostila.pdf" });
+    // Lista compacta: o arquivo ocupa uma linha só; as ações ficam no "⋯"
+    expect((await card.boundingBox())!.height).toBeLessThanOrEqual(64);
+    await expect(card.getByRole("link", { name: /Abrir no Drive/ })).toHaveCount(0);
+    const acoes = card.getByRole("button", { name: "Ações de apostila.pdf" });
+    await expect(acoes).toHaveAttribute("aria-expanded", "false");
+    await acoes.click();
+    await expect(acoes).toHaveAttribute("aria-expanded", "true");
     await expect(card.getByRole("link", { name: /Abrir no Drive/ })).toHaveAttribute("href", /^https:\/\/drive\.google\.com\/file\/d\/[\w-]+\/view$/);
     await expect(card.getByRole("link", { name: /Abrir no Drive/ })).toHaveAttribute("target", "_blank");
+    for (const n of ["Renomear", "Apagar"]) await expect(card.getByRole("button", { name: n })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(acoes).toHaveAttribute("aria-expanded", "false");
+    await expect(acoes).toBeFocused();
+    // Arquivos ficam no fim da tela (depois do resumo da aula)
+    const resumoY = (await page.getByRole("region", { name: "Resumo da aula" }).boundingBox())!.y;
+    expect((await page.getByRole("region", { name: "Arquivos da aula" }).boundingBox())!.y).toBeGreaterThan(resumoY);
     // O arquivo foi do navegador direto para o Drive (simulado), não para o servidor do app.
     expect(puts.length).toBe(1);
     expect(puts[0]).toMatch(/^http:\/\/127\.0\.0\.1:4040\/upload\/drive\/v3\/files\?uploadType=resumable&upload_id=/);
@@ -247,6 +261,7 @@ test("Igreja: devocional pessoal com compartilhamento, Carisma com Google Drive 
 
   await test.step("arquivos em lista: renomear muda no app e no Drive e mantém a extensão", async () => {
     const item = page.getByRole("list", { name: "Lista de arquivos" }).getByTestId("arquivo-aula").filter({ hasText: "apostila.pdf" });
+    await item.getByRole("button", { name: "Ações de apostila.pdf" }).click();
     await item.getByRole("button", { name: "Renomear" }).click();
     const d = page.getByRole("dialog", { name: "Renomear arquivo" });
     await expect(d.getByLabel("Novo nome")).toHaveValue("apostila");
@@ -290,7 +305,9 @@ test("Igreja: devocional pessoal com compartilhamento, Carisma com Google Drive 
     await expect(karen.getByTestId("aula").filter({ hasText: "Introdução à Cristologia" })).toContainText("compartilhado por Gabriel");
     await karen.goto(lessonUrl);
     await expect(karen.getByText("compartilhado por Gabriel")).toBeVisible();
+    await karen.getByTestId("arquivo-aula").getByRole("button", { name: /^Ações de / }).click();
     await expect(karen.getByTestId("arquivo-aula").getByRole("link", { name: /Abrir no Drive/ })).toBeVisible();
+    await expect(karen.getByTestId("arquivo-aula").getByRole("button", { name: "Renomear" })).toHaveCount(0);
     await expect(karen.getByRole("button", { name: "Editar aula" })).toHaveCount(0);
     await expect(karen.getByRole("button", { name: "Resumir aula" })).toHaveCount(0);
     await expect(karen.getByLabel("Escolher arquivo da aula")).toHaveCount(0);

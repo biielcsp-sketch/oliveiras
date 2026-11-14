@@ -111,7 +111,7 @@ export function ImportWizard({ accounts }: { accounts: Account[] }) {
                     <p className="truncate">{r.description}</p>
                     <p className="text-[12px] text-muted">{r.duplicate ? "já importado" : (r.category ?? "sem categoria")}</p>
                   </div>
-                  <span className={clsx("tabular-nums", r.amount > 0 && "text-olive")}>{formatBRL(r.amount)}</span>
+                  <span className={clsx("tabular-nums", r.amount > 0 && "text-success")}>{formatBRL(r.amount)}</span>
                 </li>
               ))}
             </ul>

@@ -48,9 +48,9 @@ export function PasskeySignIn({ prominent = false, autoPrompt = false }: { promi
     <div className="flex flex-col gap-3">
       {!prominent && (
         <div className="flex items-center gap-3 ls-soft text-[13px]" aria-hidden>
-          <span className="h-px flex-1 bg-white/25" />
+          <span className="h-px flex-1 bg-line" />
           ou
-          <span className="h-px flex-1 bg-white/25" />
+          <span className="h-px flex-1 bg-line" />
         </div>
       )}
       <button

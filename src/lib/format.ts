@@ -15,3 +15,17 @@ export function greetingFor(hour: number) {
   if (hour < 18) return "Boa tarde";
   return "Boa noite";
 }
+
+/** Primeiro nome para saudação ("Gabriel Rodrigues" → "Gabriel"); vazio sem nome. */
+export function firstName(name: string | null | undefined) {
+  return name?.trim().split(/\s+/)[0] ?? "";
+}
+
+/** Iniciais para avatar ("Gabriel Oliveira Rodrigues" → "GR"); "?" sem nome. */
+export function initials(name: string | null | undefined) {
+  const parts = (name ?? "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  const first = parts[0][0];
+  const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
+  return (first + last).toLocaleUpperCase("pt-BR");
+}

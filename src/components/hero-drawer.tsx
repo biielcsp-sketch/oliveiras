@@ -21,12 +21,12 @@ type Ctx = {
 };
 const HeroDrawerCtx = createContext<Ctx | null>(null);
 
-/** Liga a setinha da ponta do cabeçalho (ModuleHero) a um conteúdo escondido da página (HeroDrawer). */
+/** Liga a linha recolhível (HeroDrawerButton) a um conteúdo escondido da página (HeroDrawer). */
 export function HeroDrawerProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [hasPanel, setHasPanelState] = useState(false);
   const panelId = useId();
-  // Ao sair da tela que tem o conteúdo, ele volta fechado (e a setinha volta a apontar para baixo)
+  // Ao sair da tela que tem o conteúdo, ele volta fechado
   const setHasPanel = useCallback((v: boolean) => {
     setHasPanelState(v);
     if (!v) setOpen(false);
@@ -46,33 +46,16 @@ export function HeroDrawerProvider({ children }: { children: ReactNode }) {
   );
 }
 
-const arrowCls =
-  "glass-orb absolute bottom-[-18px] left-1/2 grid size-12 -translate-x-1/2 place-items-center rounded-full text-white";
-
 /**
- * Setinha da ponta em V. Quando a página tem um HeroDrawer, vira botão que mostra/esconde esse conteúdo;
- * nas demais telas é só decorativa.
+ * Linha recolhível (card de vidro) que mostra/esconde o conteúdo reservado da página (HeroDrawer),
+ * como o saldo das contas nas Finanças. `title`: texto visível; `label`: completa o rótulo acessível
+ * ("Mostrar"/"Ocultar" + label), que contém o texto visível. Use junto com o HeroDrawer, na mesma página.
  */
-export function HeroDrawerButton({ label }: { label: string }) {
+export function HeroDrawerButton({ label, title }: { label: string; title: string }) {
   const ctx = useContext(HeroDrawerCtx);
-  const icon = (
-    <ChevronDown
-      size={20}
-      strokeWidth={2}
-      aria-hidden
-      className={clsx(
-        "transition-transform duration-300",
-        ctx?.hasPanel && ctx.open && "rotate-180",
-      )}
-    />
-  );
-  if (!ctx?.hasPanel) {
-    return (
-      <span aria-hidden="true" className={arrowCls}>
-        {icon}
-      </span>
-    );
-  }
+  // Renderiza já no servidor (sem esperar o HeroDrawer montar): botão e painel ficam na mesma página, e assim a
+  // linha não aparece depois da hidratação empurrando o conteúdo (CLS).
+  if (!ctx) return null;
   return (
     <button
       type="button"
@@ -80,14 +63,15 @@ export function HeroDrawerButton({ label }: { label: string }) {
       aria-expanded={ctx.open}
       aria-controls={ctx.panelId}
       aria-label={`${ctx.open ? "Ocultar" : "Mostrar"} ${label}`}
-      className={clsx(arrowCls, "transition active:scale-95")}
+      className="glass-card flex min-h-12 w-full items-center justify-between gap-3 rounded-[20px] px-4 text-[14.5px] font-semibold text-ink transition active:scale-[0.99]"
     >
-      {icon}
+      {title}
+      <ChevronDown size={18} strokeWidth={2} aria-hidden className={clsx("text-muted transition-transform duration-300", ctx.open && "rotate-180")} />
     </button>
   );
 }
 
-/** Conteúdo escondido que abre pela setinha do cabeçalho (fechado ao entrar na tela). */
+/** Conteúdo escondido que abre pela linha recolhível (HeroDrawerButton), fechado ao entrar na tela. */
 export function HeroDrawer({ children }: { children: ReactNode }) {
   const ctx = useContext(HeroDrawerCtx);
   const setHasPanel = ctx?.setHasPanel;

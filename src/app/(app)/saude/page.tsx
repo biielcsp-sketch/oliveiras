@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { CARD_COLS, type HealthCard } from "@/lib/saude/types";
 import type { OfflineCard } from "@/lib/saude/offline-cards";
 import { OfflineCardsSync } from "@/components/offline-cards";
+import { ModuleHeroCard } from "@/components/module-home";
 import { CardsView, type CardVM } from "./_components/cards-view";
 
 export const metadata = { title: "Saúde" };
@@ -36,10 +37,12 @@ export default async function Page() {
     updatedAt: c.updated_at,
   }));
 
+  // Raiz da Saúde = aba Carteirinhas da ferradura (como antes), com o card de destaque no topo.
   return (
-    <>
+    <div className="flex flex-col gap-6">
+      <ModuleHeroCard title="Cuide do que mais importa" subtitle="Sua saúde em dia, sempre." image="/ilustracoes/saude.webp" />
       <OfflineCardsSync userId={ctx.user.id} cards={offline} />
       <CardsView people={people} cards={cards} defaultMember={ctx.me?.id ?? people[0]?.id ?? ""} />
-    </>
+    </div>
   );
 }

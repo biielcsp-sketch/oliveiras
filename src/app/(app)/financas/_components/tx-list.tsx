@@ -22,10 +22,10 @@ export function TxList({
         const transfer = cat?.kind === "transferencia";
         return (
           <li key={t.id}>
-            <Link href={`/financas/lancamentos/${t.id}`} className="-mx-2 flex items-center gap-3 rounded-2xl px-2 py-3 transition hover:bg-surface-2/60">
+            <Link href={`/financas/lancamentos/${t.id}`} className="-mx-2 flex items-center gap-3 rounded-2xl px-2 py-2.5 transition hover:bg-accent-soft/60">
               <span className="w-11 shrink-0 text-[13px] tabular-nums text-muted">{shortDate(t.date)}</span>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[15px]">{t.description}</p>
+                <p className="truncate text-[14px] font-semibold">{t.description}</p>
                 <p className="flex items-center gap-1.5 truncate text-[12px] text-muted">
                   <span
                     className="inline-block size-2 shrink-0 rounded-full"
@@ -36,8 +36,8 @@ export function TxList({
               </div>
               <span
                 className={clsx(
-                  "shrink-0 text-[15px] font-medium tabular-nums",
-                  transfer ? "text-muted" : t.amount > 0 ? "text-olive" : "text-ink",
+                  "shrink-0 text-[14px] font-bold tabular-nums",
+                  transfer ? "text-muted" : t.amount > 0 ? "text-success" : "text-danger",
                 )}
               >
                 {formatBRL(t.amount)}

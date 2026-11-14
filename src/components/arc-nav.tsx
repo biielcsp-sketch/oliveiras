@@ -4,16 +4,22 @@ import Link from "next/link";
 import clsx from "clsx";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import type { LucideIcon } from "lucide-react";
-import { arcPlacement, clampIndex, dragToPosition } from "@/lib/arc-nav";
+import { DRAG_PX_PER_ITEM, arcPlacement, arcTrackPath, clampIndex, dragToPosition, nearestPosition, wrapIndex, wrapOffset } from "@/lib/arc-nav";
 
 export type ArcItem = { key: string; label: string; icon: LucideIcon; href?: string };
 
 const ITEM_W = 96;
+/** Centro vertical da bolha (64px) dentro do item: pt-1 (4px) + metade da bolha. */
+const ORB_CENTER_Y = 4 + 32;
 
 /**
  * Menu em ferradura: botões redondos num arco que desliza para os lados.
  * O botão no centro (ponto mais baixo do arco) é o selecionado e ganha o contorno.
  * Ao soltar o arraste, o centralizado vira o ativo (`onChange`) sem precisar tocar nele.
+ * Mostra sempre 3 botões (o do meio e um de cada lado): com 4 ou mais abas o arco é circular (antes da primeira vem
+ * a última e vice-versa), sem clones — cada aba aparece uma vez no DOM, na ordem real (leitores de tela e Tab).
+ * Visual: bolhas de vidro fosco (glass-orb).
+ * `slideOnly` (atalhos do Início): arrastar só desliza e centraliza; abrir é pelo toque (link). Começa no `fallback`.
  */
 export function ArcNav({
   items,
@@ -21,16 +27,25 @@ export function ArcNav({
   onChange,
   label,
   fallback = 0,
+  slideOnly = false,
+  onCenter,
+  className,
 }: {
   items: ArcItem[];
   active: number;
-  onChange: (index: number) => void;
+  onChange?: (index: number) => void;
   label: string;
-  /** Botão do centro quando `active` é -1 (página fora das abas). */
+  /** Botão do centro quando `active` é -1 (página fora das abas) ou, com `slideOnly`, o inicial. */
   fallback?: number;
+  slideOnly?: boolean;
+  /** Com `slideOnly`: avisa qual botão parou no centro (ao soltar o arraste ou pelas setas do teclado). */
+  onCenter?: (index: number) => void;
+  className?: string;
 }) {
+  // Atalhos (slideOnly): o centro é o último onde a pessoa deixou o arco.
+  const [rest, setRest] = useState(fallback);
   // -1: página fora das abas; centraliza o `fallback`, sem marcar nenhuma como atual
-  const home = active >= 0 ? active : fallback;
+  const home = slideOnly ? rest : active >= 0 ? active : fallback;
   const wrapRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLElement | null)[]>([]);
   const pos = useRef(home);
@@ -40,19 +55,26 @@ export function ArcNav({
   const drag = useRef<{ x: number; start: number; moved: boolean } | null>(null);
   const suppressClick = useRef(false);
   const [centered, setCentered] = useState(home);
+  const [trackW, setTrackW] = useState(0);
   const max = items.length - 1;
+  const n = items.length;
+  const circular = n >= 4;
+  /** Índice do botão no centro para uma posição contínua. */
+  const indexAt = useCallback((p: number) => (circular ? wrapIndex(Math.round(p), n) : clampIndex(Math.round(p), max)), [circular, n, max]);
+  /** Posição alvo para centralizar o botão `i` (no circular, pelo lado mais curto). */
+  const targetFor = useCallback((i: number) => (circular ? nearestPosition(i, pos.current, n) : i), [circular, n]);
 
   const layout = useCallback(() => {
     const w = width.current;
     itemRefs.current.forEach((el, i) => {
       if (!el) return;
-      const p = arcPlacement(i - pos.current, w);
+      const p = arcPlacement(circular ? wrapOffset(i, pos.current, n) : i - pos.current, w);
       el.style.transform = `translate(${w / 2 + p.x - ITEM_W / 2}px, ${p.y}px)`;
       el.style.opacity = String(p.opacity);
       el.style.pointerEvents = p.opacity < 0.3 ? "none" : "auto";
     });
-    setCentered(clampIndex(Math.round(pos.current), max));
-  }, [max]);
+    setCentered(indexAt(pos.current));
+  }, [circular, n, indexAt]);
 
   const animate = useCallback(() => {
     cancelAnimationFrame(raf.current);
@@ -73,6 +95,7 @@ export function ArcNav({
     if (!el) return;
     const ro = new ResizeObserver(() => {
       width.current = el.clientWidth;
+      setTrackW(el.clientWidth);
       layout();
     });
     ro.observe(el);
@@ -85,9 +108,9 @@ export function ArcNav({
   // Aba ativa mudou (rota ou toque): leva o botão dela ao centro
   useEffect(() => {
     if (drag.current) return;
-    target.current = home;
+    target.current = targetFor(home);
     animate();
-  }, [home, animate]);
+  }, [home, animate, targetFor]);
 
   function onPointerDown(e: PointerEvent) {
     if (e.button !== 0) return;
@@ -102,7 +125,8 @@ export function ArcNav({
       const dx = e.clientX - d.x;
       if (Math.abs(dx) > 6) d.moved = true;
       if (!d.moved) return;
-      pos.current = dragToPosition(d.start, dx, max);
+      // Circular: sem pontas (sem resistência); linear: resistência ao passar da primeira/última
+      pos.current = circular ? d.start - dx / DRAG_PX_PER_ITEM : dragToPosition(d.start, dx, max);
       layout();
     }
     function up() {
@@ -112,10 +136,14 @@ export function ArcNav({
       if (!d.moved) return;
       suppressClick.current = true;
       setTimeout(() => (suppressClick.current = false), 0);
-      const next = clampIndex(Math.round(pos.current), max);
-      target.current = next;
+      const next = indexAt(pos.current);
+      target.current = circular ? Math.round(pos.current) : next;
       animate();
-      if (next !== active) onChange(next);
+      if (slideOnly) {
+        setRest(next);
+        onCenter?.(next);
+      }
+      else if (next !== active) onChange?.(next);
     }
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
@@ -125,17 +153,17 @@ export function ArcNav({
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
     };
-  }, [active, home, animate, layout, max, onChange]);
+  }, [active, home, animate, layout, max, onChange, onCenter, slideOnly, circular, indexAt]);
 
   // Foco pelo teclado: leva o item focado ao centro para ele ficar visível
   function focusItem(i: number) {
     if (drag.current) return;
-    target.current = i;
+    target.current = targetFor(i);
     animate();
   }
   function blurItem() {
     if (drag.current) return;
-    target.current = home;
+    target.current = targetFor(home);
     animate();
   }
 
@@ -145,13 +173,19 @@ export function ArcNav({
     // Parte do item focado (pode não ser o ativo, se a pessoa navegou com Tab)
     const focused = itemRefs.current.findIndex((el) => el === document.activeElement);
     const base = focused >= 0 ? focused : home;
-    const next = clampIndex(base + (e.key === "ArrowRight" ? 1 : -1), max);
-    if (next !== active) onChange(next);
+    const step = base + (e.key === "ArrowRight" ? 1 : -1);
+    // Circular: da última vai para a primeira (e vice-versa)
+    const next = circular ? wrapIndex(step, n) : clampIndex(step, max);
+    if (slideOnly) {
+      setRest(next);
+      onCenter?.(next);
+    }
+    else if (next !== active) onChange?.(next);
     requestAnimationFrame(() => itemRefs.current[next]?.focus());
   }
 
   return (
-    <nav aria-label={label} className="-mx-5 md:mx-0">
+    <nav aria-label={label} className={clsx("-mx-4 md:mx-0", className)}>
       <div
         ref={wrapRef}
         onPointerDown={onPointerDown}
@@ -165,6 +199,12 @@ export function ArcNav({
         onDragStart={(e) => e.preventDefault()}
         className="relative h-[156px] touch-pan-y select-none overflow-x-clip"
       >
+        {/* Trilho fino da ferradura: passa pelo centro das bolhas (só decoração) */}
+        {trackW > 0 && (
+          <svg aria-hidden="true" className="pointer-events-none absolute inset-0 size-full" viewBox={`0 0 ${trackW} 156`}>
+            <path d={arcTrackPath(trackW, ORB_CENTER_Y)} fill="none" stroke="#ffffff" strokeOpacity=".28" strokeWidth="1" />
+          </svg>
+        )}
         <ul>
           {items.map((item, i) => {
             const Icon = item.icon;
@@ -173,15 +213,15 @@ export function ArcNav({
               <>
                 <span
                   className={clsx(
-                    "glass-orb grid size-[62px] place-items-center rounded-full text-white transition-[outline-color,box-shadow]",
-                    "outline-[2.5px] outline-offset-[4px]",
-                    isCentered ? "outline-solid outline-white" : "outline-solid outline-transparent",
+                    "glass-orb grid size-[64px] place-items-center rounded-full text-white transition-[outline-color,box-shadow]",
+                    "outline-[1.5px] outline-offset-[3px]",
+                    isCentered ? "outline-solid outline-white/90" : "outline-solid outline-transparent",
                   )}
                   data-selected={isCentered}
                 >
-                  <Icon size={25} strokeWidth={1.8} aria-hidden />
+                  <Icon size={25} strokeWidth={1.7} aria-hidden />
                 </span>
-                <span className={clsx("text-on-image text-center text-[12.5px] leading-tight text-white", isCentered ? "font-semibold" : "font-medium")}>
+                <span className={clsx("text-on-image text-center text-[13px] leading-tight text-white", isCentered ? "font-semibold" : "font-normal")}>
                   {item.label}
                 </span>
               </>
@@ -214,7 +254,7 @@ export function ArcNav({
                     aria-pressed={i === active}
                     onFocus={() => focusItem(i)}
                     onBlur={blurItem}
-                    onClick={() => onChange(i)}
+                    onClick={() => onChange?.(i)}
                     className={cls}
                   >
                     {content}

@@ -13,9 +13,9 @@ export default async function ContasPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex justify-end">
-        <LinkButton href="/financas/contas/nova">
-          <Plus size={16} /> Nova conta
+      <div className="flex">
+        <LinkButton href="/financas/contas/nova" size="sm">
+          <Plus size={15} aria-hidden /> Nova conta
         </LinkButton>
       </div>
       {accounts.length === 0 ? (

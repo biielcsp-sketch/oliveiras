@@ -39,7 +39,7 @@ export function LoginForm({ notice, defaultEmail, remembered = false }: { notice
         {mode === "in" && (
           <div className="ls-soft flex items-center justify-between gap-3 px-2 text-[13px]">
             <label className="flex items-center gap-2">
-              <input type="checkbox" name="remember" defaultChecked={remembered} className="h-4 w-4 accent-[#2a6fc4]" />
+              <input type="checkbox" name="remember" defaultChecked={remembered} className="h-4 w-4 accent-[var(--primary)]" />
               Lembrar neste aparelho
             </label>
             <Link href="/esqueci-senha" className="underline underline-offset-4">
@@ -61,7 +61,7 @@ export function LoginForm({ notice, defaultEmail, remembered = false }: { notice
         <button
           type="button"
           onClick={() => setMode(mode === "in" ? "up" : "in")}
-          className="font-medium text-white underline underline-offset-4"
+          className="ls-link underline underline-offset-4"
         >
           {mode === "in" ? "Criar conta" : "Entrar"}
         </button>

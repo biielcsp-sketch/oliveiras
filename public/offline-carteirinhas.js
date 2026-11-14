@@ -27,10 +27,16 @@
       li.appendChild(el("span", String(c.person || "")));
       if (c.number) li.appendChild(el("span", String(c.number), "numero"));
       if (c.mime === "image/jpeg") {
+        // Quadro com proporção de cartão; foto em retrato fica deitada (giro só na tela, via classe CSS)
+        var frame = el("div", "", "quadro");
         var img = document.createElement("img");
-        img.src = href;
         img.alt = "Carteirinha " + String(c.operator || "");
-        li.appendChild(img);
+        img.addEventListener("load", function () {
+          if (img.naturalHeight > img.naturalWidth) img.className = "retrato";
+        });
+        img.src = href;
+        frame.appendChild(img);
+        li.appendChild(frame);
       }
       var a = el("a", c.mime === "application/pdf" ? "Abrir PDF" : "Abrir foto");
       a.href = href;
