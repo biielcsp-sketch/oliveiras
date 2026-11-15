@@ -382,7 +382,7 @@ test("Igreja: devocional pessoal com compartilhamento, Carisma com Google Drive 
     await expect(menu).toBeVisible();
     await shot(page, "01-aula-caderno-menu");
     await expect(menu.getByRole("option", { name: "Texto normal" })).toHaveAttribute("aria-selected", "true");
-    await menu.getByRole("option", { name: "Título" }).click();
+    await menu.getByRole("option", { name: "Título", exact: true }).click();
     await expect(menu).toHaveCount(0);
     await expect(blocks.nth(0)).toHaveAttribute("data-k", "h1");
     await expect(styleBtn).toContainText("Título");
@@ -436,7 +436,7 @@ test("Igreja: devocional pessoal com compartilhamento, Carisma com Google Drive 
     await expect(styleBtn).toHaveAttribute("aria-expanded", "true");
     await expect(menu.getByRole("option", { name: "Texto normal" })).toBeFocused();
     await page.keyboard.press("ArrowDown");
-    await expect(menu.getByRole("option", { name: "Título" })).toBeFocused();
+    await expect(menu.getByRole("option", { name: "Título", exact: true })).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(menu).toHaveCount(0);
     await expect(styleBtn).toBeFocused();
