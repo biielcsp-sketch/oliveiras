@@ -498,6 +498,9 @@ test("Igreja: devocional pessoal com compartilhamento, Carisma com Google Drive 
     await ed2.press("Control+a");
     await page.getByRole("toolbar", { name: "Formatação do caderno" }).getByRole("button", { name: /^Estilo do texto/ }).click();
     await page.getByRole("option", { name: "Texto normal" }).click();
+    // apaga tudo antes: texto colado por cima herda a formatação (++==) do começo da seleção e a marcação passaria do limite
+    await page.keyboard.press("Backspace");
+    await expect(ed2).toHaveText("");
     await pasteInto(ed2, "a".repeat(10000));
     await expect(page.getByTestId("notas-contador")).toContainText("10000/10000");
     await selectIn(ed2, "a");
