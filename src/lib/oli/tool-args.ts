@@ -25,6 +25,7 @@ export const OLI_TOOL_NAMES = [
   "criar_consulta",
   "consultar_financas",
   "consultar_saude",
+  "consultar_exames_lab",
   "consultar_casa",
   "consultar_pet",
   "consultar_igreja",
@@ -400,6 +401,25 @@ export function parseConsultarSaudeArgs(args: unknown, today: string = todaySP()
   const per = parsePeriodo(a, today);
   if (!per.ok) return per;
   return ok({ secao: secao.value, pessoa: pessoa.value, busca: busca.value, ...per.value });
+}
+
+export type ConsultarExamesLabArgs = { pessoa?: string; biomarcador?: string; de?: string; ate?: string };
+
+/** consultar_exames_lab: pessoa, exame (texto livre) e período de/até (sem limite de dias: a evolução vai de anos). */
+export function parseConsultarExamesLabArgs(args: unknown): Result<ConsultarExamesLabArgs> {
+  const a = obj(args);
+  const pessoa = optText(a.pessoa, LIMITS.name, "Pessoa");
+  if (!pessoa.ok) return pessoa;
+  const biomarcador = optText(a.biomarcador, LIMITS.search, "Exame");
+  if (!biomarcador.ok) return biomarcador;
+  const de = optText(a.de, 10, "Data inicial");
+  if (!de.ok) return de;
+  const ate = optText(a.ate, 10, "Data final");
+  if (!ate.ok) return ate;
+  if (de.value && !isDate(de.value)) return fail("Data inicial inválida. Use AAAA-MM-DD.");
+  if (ate.value && !isDate(ate.value)) return fail("Data final inválida. Use AAAA-MM-DD.");
+  if (de.value && ate.value && de.value > ate.value) return fail("A data inicial vem depois da final.");
+  return ok({ pessoa: pessoa.value, biomarcador: biomarcador.value, de: de.value, ate: ate.value });
 }
 
 export type ConsultarCasaArgs = { secao: CasaSecao; busca?: string; data?: string };

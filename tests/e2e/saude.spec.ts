@@ -42,7 +42,7 @@ test("Saúde: carteirinhas, consultas e exames (família compartilhada, arquivos
   let cardPath = "";
 
   await test.step("carteirinha: recusa arquivo falso e acima de 4 MB; aceita PDF", async () => {
-    await a.goto("/saude");
+    await a.goto("/saude/carteirinhas");
     await expect(a.getByText("Nenhuma carteirinha ainda.")).toBeVisible();
     await a.getByRole("button", { name: "Nova carteirinha" }).click();
     const d = a.getByRole("dialog", { name: "Nova carteirinha" });
@@ -93,7 +93,7 @@ test("Saúde: carteirinhas, consultas e exames (família compartilhada, arquivos
     await b.getByLabel("Seu nome").fill("Karen");
     await b.getByRole("button", { name: "Entrar na família" }).click();
     await expect(b).toHaveURL(/\/inicio$/);
-    await b.goto("/saude");
+    await b.goto("/saude/carteirinhas");
     await expect(b.getByTestId("carteirinha")).toContainText("Unimed Teste");
     expect((await b.request.get(cardPath)).status()).toBe(200);
     await ctxB.close();
@@ -107,7 +107,7 @@ test("Saúde: carteirinhas, consultas e exames (família compartilhada, arquivos
     expect((await c.request.get(`/saude/arquivo/exames/${cardId}`)).status()).toBe(404);
     expect((await c.request.get(`/saude/arquivo/qualquer/${cardId}`)).status()).toBe(404);
     expect((await c.request.get("/saude/arquivo/carteirinhas/nao-e-uuid")).status()).toBe(404);
-    await c.goto("/saude");
+    await c.goto("/saude/carteirinhas");
     await expect(c.getByText("Nenhuma carteirinha ainda.")).toBeVisible();
     await ctxC.close();
 
@@ -119,7 +119,7 @@ test("Saúde: carteirinhas, consultas e exames (família compartilhada, arquivos
   });
 
   await test.step("offline: só o arquivo e o mínimo ficam no aparelho e abrem sem internet", async () => {
-    await a.goto("/saude");
+    await a.goto("/saude/carteirinhas");
     await a.evaluate(() => navigator.serviceWorker.ready);
     await expect.poll(() => cachedPaths(a)).toEqual(expect.arrayContaining([cardPath, "/__offline/carteirinhas.json"]));
     const paths = await cachedPaths(a);
@@ -140,7 +140,7 @@ test("Saúde: carteirinhas, consultas e exames (família compartilhada, arquivos
   });
 
   await test.step("editar: trocar por JPG apaga o PDF antigo do storage", async () => {
-    await a.goto("/saude");
+    await a.goto("/saude/carteirinhas");
     const { data: before } = await adminClient().from("health_insurance_cards").select("household_id, file_path").eq("id", cardId).single();
     await a.getByTestId("carteirinha").getByRole("button", { name: "Editar" }).click();
     const d = a.getByRole("dialog", { name: "Editar carteirinha" });
@@ -245,7 +245,7 @@ test("Saúde: carteirinhas, consultas e exames (família compartilhada, arquivos
   });
 
   await test.step("sair da conta apaga as carteirinhas do aparelho", async () => {
-    await a.goto("/saude");
+    await a.goto("/saude/carteirinhas");
     await a.getByRole("button", { name: "Nova carteirinha" }).click();
     const d = a.getByRole("dialog", { name: "Nova carteirinha" });
     await d.getByLabel("Operadora").fill("Bradesco Saúde");

@@ -45,7 +45,10 @@ import {
   type ConsultarIgrejaArgs,
   type ConsultarPetArgs,
   type ConsultarSaudeArgs,
+  type ConsultarExamesLabArgs,
 } from "./tool-args";
+import { buildExamesLab } from "./exames-lab";
+import { loadLabReports, loadLabResults } from "@/lib/saude/labs/data";
 
 /**
  * Consultas de leitura do Oli por aba. Sempre com a sessão do usuário (createClient + RLS) e filtrando a
@@ -281,6 +284,26 @@ export async function consultarSaude(ctx: Ctx, a: ConsultarSaudeArgs, today: str
     );
   await Promise.all(jobs);
   return { ok: true, data: comCorte(buildSaude(s, rows, names(ctx), { busca: a.busca, pessoa, today, periodo }), cortes) };
+}
+
+/**
+ * Exames de laboratório (consultar_exames_lab): mesma fonte e mesma lógica das telas de Saúde (status pela faixa do
+ * próprio laboratório, tendência entre coletas). Saúde é compartilhada pela família; filtro opcional por pessoa.
+ */
+export async function consultarExamesLab(ctx: Ctx, a: ConsultarExamesLabArgs): Promise<Result> {
+  let memberId: string | null = null;
+  let pessoa: string | null = null;
+  if (a.pessoa) {
+    const found = /^(eu|mim|minha|meu)$/i.test(a.pessoa.trim()) ? ctx.me : matchByName(ctx.members, a.pessoa);
+    if (!found) return { ok: false, erro: `Pessoa não encontrada. Opções: ${ctx.members.map((m) => m.name).join(", ")}.` };
+    memberId = found.id;
+    pessoa = found.name;
+  }
+  const db = await createClient();
+  const reports = await loadLabReports(db, ctx.household.id);
+  const inScope = reports.filter((r) => !memberId || r.member_id === memberId);
+  const results = await loadLabResults(db, ctx.household.id, { reportIds: inScope.map((r) => r.id) });
+  return { ok: true, data: buildExamesLab(inScope, results, names(ctx), { memberId, pessoa, biomarcador: a.biomarcador, de: a.de, ate: a.ate }) };
 }
 
 /* ---------- Casa ---------- */

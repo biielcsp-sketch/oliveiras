@@ -12,7 +12,7 @@ test("modal fechado e reaberto antes do evento close continua aberto", async ({ 
   await page.locator("form").getByRole("button", { name: "Criar família" }).click();
   await expect(page).toHaveURL(/\/inicio$/);
 
-  await page.goto("/saude");
+  await page.goto("/saude/carteirinhas");
   const open = page.getByRole("button", { name: "Nova carteirinha" });
   await open.click();
   const dialog = page.getByRole("dialog", { name: "Nova carteirinha" });

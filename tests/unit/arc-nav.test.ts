@@ -67,13 +67,13 @@ describe("menu em ferradura", () => {
   });
 
   it("circular: a primeira aba tem a última como vizinha à esquerda (sempre 3 visíveis, inclusive nas pontas)", () => {
-    const n = 6; // Saúde
+    const n = 7; // Saúde
     const visible = (pos: number) =>
       Array.from({ length: n }, (_, i) => i).filter((i) => arcPlacement(wrapOffset(i, pos, n), 390).opacity > 0.5);
-    expect(visible(0)).toEqual([0, 1, 5]); // Carteirinhas no meio, Vacinas à esquerda, Consultas à direita
-    expect(wrapOffset(5, 0, n)).toBe(-1);
-    expect(visible(5)).toEqual([0, 4, 5]); // última aba: Medicamentos, Vacinas, Carteirinhas
-    expect(wrapOffset(0, 5, n)).toBe(1);
+    expect(visible(0)).toEqual([0, 1, 6]); // Resumo no meio, Vacinas à esquerda, Carteirinhas à direita
+    expect(wrapOffset(6, 0, n)).toBe(-1);
+    expect(visible(6)).toEqual([0, 5, 6]); // última aba: Medicamentos, Vacinas, Resumo
+    expect(wrapOffset(0, 6, n)).toBe(1);
     for (const n2 of [4, 5, 6, 9]) for (let p = 0; p < n2; p++) expect(Array.from({ length: n2 }, (_, i) => arcPlacement(wrapOffset(i, p, n2), 390).opacity > 0.5).filter(Boolean)).toHaveLength(3);
   });
 
