@@ -2,6 +2,8 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { getAppContext } from "@/lib/data";
 import { todaySP } from "@/lib/financas/today";
+import { pluggyErrorLog, pluggyErrorMessage } from "./errors";
+import { credentialForStoredItem, CREDENTIAL_READ_ERROR_MSG } from "./credentials";
 import { getItem, listAccounts, listTransactions, pluggyAllowedFor, pluggyConfigured, PluggyError } from "./client";
 import {
   bankBalanceToApp, buildSyncRows, consentExpired, itemHealthy, openingToMatchBank, planSync, syncFetchStart, syncRowCodes, syncWindowStart,
@@ -11,6 +13,7 @@ import { runBaixaAutomatica, type TxCode } from "@/lib/financas/baixa-data";
 
 export type SyncResult =
   | { status: "skipped"; reason: "nao-configurado" | "nao-autorizado" | "sem-conexoes" | "recente" }
+  | { status: "error"; message: string }
   | { status: "done"; inserted: number; updated: number; removed: number; errors: string[]; baixas: number };
 
 const STALE_MS = 6 * 60 * 60 * 1000;
@@ -24,10 +27,14 @@ export async function syncHousehold({ force }: { force: boolean }): Promise<Sync
   if (!pluggyAllowedFor(household.id)) return { status: "skipped", reason: "nao-autorizado" };
 
   const supabase = await createClient();
-  const { data: items } = await supabase
+  const { data: items, error: itemsError } = await supabase
     .from("fin_pluggy_items")
-    .select("id, item_id, last_sync_at")
+    .select("id, item_id, credential, last_sync_at")
     .eq("household_id", household.id);
+  if (itemsError) {
+    console.error(`[pluggy] falha ao ler conexões code=${itemsError.code ?? "-"}`);
+    return { status: "error", message: CREDENTIAL_READ_ERROR_MSG };
+  }
   if (!items?.length) return { status: "skipped", reason: "sem-conexoes" };
   if (!force && items.every((i) => i.last_sync_at && Date.now() - Date.parse(i.last_sync_at) < STALE_MS)) {
     return { status: "skipped", reason: "recente" };
@@ -46,7 +53,14 @@ export async function syncHousehold({ force }: { force: boolean }): Promise<Sync
   for (const item of items) {
     let lastError: string | null = null;
     try {
-      const info = await getItem(item.item_id);
+      // Cada item usa a credencial gravada nele; valor desconhecido falha só este item.
+      const decision = credentialForStoredItem(item.credential);
+      if (!decision.ok) {
+        lastError = decision.error;
+        throw new SkipItem();
+      }
+      const credential = decision.credential;
+      const info = await getItem(item.item_id, credential);
       await supabase
         .from("fin_pluggy_items")
         .update({ status: info.status?.slice(0, 40) ?? null, consent_expires_at: info.consentExpiresAt ?? null })
@@ -70,7 +84,7 @@ export async function syncHousehold({ force }: { force: boolean }): Promise<Sync
         .not("external_id", "is", null);
       if (!linked?.length) continue;
 
-      const remote = new Map((await listAccounts(item.item_id)).map((a) => [a.id, a]));
+      const remote = new Map((await listAccounts(item.item_id, credential)).map((a) => [a.id, a]));
       for (const acc of linked) {
         const r = remote.get(acc.external_id!);
         if (!r) {
@@ -95,7 +109,7 @@ export async function syncHousehold({ force }: { force: boolean }): Promise<Sync
           .maybeSingle();
         const recentStart = syncWindowStart(acc.sync_from, today);
         const windowStart = syncFetchStart(acc.sync_from, today, oldest?.date ?? null);
-        const remoteTxs = await listTransactions(r.id, windowStart);
+        const remoteTxs = await listTransactions(r.id, windowStart, credential);
         const rows = buildSyncRows(remoteTxs, rules ?? []);
         for (const c of syncRowCodes(remoteTxs, rows)) codes.push({ ...c, account_id: acc.id });
         const { data: existing } = await supabase
@@ -154,7 +168,10 @@ export async function syncHousehold({ force }: { force: boolean }): Promise<Sync
         await matchOpeningToBank(supabase, household.id, acc.id, bankBalance);
       }
     } catch (e) {
-      if (!(e instanceof SkipItem)) lastError = e instanceof PluggyError ? e.message : "Falha ao sincronizar esta conexão.";
+      if (!(e instanceof SkipItem)) {
+        if (e instanceof PluggyError) console.error(pluggyErrorLog(e));
+        lastError = e instanceof PluggyError ? pluggyErrorMessage(e) : "Falha ao sincronizar esta conexão.";
+      }
     }
     if (lastError) errors.push(lastError);
     await supabase

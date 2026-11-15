@@ -4,7 +4,8 @@ import { getAppContext } from "@/lib/data";
 import { createClient } from "@/lib/supabase/server";
 import { getFinanceBase } from "@/lib/financas/data";
 import { formatBRL } from "@/lib/financas/money";
-import { listAccounts, pluggyAllowedFor, pluggyConfigured } from "@/lib/pluggy/client";
+import { listAccounts, pluggyAllowedFor, pluggyConfigured, pluggyCredentials } from "@/lib/pluggy/client";
+import { CREDENTIAL_LABEL, CREDENTIAL_READ_ERROR_MSG, parseCredential } from "@/lib/pluggy/credentials";
 import { accountKindFrom, addDaysISO, bankBalanceToApp, maskNumber, type PluggyAccount } from "@/lib/pluggy/normalize";
 import { todaySP } from "@/lib/financas/today";
 import { ACCOUNT_KIND_LABEL } from "@/lib/financas/types";
@@ -30,7 +31,10 @@ export default async function OpenFinancePage() {
         </p>
         <ol className="list-decimal space-y-1 pl-5 text-sm text-muted">
           <li>Na Vercel: Settings → Environment Variables.</li>
-          <li>Crie <code>PLUGGY_CLIENT_ID</code> e <code>PLUGGY_CLIENT_SECRET</code> (marque Sensitive).</li>
+          <li>
+            Crie <code>PLUGGY_CLIENT_ID</code> e <code>PLUGGY_CLIENT_SECRET</code> (marque Sensitive). Para uma segunda conta do Meu
+            Pluggy, crie também <code>PLUGGY_CLIENT_ID_KAREN</code> e <code>PLUGGY_CLIENT_SECRET_KAREN</code>.
+          </li>
           <li>
             Crie <code>PLUGGY_HOUSEHOLD_ID</code> com o valor{" "}
             <code className="select-all rounded bg-surface-2 px-1">{household.id}</code>.
@@ -42,25 +46,37 @@ export default async function OpenFinancePage() {
   }
 
   const supabase = await createClient();
-  const [{ data: items }, { accounts }] = await Promise.all([
+  const [{ data: items, error: itemsError }, { accounts }] = await Promise.all([
     supabase
       .from("fin_pluggy_items")
-      .select("id, item_id, label, status, consent_expires_at, last_sync_at, last_error")
+      .select("id, item_id, label, credential, status, consent_expires_at, last_sync_at, last_error")
       .eq("household_id", household.id)
       .order("created_at"),
     getFinanceBase(),
   ]);
 
+  if (itemsError) {
+    console.error(`[pluggy] falha ao ler conexões code=${itemsError.code ?? "-"}`);
+    return (
+      <Card className="flex flex-col gap-3">
+        <PageHeader title="Open Finance" subtitle="Conexão com os bancos pelo Meu Pluggy" />
+        <p role="alert" className="text-sm text-danger">{CREDENTIAL_READ_ERROR_MSG}</p>
+      </Card>
+    );
+  }
+
   const remoteByItem = new Map<string, PluggyAccount[] | null>();
   await Promise.all(
     (items ?? []).map(async (i) => {
       try {
-        remoteByItem.set(i.id, await listAccounts(i.item_id));
+        const credential = parseCredential(i.credential);
+        remoteByItem.set(i.id, credential ? await listAccounts(i.item_id, credential) : null);
       } catch {
         remoteByItem.set(i.id, null);
       }
     }),
   );
+  const credentials = pluggyCredentials();
   const soon = addDaysISO(todaySP(), 30);
 
   return (
@@ -84,6 +100,9 @@ export default async function OpenFinancePage() {
               <Landmark size={20} className="mt-0.5 shrink-0 text-olive" />
               <div className="min-w-0 flex-1">
                 <p className="font-medium">{item.label}</p>
+                <p className="text-[12px] text-muted">
+                  Conta do Meu Pluggy: {CREDENTIAL_LABEL[parseCredential(item.credential) ?? "principal"]}
+                </p>
                 <p className="text-[12px] text-muted">
                   {item.status ?? "—"}
                   {item.last_sync_at && ` · sincronizado ${dateTime.format(new Date(item.last_sync_at))}`}
@@ -148,9 +167,11 @@ export default async function OpenFinancePage() {
 
       <Card>
         <h2 className="mb-3 font-medium">Conectar banco</h2>
-        <AddItemForm />
+        <AddItemForm credentials={credentials.map((c) => ({ value: c, label: CREDENTIAL_LABEL[c] }))} />
         <p className="mt-3 text-[12px] text-muted">
-          Uso pessoal do Meu Pluggy: até 5 conexões. Só o id do item fica salvo aqui; as credenciais ficam no servidor.
+          Uso pessoal do Meu Pluggy: até 5 conexões por conta. Cada pessoa conecta os bancos na própria conta do Meu Pluggy:
+          escolha a conta de quem conectou o banco e cole o id do item dela. Só o id do item e o nome da conta ficam salvos
+          aqui; as credenciais ficam no servidor.
         </p>
       </Card>
     </div>

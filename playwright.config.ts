@@ -60,6 +60,8 @@ export default defineConfig({
         PLUGGY_API_URL: "http://127.0.0.1:4010",
         PLUGGY_CLIENT_ID: "test-client",
         PLUGGY_CLIENT_SECRET: "test-secret",
+        PLUGGY_CLIENT_ID_KAREN: "test-client-karen",
+        PLUGGY_CLIENT_SECRET_KAREN: "test-secret-karen",
         PLUGGY_HOUSEHOLD_ID: E2E_HOUSEHOLD_ID,
         // Oli: família autorizada fixa e sem chave do Gemini (o token responde 503; nunca chama o Gemini real).
         OLI_HOUSEHOLD_ID: E2E_OLI_HOUSEHOLD_ID,
