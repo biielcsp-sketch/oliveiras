@@ -11,6 +11,8 @@ export const E2E_IGREJA_HOUSEHOLD_ID = "eeeeeeee-0000-4000-8000-000000000004";
 // Família autorizada para o Oli (própria): open-finance.spec e oli-arquivo.spec recriavam a MESMA família
 // (E2E_HOUSEHOLD_ID) e, rodando em workers paralelos no CI, um apagava os dados do outro.
 export const E2E_OLI_HOUSEHOLD_ID = "eeeeeeee-0000-4000-8000-000000000005";
+// Família autorizada para a leitura de exames de laboratório com IA (própria: saude-exames-lab.spec roda em paralelo com os outros).
+export const E2E_LABS_HOUSEHOLD_ID = "eeeeeeee-0000-4000-8000-000000000006";
 
 export default defineConfig({
   testDir: "tests/e2e",
@@ -66,6 +68,8 @@ export default defineConfig({
         GEMINI_DOCS_API_KEY: "test-key",
         GEMINI_API_BASE: "http://127.0.0.1:4030",
         DOCS_HOUSEHOLD_ID: E2E_DOCS_HOUSEHOLD_ID,
+        // Exames de laboratório: leitura com IA (Gemini simulado acima) só para esta família.
+        LABS_HOUSEHOLD_ID: E2E_LABS_HOUSEHOLD_ID,
         // Agenda: Google simulado em localhost e família própria.
         GOOGLE_CLIENT_ID: "test-google-client",
         GOOGLE_CLIENT_SECRET: "test-google-secret",

@@ -89,7 +89,7 @@ describe("navegação do redesign", () => {
     expect([...MOBILE_NAV_LEFT, ...MOBILE_NAV_RIGHT].map((m) => m.label)).toEqual(["Finanças", "Saúde", "Casa", "Igreja"]);
     expect(SIDEBAR_NAV.map((m) => m.href)).toContain("/assistente");
   });
-  it("os módulos abrem na raiz, inclusive a Saúde (Carteirinhas no centro da ferradura)", () => {
+  it("os módulos abrem na raiz, inclusive a Saúde (Resumo no centro da ferradura)", () => {
     expect(MODULES.every((m) => !m.entry)).toBe(true);
     // Arco do Início com 5 itens: a Agenda entra no meio (saiu do topo no celular)
     expect(HOME_MODULES.map((m) => m.href)).toEqual(["/financas", "/saude", "/agenda", "/casa", "/ministerio"]);
@@ -106,18 +106,22 @@ describe("navegação do redesign", () => {
       "/financas/categorias",
       "/financas/open-finance",
     ]);
-    expect(SAUDE_TABS.map((t) => t.href)).toEqual(["/saude", "/saude/consultas", "/saude/exames", "/saude/procedimentos", "/saude/medicamentos", "/saude/vacinas"]);
+    expect(SAUDE_TABS.map((t) => t.href)).toEqual(["/saude", "/saude/carteirinhas", "/saude/consultas", "/saude/exames", "/saude/procedimentos", "/saude/medicamentos", "/saude/vacinas"]);
     expect(CASA_TABS.map((t) => t.href)).toEqual(
       expect.arrayContaining(["/casa", "/casa/compras", "/casa/pet", "/casa/cardapio", "/casa/tarefas", "/casa/manutencao", "/casa/prestadores", "/casa/contas", "/casa/documentos"]),
     );
     expect(IGREJA_TABS.map((t) => t.href)).toEqual(["/ministerio/devocional", "/ministerio", "/ministerio/carisma", "/ministerio/consolidacao"]);
   });
-  it("raiz de cada módulo abre no centro da ferradura (Resumo; Carteirinhas na Saúde)", () => {
+  it("raiz de cada módulo abre no centro da ferradura (Resumo, inclusive na Saúde)", () => {
     expect(FINANCAS_TABS[rootIndex(FINANCAS_TABS)].key).toBe("resumo");
     expect(CASA_TABS[rootIndex(CASA_TABS)].key).toBe("resumo");
     expect(IGREJA_TABS[rootIndex(IGREJA_TABS)].key).toBe("resumo");
-    expect(SAUDE_TABS[activeRouteIndex(SAUDE_TABS, "/saude")].key).toBe("carteirinhas");
-    expect(activeRouteIndex(SAUDE_TABS, "/saude/exames")).toBe(2);
+    expect(SAUDE_TABS[rootIndex(SAUDE_TABS)].key).toBe("resumo");
+    expect(SAUDE_TABS[activeRouteIndex(SAUDE_TABS, "/saude")].key).toBe("resumo");
+    expect(SAUDE_TABS[activeRouteIndex(SAUDE_TABS, "/saude/carteirinhas")].key).toBe("carteirinhas");
+    expect(activeRouteIndex(SAUDE_TABS, "/saude/exames")).toBe(3);
+    // Telas de exames de laboratório não são abas: o Resumo (raiz) fica no centro; "exames-lab" não casa com "exames"
+    for (const p of ["/saude/evolucao", "/saude/evolucao/colesterol-ldl", "/saude/orientacoes", "/saude/exames-lab/enviar"]) expect(activeRouteIndex(SAUDE_TABS, p)).toBe(-1);
     expect(FINANCAS_TABS[activeRouteIndex(FINANCAS_TABS, "/financas/lancamentos/novo")].key).toBe("lancamentos");
     // Página fora das abas: nenhuma marcada (a raiz fica no centro)
     expect(activeRouteIndex(FINANCAS_TABS, "/financas/importar")).toBe(-1);

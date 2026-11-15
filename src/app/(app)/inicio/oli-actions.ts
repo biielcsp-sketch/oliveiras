@@ -28,6 +28,7 @@ import {
   parseCriarConsultaArgs,
   parseConsultarFinancasArgs,
   parseConsultarSaudeArgs,
+  parseConsultarExamesLabArgs,
   parseConsultarCasaArgs,
   parseConsultarPetArgs,
   parseConsultarIgrejaArgs,
@@ -66,7 +67,7 @@ import {
 import { oliAllowedFor } from "@/lib/oli/access";
 import type { ConsultaData } from "@/lib/oli/consultas";
 import type { LerArquivoData } from "@/lib/oli/ler-arquivo";
-import { buscarNoApp, consultarCasa, consultarFinancas, consultarIgreja, consultarPet, consultarSaude } from "@/lib/oli/consultas-data";
+import { buscarNoApp, consultarCasa, consultarExamesLab, consultarFinancas, consultarIgreja, consultarPet, consultarSaude } from "@/lib/oli/consultas-data";
 import { lerArquivo } from "@/lib/oli/ler-arquivo-server";
 import { ITEM_MUDOU, parseAlterarArgs, previewFingerprint, type AlteracaoPreview, type AlterarAba } from "@/lib/oli/alterar";
 import { executarAlteracao, prepararAlteracao } from "@/lib/oli/alterar-server";
@@ -89,7 +90,7 @@ export type OliToolResult =
   | { ok: true; tool: "documentos_recentes"; data: DocumentosData }
   | { ok: true; tool: "ler_documento"; data: DocumentoData }
   | { ok: true; tool: "criar_consulta"; data: ConsultaPreview }
-  | { ok: true; tool: "consultar_financas" | "consultar_saude" | "consultar_casa" | "consultar_pet" | "consultar_igreja" | "buscar_no_app"; data: ConsultaData }
+  | { ok: true; tool: "consultar_financas" | "consultar_saude" | "consultar_exames_lab" | "consultar_casa" | "consultar_pet" | "consultar_igreja" | "buscar_no_app"; data: ConsultaData }
   | { ok: true; tool: "ler_arquivo"; data: LerArquivoData }
   | { ok: true; tool: "alterar_casa" | "alterar_pet" | "alterar_igreja" | "alterar_saude" | "alterar_agenda" | "alterar_financas"; data: AlteracaoPreview }
   | { ok: false; erro: string };
@@ -263,6 +264,12 @@ async function dispatch(name: OliToolName, args: unknown): Promise<OliToolResult
       const a = parseConsultarSaudeArgs(args);
       if (!a.ok) return err(a.erro);
       const r = await consultarSaude(await getAppContext(), a.value, todaySP());
+      return r.ok ? { ok: true, tool: name, data: r.data } : err(r.erro);
+    }
+    case "consultar_exames_lab": {
+      const a = parseConsultarExamesLabArgs(args);
+      if (!a.ok) return err(a.erro);
+      const r = await consultarExamesLab(await getAppContext(), a.value);
       return r.ok ? { ok: true, tool: name, data: r.data } : err(r.erro);
     }
     case "consultar_casa": {

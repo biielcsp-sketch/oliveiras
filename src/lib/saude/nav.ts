@@ -1,8 +1,9 @@
-import { IdCard, Pill, Scissors, Stethoscope, Syringe, TestTube } from "lucide-react";
+import { Activity, IdCard, Pill, Scissors, Stethoscope, Syringe, TestTube } from "lucide-react";
 
-/** Abas da ferradura da Saúde. Carteirinhas é a raiz (/saude). */
+/** Abas da ferradura da Saúde. O Resumo é a raiz (/saude); Carteirinhas fica em /saude/carteirinhas. */
 export const SAUDE_TABS = [
-  { key: "carteirinhas", href: "/saude", label: "Carteirinhas", icon: IdCard },
+  { key: "resumo", href: "/saude", label: "Resumo", icon: Activity },
+  { key: "carteirinhas", href: "/saude/carteirinhas", label: "Carteirinhas", icon: IdCard },
   { key: "consultas", href: "/saude/consultas", label: "Consultas", icon: Stethoscope },
   { key: "exames", href: "/saude/exames", label: "Exames", icon: TestTube },
   { key: "procedimentos", href: "/saude/procedimentos", label: "Procedimentos", icon: Scissors },

@@ -100,6 +100,7 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
           return res.data;
         case "consultar_financas":
         case "consultar_saude":
+        case "consultar_exames_lab":
         case "consultar_casa":
         case "consultar_pet":
         case "consultar_igreja":

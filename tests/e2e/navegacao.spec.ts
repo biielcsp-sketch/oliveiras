@@ -51,7 +51,7 @@ test("navegação: barra inferior, logo para o Início e calendário da Agenda",
     expect(names).toEqual(["Finanças", "Saúde", "Oli, o assistente", "Casa", "Igreja"]);
     const oli = nav.getByRole("link", { name: "Oli, o assistente" });
     await expect(oli).toHaveAttribute("href", "/assistente");
-    // Saúde abre na raiz (Carteirinhas no centro da ferradura)
+    // Saúde abre na raiz (Resumo de saúde no centro da ferradura)
     await expect(nav.getByRole("link", { name: "Saúde" })).toHaveAttribute("href", "/saude");
     await expect(oli).not.toHaveAttribute("aria-current", "page");
     // Esfera animada só com CSS (sem imagem do avatar antigo)
@@ -103,31 +103,31 @@ test("navegação: barra inferior, logo para o Início e calendário da Agenda",
   await test.step("Saúde: ferradura circular, sempre 3 visíveis na primeira e na última aba; teclado dá a volta", async () => {
     await page.goto("/saude");
     const arc = page.getByRole("navigation", { name: "Seções de Saúde" });
-    // Primeira aba: a vizinha da esquerda é a última (Vacinas)
-    await expect.poll(() => visibleArc(arc)).toEqual(["Vacinas", "Carteirinhas", "Consultas"]);
-    await expectCentered(arc, "Carteirinhas");
-    await expect(arc.locator('[aria-current="page"]')).toHaveText("Carteirinhas");
+    // Primeira aba (Resumo): a vizinha da esquerda é a última (Vacinas)
+    await expect.poll(() => visibleArc(arc)).toEqual(["Vacinas", "Resumo", "Carteirinhas"]);
+    await expectCentered(arc, "Resumo");
+    await expect(arc.locator('[aria-current="page"]')).toHaveText("Resumo");
     // Leitores de tela/Tab: cada aba uma vez, na ordem real (sem clones)
-    await expect(arc.getByRole("link")).toHaveText(["Carteirinhas", "Consultas", "Exames", "Procedimentos", "Medicamentos", "Vacinas"]);
+    await expect(arc.getByRole("link")).toHaveText(["Resumo", "Carteirinhas", "Consultas", "Exames", "Procedimentos", "Medicamentos", "Vacinas"]);
     // Seta para a esquerda na primeira vai para a última
-    await arc.getByRole("link", { name: "Carteirinhas" }).focus();
+    await arc.getByRole("link", { name: "Resumo" }).focus();
     await page.keyboard.press("ArrowLeft");
     await expect(page).toHaveURL(/\/saude\/vacinas$/);
     await expect(arc.getByRole("link", { name: "Vacinas" })).toHaveAttribute("aria-current", "page");
     await expect(arc.getByRole("link", { name: "Vacinas" })).toBeFocused();
     // Última aba: também 3, com a primeira à direita
-    await expect.poll(() => visibleArc(arc)).toEqual(["Medicamentos", "Vacinas", "Carteirinhas"]);
+    await expect.poll(() => visibleArc(arc)).toEqual(["Medicamentos", "Vacinas", "Resumo"]);
     await expectCentered(arc, "Vacinas");
     // Seta para a direita na última volta para a primeira
     await page.keyboard.press("ArrowRight");
     await expect(page).toHaveURL(/\/saude$/);
-    await expect(arc.getByRole("link", { name: "Carteirinhas" })).toHaveAttribute("aria-current", "page");
-    await expect(arc.getByRole("link", { name: "Carteirinhas" })).toBeFocused();
+    await expect(arc.getByRole("link", { name: "Resumo" })).toHaveAttribute("aria-current", "page");
+    await expect(arc.getByRole("link", { name: "Resumo" })).toBeFocused();
     // Arrastar para a direita a partir da primeira também dá a volta (para na última e troca a tela)
-    await expectCentered(arc, "Carteirinhas");
+    await expectCentered(arc, "Resumo");
     await dragArc(page, arc, 90);
     await expect(page).toHaveURL(/\/saude\/vacinas$/);
-    await expect.poll(() => visibleArc(arc)).toEqual(["Medicamentos", "Vacinas", "Carteirinhas"]);
+    await expect.poll(() => visibleArc(arc)).toEqual(["Medicamentos", "Vacinas", "Resumo"]);
     await page.goto("/assistente");
   });
 

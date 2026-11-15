@@ -26,7 +26,7 @@ test("carteirinha: foto em retrato aparece deitada num quadro de cartão; paisag
   await page.getByLabel("Seu nome").fill("Gabriel");
   await page.locator("form").getByRole("button", { name: "Criar família" }).click();
   await expect(page).toHaveURL(/\/inicio$/);
-  await page.goto("/saude");
+  await page.goto("/saude/carteirinhas");
 
   const add = async (operator: string, w: number, h: number) => {
     await page.getByRole("button", { name: "Nova carteirinha" }).click();

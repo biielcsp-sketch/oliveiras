@@ -660,6 +660,7 @@ test("Oli: ferramentas em família não liberada são recusadas no servidor", as
   await expect(page).toHaveURL(/\/inicio$/);
   for (const [name, args] of [
     ["consultar_casa", {}],
+    ["consultar_exames_lab", {}],
     ["ler_arquivo", { id: `exame:${randomUUID()}` }],
     ["ultimos_lancamentos", {}],
   ] as const) {
@@ -685,4 +686,110 @@ test("Oli: ferramentas em família não liberada são recusadas no servidor", as
   const admin = adminClient();
   expect((await admin.from("casa_shopping_items").select("id").eq("name", nome)).data).toEqual([]);
   expect((await admin.from("oli_memories").select("id").eq("content", nome)).data).toEqual([]);
+});
+
+/**
+ * Exames de laboratório pelo Oli (leitura): mesmos status, faixas e tendência das telas de Saúde, só da própria família,
+ * sem diagnóstico. Marcar retorno continua pelo fluxo de escrita (só grava com Confirmar).
+ * (As telas de exames estão em saude-exames-lab.spec.ts; esta família é a do Oli, por isso o teste fica aqui.)
+ */
+test("Oli: consultar_exames_lab responde com status, faixa e tendência, só da própria família", async ({ browser }) => {
+  test.setTimeout(120_000);
+  const admin = adminClient();
+  const hh = E2E_OLI_HOUSEHOLD_ID;
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  const email = uniqueEmail("oli-labs");
+  const otherHh = randomUUID();
+  let gabriel = "";
+  let karen = "";
+
+  await test.step("família do Oli (Gabriel + Karen) com duas coletas do Gabriel e uma da Karen; outra família com exame próprio", async () => {
+    await createFamilyWithId(hh, email, PASSWORD);
+    await addSpouse(hh, uniqueEmail("oli-labs-karen"), PASSWORD, "Karen");
+    const { data: ms } = await admin.from("members").select("id, name").eq("household_id", hh);
+    gabriel = ms!.find((m) => m.name === "Gabriel")!.id;
+    karen = ms!.find((m) => m.name === "Karen")!.id;
+    const [r1, r2, r3] = [randomUUID(), randomUUID(), randomUUID()];
+    for (const [id, member, date] of [[r1, gabriel, "2026-02-10"], [r2, gabriel, "2026-11-05"], [r3, karen, "2026-09-01"]] as const) {
+      expect((await admin.from("health_lab_reports").insert({ id, household_id: hh, member_id: member, collected_on: date, lab: "Lab Central" })).error).toBeNull();
+    }
+    const res = (report_id: string, member_id: string, key: string, name: string, v: number, ref: Record<string, number>, unit = "mg/dL") => ({
+      report_id, household_id: hh, member_id, biomarker_key: key, name, category: "cardiovascular", value_num: v, unit, ...ref,
+    });
+    expect(
+      (await admin.from("health_lab_results").insert([
+        res(r1, gabriel, "colesterol-ldl", "Colesterol LDL", 138, { ref_max: 100 }),
+        res(r2, gabriel, "colesterol-ldl", "Colesterol LDL", 82, { ref_max: 100 }),
+        res(r1, gabriel, "triglicerides", "Triglicérides", 120, { ref_max: 150 }),
+        res(r2, gabriel, "triglicerides", "Triglicérides", 170, { ref_max: 150 }),
+        res(r3, karen, "glicose-jejum", "Glicose em jejum", 130, { ref_min: 70, ref_max: 99 }),
+      ])).error,
+    ).toBeNull();
+    // outra família: nada disso pode aparecer
+    const { data: u } = await admin.auth.admin.createUser({ email: uniqueEmail("oli-labs-outra"), password: PASSWORD, email_confirm: true });
+    for (const [table, row] of [
+      ["households", { id: otherHh, name: "Outra", created_by: u.user!.id }],
+      ["household_users", { household_id: otherHh, user_id: u.user!.id, role: "owner" }],
+      ["members", { household_id: otherHh, user_id: u.user!.id, name: "Fulano", relation: "titular" }],
+    ] as const) expect((await admin.from(table).insert(row)).error).toBeNull();
+    const { data: om } = await admin.from("members").select("id").eq("household_id", otherHh).single();
+    const orep = randomUUID();
+    expect((await admin.from("health_lab_reports").insert({ id: orep, household_id: otherHh, member_id: om!.id, collected_on: "2026-10-01" })).error).toBeNull();
+    expect(
+      (await admin.from("health_lab_results").insert({ report_id: orep, household_id: otherHh, member_id: om!.id, biomarker_key: "tsh", name: "TSH Secreto", category: "tireoide", value_num: 9, ref_min: 0.4, ref_max: 4 })).error,
+    ).toBeNull();
+
+    await page.goto("/login");
+    await page.getByLabel("E-mail").fill(email);
+    await page.getByLabel("Senha").fill(PASSWORD);
+    await page.locator("form").getByRole("button", { name: "Entrar" }).click();
+    await expect(page).toHaveURL(/\/inicio$/);
+  });
+
+  await test.step("evolução do colesterol: valor, faixa, status e tendência vêm calculados; aviso de que não substitui consulta", async () => {
+    const r = await callOliTool(page, "consultar_exames_lab", { pessoa: "Gabriel", biomarcador: "colesterol LDL" });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const g = (r.data as unknown as { grupos: { itens: { titulo: string; pessoa: string; status: string; valor: number; detalhes: string[] }[] }[] }).grupos;
+    expect(g).toHaveLength(1);
+    expect(g[0].itens).toEqual([
+      expect.objectContaining({
+        titulo: "Colesterol LDL",
+        pessoa: "Gabriel",
+        status: "Dentro do padrão",
+        valor: 82,
+        detalhes: ["Resultado: 82 mg/dL (coleta de 05/11/2026)", "Faixa do laboratório: até 100", "Tendência: Melhorou 56 pontos desde 02/26", "Coletas: 02/26: 138; 11/26: 82"],
+      }),
+    ]);
+    expect(r.data.aviso).toContain("Não substitui consulta médica.");
+  });
+
+  await test.step("sem filtro: resumo e orientações, fora do padrão primeiro, de toda a família e só dela", async () => {
+    const r = await callOliTool(page, "consultar_exames_lab", {});
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const grupos = (r.data as unknown as { grupos: { titulo: string; itens: { titulo: string }[] }[] }).grupos;
+    expect(grupos.map((x) => x.titulo)).toEqual(["Resumo", "Orientações gerais", "Resultados (mais recentes primeiro os fora do padrão)"]);
+    const lista = grupos[2].itens.map((i) => i.titulo);
+    expect(lista).toEqual(["Triglicérides", "Glicose em jejum", "Colesterol LDL"]);
+    expect(JSON.stringify(r)).not.toContain("TSH Secreto");
+    // só da Karen
+    const k = await callOliTool(page, "consultar_exames_lab", { pessoa: "Karen" });
+    expect(k.ok && JSON.stringify(k.data)).not.toContain("Gabriel");
+    // período sem coleta e exame que não existe: avisos claros
+    const vazio = await callOliTool(page, "consultar_exames_lab", { de: "2030-01-01" });
+    expect(vazio.ok && vazio.data.aviso).toBe("Nenhum exame de laboratório guardado no app nesse período.");
+    expect(await callOliTool(page, "consultar_exames_lab", { pessoa: "Zé" })).toMatchObject({ ok: false });
+    expect(await callOliTool(page, "consultar_exames_lab", { de: "ontem" })).toEqual({ ok: false, erro: "Data inicial inválida. Use AAAA-MM-DD." });
+  });
+
+  await test.step("retorno com o clínico: só um painel de confirmação, nada gravado antes de Confirmar", async () => {
+    const r = await callOliTool(page, "criar_consulta", { tipo: "retorno", especialidade: "Clínico geral", inicio: "2026-12-14T09:00", pessoa: "Gabriel" });
+    expect(r.ok).toBe(true);
+    expect((await admin.from("health_appointments").select("id").eq("household_id", hh)).data).toEqual([]);
+  });
+
+  await admin.from("households").delete().eq("id", otherHh);
+  await ctx.close();
 });
