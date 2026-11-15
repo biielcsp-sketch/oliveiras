@@ -1,24 +1,37 @@
 /**
  * Caderno de anotações da aula: texto com marcação leve, guardado na coluna `notes` (texto puro).
- *   **negrito**  _itálico_  ++sublinhado++  ==marca-texto==  "# título"  "- item de lista"
+ *   **negrito**  _itálico_  ++sublinhado++  ~~tachado~~  ==marca-texto==
+ *   "# título"  "## subtítulo"  "- item de lista"
+ * Escape: "\" antes de * _ + = ~ # - \ vale como o próprio caractere; "\|" é um separador invisível.
  * Funções puras (sem DOM): o parser devolve uma árvore que o React renderiza como elementos (nunca HTML bruto),
  * então qualquer texto digitado (inclusive "<script>") sai escapado. Notas antigas, sem marcação, passam iguais.
+ * O editor formatado (notes-doc.ts) lê e grava esta mesma marcação.
  */
 
 export const NOTES_MAX = 10000; // igual a IGREJA_LIMITS.lessonNotes e ao check do banco
 
 /* ---------- Parser ---------- */
 
-export type InlineNode = { t: "text"; v: string } | { t: "b" | "i" | "u" | "mark"; c: InlineNode[] };
-export type Block = { t: "p" | "h" | "li"; c: InlineNode[] } | { t: "blank" };
+export type InlineNode = { t: "text"; v: string } | { t: "b" | "i" | "u" | "s" | "mark"; c: InlineNode[] };
+export type Block = { t: "p" | "h" | "h2" | "li"; c: InlineNode[] } | { t: "blank" };
 
-type Mark = { open: string; close: string; node: "b" | "i" | "u" | "mark" };
+type Mark = { open: string; close: string; node: "b" | "i" | "u" | "s" | "mark" };
 const MARKS: Mark[] = [
   { open: "**", close: "**", node: "b" },
   { open: "++", close: "++", node: "u" },
+  { open: "~~", close: "~~", node: "s" },
   { open: "==", close: "==", node: "mark" },
   { open: "_", close: "_", node: "i" },
 ];
+
+/** Caracteres que o "\\" protege; "|" é o separador invisível (vira nada). */
+export const ESCAPABLE = "\\*_+=~#-|";
+/** Posição precedida por número ímpar de "\\" (escapada). */
+function isEscaped(s: string, i: number) {
+  let n = 0;
+  while (i - 1 - n >= 0 && s[i - 1 - n] === "\\") n++;
+  return n % 2 === 1;
+}
 
 const isWord = (ch: string | undefined) => ch !== undefined && /[\p{L}\p{N}]/u.test(ch);
 
@@ -37,7 +50,7 @@ function opens(s: string, i: number, m: Mark) {
 
 /** Fechamento valido? Não pode vir depois de espaço; "_" só fecha no fim de palavra. */
 function closes(s: string, j: number, m: Mark) {
-  if (!s.startsWith(m.close, j)) return false;
+  if (!s.startsWith(m.close, j) || isEscaped(s, j)) return false;
   const prev = s[j - 1];
   if (prev === undefined || /\s/.test(prev)) return false;
   if (m.node === "i" && isWord(s[j + 1])) return false;
@@ -53,6 +66,11 @@ export function parseInline(s: string): InlineNode[] {
   };
   let i = 0;
   scan: while (i < s.length) {
+    if (s[i] === "\\" && i + 1 < s.length && ESCAPABLE.includes(s[i + 1])) {
+      if (s[i + 1] !== "|") buf += s[i + 1];
+      i += 2;
+      continue;
+    }
     for (const m of MARKS) {
       if (!opens(s, i, m)) continue;
       for (let j = i + m.open.length + 1; j < s.length; j++) {
@@ -71,15 +89,16 @@ export function parseInline(s: string): InlineNode[] {
   return out;
 }
 
-/** Linhas viram blocos: "# " título, "- " item, linha vazia, ou parágrafo (a linha toda, espaços preservados). */
+/** Linhas viram blocos: "# " título, "## " subtítulo, "- " item, linha vazia, ou parágrafo (a linha toda, espaços preservados). */
 export function parseNotes(text: string): Block[] {
   return text
     .replace(/\r\n?/g, "\n")
     .split("\n")
     .map((line): Block => {
       if (line.trim() === "") return { t: "blank" };
-      if (line.startsWith("# ") && line.length > 2) return { t: "h", c: parseInline(line.slice(2)) };
-      if (line.startsWith("- ") && line.length > 2) return { t: "li", c: parseInline(line.slice(2)) };
+      if (line.startsWith("# ")) return { t: "h", c: parseInline(line.slice(2)) };
+      if (line.startsWith("## ")) return { t: "h2", c: parseInline(line.slice(3)) };
+      if (line.startsWith("- ")) return { t: "li", c: parseInline(line.slice(2)) };
       return { t: "p", c: parseInline(line) };
     });
 }
@@ -90,87 +109,6 @@ export function stripMarkup(text: string): string {
   return parseNotes(text)
     .map((b) => (b.t === "blank" ? "" : plain(b.c)))
     .join("\n");
-}
-
-/* ---------- Edição na seleção ---------- */
-
-export type Sel = { text: string; start: number; end: number };
-export type InlineKind = "bold" | "italic" | "underline" | "mark";
-export type LineKind = "heading" | "list";
-
-export const INLINE_MARKS: Record<InlineKind, string> = { bold: "**", italic: "_", underline: "++", mark: "==" };
-export const LINE_PREFIX: Record<LineKind, string> = { heading: "# ", list: "- " };
-
-/** A seleção está dentro da marcação (marcas logo fora dela ou nas pontas da própria seleção)? */
-export function isWrapped(sel: Sel, kind: InlineKind): boolean {
-  const m = INLINE_MARKS[kind];
-  const { text, start, end } = sel;
-  if (start >= m.length && text.slice(start - m.length, start) === m && text.slice(end, end + m.length) === m) {
-    // "_" dentro de "__x__" (e "**" dentro de "***") não conta como a marca simples.
-    if (kind === "italic" && (text[start - 2] === "_" || text[end + 1] === "_")) return false;
-    return true;
-  }
-  const inner = text.slice(start, end);
-  return inner.length >= m.length * 2 + 1 && inner.startsWith(m) && inner.endsWith(m);
-}
-
-/**
- * Liga/desliga a marcação na seleção. Sem seleção, insere o par e deixa o cursor no meio.
- * Passar de NOTES_MAX ao ligar → null (nada muda).
- */
-export function toggleInline(sel: Sel, kind: InlineKind, max = NOTES_MAX): Sel | null {
-  const m = INLINE_MARKS[kind];
-  const { text, start, end } = sel;
-  if (isWrapped(sel, kind)) {
-    if (start >= m.length && text.slice(start - m.length, start) === m && text.slice(end, end + m.length) === m) {
-      return { text: text.slice(0, start - m.length) + text.slice(start, end) + text.slice(end + m.length), start: start - m.length, end: end - m.length };
-    }
-    const inner = text.slice(start, end).slice(m.length, -m.length);
-    return { text: text.slice(0, start) + inner + text.slice(end), start, end: start + inner.length };
-  }
-  const next = text.slice(0, start) + m + text.slice(start, end) + m + text.slice(end);
-  if (next.length > max) return null;
-  return { text: next, start: start + m.length, end: end + m.length };
-}
-
-/** Linhas tocadas pela seleção: [início da primeira, fim da última]. */
-function lineRange(text: string, start: number, end: number) {
-  const from = text.lastIndexOf("\n", Math.max(0, start) - 1) + 1;
-  // Seleção que termina logo depois de um "\n" não puxa a linha seguinte.
-  const lastChar = end > start ? end - 1 : end;
-  const nl = text.indexOf("\n", lastChar);
-  return [from, nl === -1 ? text.length : nl] as const;
-}
-
-const anyPrefix = (l: string) => (l.startsWith("# ") ? "# " : l.startsWith("- ") ? "- " : "");
-
-/** Todas as linhas tocadas pela seleção têm este prefixo? (aria-pressed de Título e Lista) */
-export function hasLinePrefix(sel: Sel, kind: LineKind): boolean {
-  const p = LINE_PREFIX[kind];
-  const [from, to] = lineRange(sel.text, sel.start, sel.end);
-  return sel.text.slice(from, to).split("\n").every((l) => l.startsWith(p));
-}
-
-/** Título/Lista: tira o prefixo se todas as linhas já o têm; senão põe (trocando o outro prefixo). */
-export function toggleLinePrefix(sel: Sel, kind: LineKind, max = NOTES_MAX): Sel | null {
-  const p = LINE_PREFIX[kind];
-  const { text, start, end } = sel;
-  const [from, to] = lineRange(text, start, end);
-  const lines = text.slice(from, to).split("\n");
-  const remove = lines.every((l) => l.startsWith(p));
-  let delta0 = 0; // mudança de tamanho na primeira linha (ajusta o começo da seleção)
-  let total = 0;
-  const changed = lines.map((l, idx) => {
-    const old = anyPrefix(l);
-    const next = remove ? l.slice(p.length) : (l.trim() === "" && lines.length > 1 ? l : p + l.slice(old.length));
-    const d = next.length - l.length;
-    if (idx === 0) delta0 = d;
-    total += d;
-    return next;
-  });
-  const out = text.slice(0, from) + changed.join("\n") + text.slice(to);
-  if (!remove && out.length > max) return null;
-  return { text: out, start: Math.max(from, start + delta0), end: Math.max(from, end + total) };
 }
 
 /* ---------- Histórico (Desfazer/Refazer) ---------- */

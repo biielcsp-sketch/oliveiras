@@ -13,8 +13,6 @@ import { validateNotesEdit } from "@/lib/igreja/input";
 import {
   canRedo,
   canUndo,
-  hasLinePrefix,
-  isWrapped,
   newHistory,
   NOTES_MAX,
   parseInline,
@@ -22,14 +20,29 @@ import {
   pushHistory,
   redo,
   stripMarkup,
-  toggleInline,
-  toggleLinePrefix,
   undo,
 } from "@/lib/igreja/notes-markup";
+import {
+  deleteStep,
+  docLength,
+  docToMarkup,
+  domToDoc,
+  fitsLimit,
+  flagsAt,
+  insertNewline,
+  kindAt,
+  markupLength,
+  markupToDoc,
+  replaceRange,
+  setKind,
+  toggleFlag,
+  toggleList,
+  type Doc,
+  type Kind,
+} from "@/lib/igreja/notes-doc";
 import { planSummaryParts, runStudy, STUDY_INSTRUCTION, studyPrompt, validateStudyRequest, type SourceFile, type SummaryClient } from "@/lib/igreja/summary";
 
 const enc = (s: string) => new TextEncoder().encode(s);
-const sel = (text: string, a: string, b = a) => ({ text, start: text.indexOf(a), end: text.indexOf(a) + b.length });
 
 describe("marcação do caderno: parser", () => {
   it("lê negrito, itálico, sublinhado e marca-texto, inclusive aninhados", () => {
@@ -66,61 +79,239 @@ describe("marcação do caderno: parser", () => {
   });
 });
 
-describe("marcação do caderno: toggle na seleção", () => {
-  it("envolve a seleção, mantém a seleção no texto e desfaz ao repetir", () => {
-    const t = "Jesus é o Verbo";
-    const on = toggleInline(sel(t, "Verbo"), "bold")!;
-    expect(on.text).toBe("Jesus é o **Verbo**");
-    expect(on.text.slice(on.start, on.end)).toBe("Verbo");
-    expect(isWrapped(on, "bold")).toBe(true);
-    const off = toggleInline(on, "bold")!;
-    expect(off).toEqual({ text: t, start: 10, end: 15 });
+describe("marcação do caderno: subtítulo, tachado e escapes (leitura)", () => {
+  it("lê ## como subtítulo e ~~ como tachado; # continua título", () => {
+    expect(parseNotes("# T\n## S\n- i").map((x) => x.t)).toEqual(["h", "h2", "li"]);
+    expect(parseInline("a ~~b~~")).toEqual([{ t: "text", v: "a " }, { t: "s", c: [{ t: "text", v: "b" }] }]);
+    expect(stripMarkup("## Sub ~~x~~")).toBe("Sub x");
   });
-  it("cada botão usa a sua marca", () => {
-    const t = "x";
-    expect(toggleInline(sel(t, "x"), "italic")!.text).toBe("_x_");
-    expect(toggleInline(sel(t, "x"), "underline")!.text).toBe("++x++");
-    expect(toggleInline(sel(t, "x"), "mark")!.text).toBe("==x==");
+  it("barra invertida protege o caractere; \\| é separador invisível", () => {
+    expect(parseInline("\\*\\*a\\*\\*")).toEqual([{ t: "text", v: "**a**" }]);
+    expect(parseInline("a\\|_b_")).toEqual([{ t: "text", v: "a" }, { t: "i", c: [{ t: "text", v: "b" }] }]);
+    expect(parseInline("**a\\***")).toEqual([{ t: "b", c: [{ t: "text", v: "a*" }] }]);
+    expect(parseNotes("\\# não é título")[0]).toMatchObject({ t: "p", c: [{ t: "text", v: "# não é título" }] });
   });
-  it("sem seleção insere o par e deixa o cursor no meio", () => {
-    const r = toggleInline({ text: "ab", start: 1, end: 1 }, "bold")!;
-    expect(r).toEqual({ text: "a****b", start: 3, end: 3 });
+});
+
+const doc = markupToDoc;
+const plainOf = (d: Doc) => d.map((b) => b.runs.map((r) => r.text).join("")).join("\n");
+
+describe("editor formatado: marcação <-> modelo, ida e volta", () => {
+  const samples = [
+    "",
+    "texto simples",
+    "# Título com **negrito**\n## Subtítulo\n- item _itálico_\n- ++sub++ ~~tach~~ ==marca==\n\nfim",
+    "**negrito _e itálico_** e ==++~~tudo++==~~",
+    "snake_case_nome e 2 * 3 e a == b",
+    "<script>alert(1)</script> <img src=x onerror=alert(1)> **<b>x</b>**",
+    "\\# literal\n\\- literal\n\\*\\*não negrito\\*\\*",
+  ];
+  it("serializar o que foi lido devolve a mesma marcação (ponto fixo)", () => {
+    for (const m of samples) {
+      const once = docToMarkup(doc(m));
+      expect(docToMarkup(doc(once))).toBe(once);
+    }
+    const m = "# T\n## S\n- a **b** _c_ ++d++ ~~e~~ ==f==\ntexto";
+    expect(docToMarkup(doc(m))).toBe(m);
   });
-  it("desfaz também quando a seleção inclui as marcas", () => {
-    const r = toggleInline({ text: "a ==b== c", start: 2, end: 7 }, "mark")!;
-    expect(r.text).toBe("a b c");
-    expect(r.text.slice(r.start, r.end)).toBe("b");
+  it("notas antigas (sem marcação nova) leem igual", () => {
+    const old = "# Aula\n- um\n- **dois**\n\n  recuado\n#sem espaço\njoão 3:16 - amor";
+    expect(plainOf(doc(old))).toBe("Aula\num\ndois\n\n  recuado\n#sem espaço\njoão 3:16 - amor");
+    expect(doc(old).map((b) => b.k)).toEqual(["h1", "li", "li", "p", "p", "p", "p"]);
   });
-  it("itálico não confunde com negrito nem com snake_case", () => {
-    expect(isWrapped(sel("**x**", "x"), "italic")).toBe(false);
-    expect(isWrapped(sel("_x_", "x"), "italic")).toBe(true);
+  it("caracteres especiais digitados ficam como texto e voltam iguais", () => {
+    const d: Doc = [
+      { k: "p", runs: [{ text: "**x** _y_ ++z++ ~~w~~ ==v== \\ # - 2*3", f: "" }] },
+      { k: "p", runs: [{ text: "# parece título", f: "" }] },
+      { k: "p", runs: [{ text: "- parece item", f: "" }] },
+      { k: "h1", runs: [{ text: "- no título", f: "" }] },
+    ];
+    const back = doc(docToMarkup(d));
+    expect(plainOf(back)).toBe(plainOf(d));
+    expect(back.map((b) => b.k)).toEqual(["p", "p", "p", "h1"]);
+    expect(back.every((b) => b.runs.every((r) => r.f === ""))).toBe(true);
   });
-  it("Título e Lista: põem, trocam e tiram o prefixo em todas as linhas tocadas", () => {
-    const t = "um\ndois\ntres";
-    const all = toggleLinePrefix({ text: t, start: 0, end: t.length }, "list")!;
-    expect(all.text).toBe("- um\n- dois\n- tres");
-    expect(hasLinePrefix(all, "list")).toBe(true);
-    expect(toggleLinePrefix(all, "list")!.text).toBe(t);
-    expect(toggleLinePrefix(all, "heading")!.text).toBe("# um\n# dois\n# tres");
-    const one = toggleLinePrefix({ text: t, start: 4, end: 4 }, "heading")!;
-    expect(one.text).toBe("um\n# dois\ntres");
-    expect(hasLinePrefix(one, "heading")).toBe(true);
-    expect(hasLinePrefix({ text: t, start: 0, end: 0 }, "heading")).toBe(false);
+  it("texto malicioso fica como TEXTO nos dois sentidos", () => {
+    const evil = '<script>alert(1)</script><img src=x onerror=alert(1)>';
+    const d = doc(docToMarkup([{ k: "p", runs: [{ text: evil, f: "b" }] }]));
+    expect(d[0].runs).toEqual([{ text: evil, f: "b" }]);
+    const nodes = JSON.stringify(parseNotes(docToMarkup(d)));
+    expect(nodes).toContain("<script>");
+    expect(nodes).not.toMatch(/"t":"(script|img)"/);
   });
-  it("seleção que termina logo depois de uma quebra não pega a linha seguinte", () => {
-    const r = toggleLinePrefix({ text: "a\nb", start: 0, end: 2 }, "list")!;
-    expect(r.text).toBe("- a\nb");
+  it("formatação junto de espaços e de letras continua legível (espaço fora da marca, _ no meio da palavra)", () => {
+    const d: Doc = [{ k: "p", runs: [{ text: "um ", f: "" }, { text: " negrito ", f: "b" }, { text: "pre", f: "" }, { text: "fixo", f: "i" }, { text: "pos", f: "" }] }];
+    const m = docToMarkup(d);
+    expect(m).toBe("um  **negrito** pre\\|_fixo_\\|pos");
+    const back = doc(m);
+    expect(plainOf(back)).toBe("um  negrito prefixopos");
+    expect(back[0].runs.find((r) => r.text === "fixo")?.f).toBe("i");
+    expect(back[0].runs.find((r) => r.text === "negrito")?.f).toBe("b");
+  });
+  it("aleatório: o texto e o tipo dos blocos sobrevivem e a marcação é estável", () => {
+    let seed = 7;
+    const rnd = (n: number) => (seed = (seed * 1103515245 + 12345) % 2147483648) % n;
+    const alpha = ["a", "b", " ", "_", "*", "+", "=", "~", "\\", "#", "-", "ç", "1", "<", ">"];
+    const flagsPool = ["", "b", "i", "u", "s", "m", "bi", "ius", "bsm"];
+    for (let n = 0; n < 400; n++) {
+      const d: Doc = Array.from({ length: 1 + rnd(3) }, () => ({
+        k: (["p", "h1", "h2", "li"] as Kind[])[rnd(4)],
+        runs: Array.from({ length: rnd(4) }, () => ({ text: Array.from({ length: 1 + rnd(5) }, () => alpha[rnd(alpha.length)]).join(""), f: flagsPool[rnd(flagsPool.length)] })),
+      }));
+      const m = docToMarkup(d);
+      const back = doc(m);
+      // parágrafos só de espaço viram linha vazia; o resto mantém o texto
+      while (d.length && d[d.length - 1].runs.map((r) => r.text).join("").trim() === "") d.pop(); // vazios no fim não são salvos
+      const expected = d.map((b) => (b.k === "p" && b.runs.map((r) => r.text).join("").trim() === "" ? "" : b.runs.map((r) => r.text).join("")));
+      expect(back.map((b) => b.runs.map((r) => r.text).join(""))).toEqual(expected.length ? expected : [""]);
+      expect(docToMarkup(back)).toBe(m);
+    }
+  });
+});
+
+describe("editor formatado: salvar vs trim() do servidor", () => {
+  const afterServer = (d: Doc) => (validateNotesEdit(docToMarkup(d)) as { value: string | null }).value;
+  it("blocos vazios no fim não são salvos: marcação -> trim -> modelo igual ao salvo", () => {
+    for (const k of ["li", "h1", "h2", "p"] as Kind[]) {
+      const d: Doc = [{ k: "li", runs: [{ text: "item", f: "" }] }, { k, runs: [] }];
+      const saved = afterServer(d);
+      expect(saved).toBe("- item");
+      expect(markupToDoc(saved ?? "")).toEqual([{ k: "li", runs: [{ text: "item", f: "" }] }]);
+    }
+    // vários vazios e só espaços no fim; vazio no meio continua
+    const d: Doc = [{ k: "h1", runs: [{ text: "T", f: "" }] }, { k: "li", runs: [] }, { k: "p", runs: [{ text: "x", f: "b" }] }, { k: "li", runs: [{ text: " ", f: "" }] }, { k: "h2", runs: [] }];
+    expect(afterServer(d)).toBe("# T\n- \n**x**");
+    expect(markupToDoc(afterServer(d)!).map((b) => b.k)).toEqual(["h1", "li", "p"]);
+    expect(afterServer([{ k: "li", runs: [] }])).toBeNull();
+  });
+});
+
+describe("editor formatado: marcadores internos e limite do Oli", () => {
+  it("U+E000/U+E001 no texto não viram itálico falso", () => {
+    const d: Doc = [{ k: "p", runs: [{ text: "ab\ue000cd\ue001ef", f: "" }] }];
+    expect(docToMarkup(d)).toBe("abcdef");
+    expect(replaceRange(doc(""), 0, 0, "a\ue000b\ue001").doc[0].runs[0].text).toBe("ab");
+    expect(domToDoc({ nodeType: 1, nodeName: "DIV", nodeValue: null, childNodes: [{ nodeType: 3, nodeName: "#text", nodeValue: "x\ue000y", childNodes: [] }] })[0].runs[0].text).toBe("xy");
+  });
+  it("texto cru que cabe em 10000 pode estourar depois de normalizado (escapes): fitsLimit pega", () => {
+    const raw = "a*".repeat(4000); // 8000 caracteres; cada * vira \\* ao salvar (12000)
+    expect(raw.length).toBeLessThanOrEqual(NOTES_MAX);
+    expect(fitsLimit(markupToDoc(raw))).toBe(false);
+  });
+});
+
+describe("editor formatado: operações", () => {
+  it("negrito na seleção liga e desliga; sem seleção deixa o cursor formatado", () => {
+    const d = doc("Jesus é o Verbo");
+    const on = toggleFlag(d, 10, 15, "b");
+    expect(docToMarkup(on.doc)).toBe("Jesus é o **Verbo**");
+    expect(flagsAt(on.doc, 10, 15)).toBe("b");
+    expect(docToMarkup(toggleFlag(on.doc, 10, 15, "b").doc)).toBe("Jesus é o Verbo");
+    const caret = toggleFlag(d, 5, 5, "i");
+    expect(caret.start).toBe(6);
+    expect(flagsAt(caret.doc, 6, 6)).toBe("i");
+    expect(docToMarkup(caret.doc)).toBe("Jesus é o Verbo"); // o ZWSP não vai para a marcação
+    const typed = replaceRange(caret.doc, 6, 6, "X");
+    expect(docToMarkup(typed.doc)).toBe("Jesus\\|_X_ é o Verbo");
+  });
+  it("aplica nos vários blocos selecionados e conta só o que todos têm (aria-pressed)", () => {
+    const d = doc("um\ndois **três**");
+    const all = toggleFlag(d, 0, docLength(d), "u").doc;
+    expect(docToMarkup(all)).toBe("++um++\n++dois++ **++três++**");
+    expect(flagsAt(d, 0, docLength(d))).toBe("");
+    expect(flagsAt(d, 8, 12)).toBe("b");
+  });
+  it("estilo do parágrafo: Título, Subtítulo, Texto normal e Lista (liga/desliga)", () => {
+    let d = doc("um\ndois");
+    d = setKind(d, 0, 0, "h1");
+    expect(docToMarkup(d)).toBe("# um\ndois");
+    d = setKind(d, 0, 0, "h2");
+    expect(docToMarkup(d)).toBe("## um\ndois");
+    d = toggleList(d, 0, docLength(d));
+    expect(docToMarkup(d)).toBe("- um\n- dois");
+    d = toggleList(d, 0, docLength(d));
+    expect(docToMarkup(d)).toBe("um\ndois");
+    expect(kindAt(setKind(d, 4, 4, "h1"), 4)).toBe("h1");
+    // seleção que termina no começo do bloco seguinte não o puxa
+    expect(docToMarkup(setKind(d, 0, 3, "h1"))).toBe("# um\ndois");
+  });
+  it("Enter divide o bloco; lista continua; título volta a parágrafo; item vazio sai da lista", () => {
+    let r = insertNewline(doc("um dois"), 2, 2);
+    expect(docToMarkup(r.doc)).toBe("um\n dois");
+    expect(r.caret).toBe(3);
+    r = insertNewline(doc("- item"), 6, 6);
+    expect(docToMarkup(r.doc)).toBe("- item"); // item vazio no fim não é salvo
+    expect(r.doc.map((b) => b.k)).toEqual(["li", "li"]); // mas continua no editor
+    r = insertNewline(r.doc, r.caret, r.caret);
+    expect(docToMarkup(r.doc)).toBe("- item");
+    expect(r.doc.map((b) => b.k)).toEqual(["li", "p"]);
+    r = insertNewline(doc("# Título"), 8, 8);
+    expect(docToMarkup(r.doc)).toBe("# Título");
+  });
+  it("apagar: junta blocos, título/lista voltam a parágrafo no começo, o resto fica com o navegador", () => {
+    const d = doc("um\ndois");
+    expect(docToMarkup(deleteStep(d, 3, 3, "back")!.doc)).toBe("umdois");
+    expect(docToMarkup(deleteStep(d, 2, 2, "fwd")!.doc)).toBe("umdois");
+    expect(deleteStep(d, 1, 1, "back")).toBeNull();
+    expect(docToMarkup(deleteStep(doc("# um"), 0, 0, "back")!.doc)).toBe("um");
+    expect(docToMarkup(deleteStep(d, 1, 5, "back")!.doc)).toBe("uis");
+    expect(deleteStep(d, 0, 2, "back")).toBeNull();
+  });
+  it("colar é texto puro: HTML e marcação colados viram texto, quebras viram blocos", () => {
+    const r = replaceRange(doc("ab"), 1, 1, "<b>x</b>\n**y**\r\nz\u0000");
+    expect(plainOf(r.doc)).toBe("a<b>x</b>\n**y**\nzb");
+    expect(r.doc.every((b) => b.runs.every((x) => x.f === ""))).toBe(true);
+    expect(docToMarkup(r.doc)).toBe("a<b>x</b>\n\\*\\*y\\*\\*\nzb");
+    expect(r.caret).toBe(plainOf(r.doc).length - 1);
+  });
+});
+
+describe("editor formatado: ler o DOM", () => {
+  type N = { nodeType: number; nodeName: string; nodeValue: string | null; childNodes: N[]; getAttribute?: (n: string) => string | null };
+  const t = (v: string): N => ({ nodeType: 3, nodeName: "#text", nodeValue: v, childNodes: [] });
+  const el = (name: string, kids: N[] = [], attrs: Record<string, string> = {}): N => ({ nodeType: 1, nodeName: name, nodeValue: null, childNodes: kids, getAttribute: (n) => attrs[n] ?? null });
+  const root = (...kids: N[]) => el("DIV", kids);
+
+  it("blocos com data-k e formatações por tag; estilos e tags desconhecidas só deixam o texto", () => {
+    const d = domToDoc(
+      root(
+        el("DIV", [t("Título")], { "data-k": "h1" }),
+        el("DIV", [t("a "), el("STRONG", [t("b "), el("EM", [t("c")])]), el("SPAN", [t("d")], { style: "font-weight:700" }), el("S", [t("e")]), el("MARK", [t("f")]), el("U", [t("g")])], { "data-k": "p" }),
+        el("DIV", [el("BR")], { "data-k": "li" }),
+      ),
+    );
+    expect(docToMarkup(d)).toBe("# Título\na **b _c_**d~~e~~==f==++g++");
+    expect(d.map((b) => b.k)).toEqual(["h1", "p", "li"]);
+  });
+  it("tag <script>/<img> dentro do DOM nunca vira marcação; só o texto digitado aparece", () => {
+    const d = domToDoc(root(el("DIV", [t("<script>x</script>"), el("IMG"), el("SCRIPT", [t("evil()")])], { "data-k": "p" })));
+    // SCRIPT desconhecido: o texto interno entra como texto comum, nunca é executado nem vira tag
+    expect(plainOf(d)).toBe("<script>x</script>evil()");
+    expect(docToMarkup(d)).not.toContain("<img");
+  });
+  it("texto solto na raiz, BR no meio, NBSP, quebra de linha e blocos aninhados", () => {
+    const d = domToDoc(root(t("solto"), el("DIV", [t("a"), el("BR"), t("b\u00a0c\nd")], { "data-k": "li" }), el("DIV", [el("DIV", [t("x")]), el("DIV", [t("y")])])));
+    expect(plainOf(d)).toBe("solto\na\nb c d\nx\ny");
+    expect(d.map((b) => b.k)).toEqual(["p", "li", "li", "p", "p"]);
+    expect(domToDoc(root())).toEqual([{ k: "p", runs: [] }]);
+  });
+  it("o ZWSP do cursor formatado some da marcação", () => {
+    const d = domToDoc(root(el("DIV", [t("a"), el("STRONG", [t("\u200b")])], { "data-k": "p" })));
+    expect(plainOf(d)).toBe("a\u200b");
+    expect(docToMarkup(d)).toBe("a");
   });
 });
 
 describe("marcação do caderno: limite de 10000 contando a marcação", () => {
-  it("bloqueia o toggle que passaria do limite e deixa o que cabe", () => {
-    const full = "a".repeat(NOTES_MAX - 3);
-    expect(toggleInline({ text: full, start: 0, end: 1 }, "bold")).toBeNull(); // +4 = 10001
-    expect(toggleInline({ text: full, start: 0, end: 1 }, "italic")!.text.length).toBe(NOTES_MAX - 1);
-    expect(toggleLinePrefix({ text: "a".repeat(NOTES_MAX - 1), start: 0, end: 0 }, "heading")).toBeNull();
-    // remover marcação sempre é permitido, mesmo no limite
-    expect(toggleInline({ text: "**" + "a".repeat(NOTES_MAX - 4) + "**", start: 2, end: NOTES_MAX - 2 }, "bold")).not.toBeNull();
+  it("o limite conta a marcação, inclusive escapes e prefixos", () => {
+    expect(fitsLimit(doc("a".repeat(NOTES_MAX)))).toBe(true);
+    expect(fitsLimit(doc("a".repeat(NOTES_MAX + 1)))).toBe(false);
+    const full = doc("a".repeat(NOTES_MAX - 3));
+    expect(fitsLimit(toggleFlag(full, 0, 1, "b").doc)).toBe(false); // +4 = 10001
+    expect(fitsLimit(setKind(full, 0, 0, "h1"))).toBe(true); // "# " = +2
+    expect(fitsLimit(setKind(doc("a".repeat(NOTES_MAX - 1)), 0, 0, "h2"))).toBe(false); // "## " = +3
+    expect(markupLength(doc("**"))).toBe(4); // "**" solto vira \*\*
+    expect(markupLength([{ k: "p", runs: [{ text: "***", f: "" }] }])).toBe(6); // cada * vira \*
   });
   it("o servidor conta a marcação: 10000 passa, 10001 não; vazio vira null; não texto é recusado", () => {
     expect(validateNotesEdit("**" + "a".repeat(NOTES_MAX - 4) + "**")).toMatchObject({ ok: true });
@@ -128,6 +319,7 @@ describe("marcação do caderno: limite de 10000 contando a marcação", () => {
     expect(validateNotesEdit("  \n ")).toEqual({ ok: true, value: null });
     expect(validateNotesEdit(123)).toMatchObject({ ok: false });
     expect(validateNotesEdit("a\r\nb\u0007")).toEqual({ ok: true, value: "a\nb" });
+    expect(validateNotesEdit("## Sub ~~x~~ \\*")).toEqual({ ok: true, value: "## Sub ~~x~~ \\*" });
   });
 });
 

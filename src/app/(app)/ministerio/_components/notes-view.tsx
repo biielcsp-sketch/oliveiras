@@ -9,6 +9,7 @@ function Inline({ nodes }: { nodes: InlineNode[] }): ReactNode {
     if (n.t === "b") return <strong key={i}>{kids}</strong>;
     if (n.t === "i") return <em key={i}>{kids}</em>;
     if (n.t === "u") return <u key={i}>{kids}</u>;
+    if (n.t === "s") return <s key={i}>{kids}</s>;
     return (
       <mark key={i} className="rounded-[4px] bg-[color-mix(in_srgb,#facc15_45%,transparent)] px-0.5 text-inherit">
         {kids}
@@ -43,6 +44,12 @@ export function NotesView({ text, className = "" }: { text: string; className?: 
         <h4 key={i} className="break-words pt-1 text-[17px] font-semibold tracking-tight">
           <Inline nodes={b.c} />
         </h4>,
+      );
+    } else if (b.t === "h2") {
+      out.push(
+        <h5 key={i} className="break-words pt-0.5 text-base font-semibold text-deep">
+          <Inline nodes={b.c} />
+        </h5>,
       );
     } else if (b.t === "blank") {
       out.push(<div key={i} aria-hidden className="h-2.5" />);
