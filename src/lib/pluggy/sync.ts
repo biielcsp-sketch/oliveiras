@@ -82,7 +82,9 @@ export async function syncHousehold({ force }: { force: boolean }): Promise<Sync
         .eq("pluggy_item_ref", item.id)
         .eq("archived", false)
         .not("external_id", "is", null);
-      if (!linked?.length) continue;
+      // Sem conta vinculada não há o que ler, mas o item precisa registrar a sincronização (last_sync_at):
+      // com `continue` ele nunca ficava "recente" e a sincronização automática rodava a cada abertura da tela.
+      if (!linked?.length) throw new SkipItem();
 
       const remote = new Map((await listAccounts(item.item_id, credential)).map((a) => [a.id, a]));
       for (const acc of linked) {
