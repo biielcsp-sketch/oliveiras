@@ -31,7 +31,7 @@ App da família Oliveira Rodrigues: Next.js 16 (App Router) + Supabase (projeto 
 - Tabela nova: RLS ligado, políticas por `is_household_member(household_id)` e teste pgTAP provando que outra família não lê nem escreve. O teste `00_helpers` reprova tabela sem RLS.
 - Função `security definer`: `set search_path = ''`, valida `auth.uid()`, `revoke` de `public` e `anon`.
 - Front: dados do usuário nunca em `dangerouslySetInnerHTML`; servidor usa `auth.getClaims()` (nunca `getSession()`); chave secreta do Supabase nunca no app. O Semgrep (`.semgrep/`) barra esses casos.
-- Open Finance (Pluggy): credenciais só em variáveis do servidor (`PLUGGY_CLIENT_ID/SECRET`), uso restrito à família `PLUGGY_HOUSEHOLD_ID`; sincronização roda com a sessão do usuário (RLS), nunca com chave de serviço. Sinal do valor vem de `type` (DEBIT/CREDIT), não do `amount`.
+- Open Finance (Pluggy): credenciais só em variáveis do servidor (`PLUGGY_CLIENT_ID/SECRET` e, para a conta Meu Pluggy da Karen, `PLUGGY_CLIENT_ID_KAREN/SECRET_KAREN`; o item grava só o rótulo em `credential`, nunca o segredo), uso restrito à família `PLUGGY_HOUSEHOLD_ID`; sincronização roda com a sessão do usuário (RLS), nunca com chave de serviço. Sinal do valor vem de `type` (DEBIT/CREDIT), não do `amount`.
 - CSP com nonce (`src/lib/security-headers.ts` + proxy): não adicione `unsafe-inline`/`unsafe-eval` em scripts nem domínios externos sem justificar.
 - Dry run antes de mudança destrutiva ou estrutural: simule, valide o estado final e só aplique se confirmar.
 - Não faça: apagar ou sobrescrever sem olhar o alvo, inventar funcionalidade fora do pedido, publicar sem pedido, mudar produção sem rollback. Pedido arriscado ou ambíguo: pergunte.

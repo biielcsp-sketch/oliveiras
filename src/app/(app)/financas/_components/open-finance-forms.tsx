@@ -6,7 +6,7 @@ import { RefreshCw } from "lucide-react";
 import { addItem, autoSync, linkAccount, syncNow, type OfState } from "../open-finance-actions";
 import { Button, Field, FormError, Input, Select } from "@/components/ui";
 
-export function AddItemForm() {
+export function AddItemForm({ credentials }: { credentials: { value: string; label: string }[] }) {
   const [state, action, pending] = useActionState<OfState, FormData>(addItem, null);
   const ref = useRef<HTMLFormElement>(null);
   useEffect(() => {
@@ -14,6 +14,16 @@ export function AddItemForm() {
   }, [state]);
   return (
     <form ref={ref} action={action} className="flex flex-col gap-3">
+      {credentials.length === 1 && <input type="hidden" name="credential" value={credentials[0].value} />}
+      {credentials.length > 1 && (
+        <Field label="Conta do Meu Pluggy">
+          <Select name="credential" defaultValue={credentials[0]?.value}>
+            {credentials.map((c) => (
+              <option key={c.value} value={c.value}>{c.label}</option>
+            ))}
+          </Select>
+        </Field>
+      )}
       <Field label="Id do item (Connected Items, no dashboard da Pluggy)">
         <Input name="item_id" placeholder="00000000-0000-0000-0000-000000000000" className="font-mono text-sm" required />
       </Field>

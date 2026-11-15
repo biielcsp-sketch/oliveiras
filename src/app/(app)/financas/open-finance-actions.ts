@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getAppContext } from "@/lib/data";
 import { todaySP } from "@/lib/financas/today";
 import { getItem, listAccounts, pluggyAllowedFor, pluggyConfigured } from "@/lib/pluggy/client";
+import { credentialForNewItem, credentialForStoredItem, CREDENTIAL_READ_ERROR_MSG } from "@/lib/pluggy/credentials";
 import { accountKindFrom, defaultSyncFrom } from "@/lib/pluggy/normalize";
 import { pluggyErrorLog, pluggyErrorMessage } from "@/lib/pluggy/errors";
 import { matchOpeningToBank, syncHousehold, type SyncResult } from "@/lib/pluggy/sync";
@@ -33,9 +34,14 @@ export async function addItem(_: OfState, form: FormData): Promise<OfState> {
   const itemId = str(form, "item_id").toLowerCase();
   if (!UUID.test(itemId)) return { error: "Cole o id do item como aparece em Connected Items (formato UUID)." };
 
+  // O formulário manda só o rótulo; os segredos ficam nas variáveis do servidor.
+  const decision = credentialForNewItem(str(form, "credential"));
+  if (!decision.ok) return { error: decision.error };
+  const credential = decision.credential;
+
   let label = str(form, "label").slice(0, 60);
   try {
-    const item = await getItem(itemId);
+    const item = await getItem(itemId, credential);
     label ||= item.connector?.name?.slice(0, 60) ?? "Banco";
   } catch (e) {
     console.error(pluggyErrorLog(e));
@@ -45,7 +51,7 @@ export async function addItem(_: OfState, form: FormData): Promise<OfState> {
   const supabase = await createClient();
   const { error } = await supabase
     .from("fin_pluggy_items")
-    .insert({ household_id: g.ctx.household.id, item_id: itemId, label });
+    .insert({ household_id: g.ctx.household.id, item_id: itemId, label, credential });
   if (error) return { error: error.code === "23505" ? "Este item já está conectado." : "Não foi possível salvar." };
   refresh();
   return { ok: true };
@@ -79,17 +85,24 @@ export async function linkAccount(_: OfState, form: FormData): Promise<OfState> 
   if (syncFromInput && !ISO_DATE.test(syncFromInput)) return { error: "Data inválida." };
 
   const supabase = await createClient();
-  const { data: item } = await supabase
+  const { data: item, error: itemError } = await supabase
     .from("fin_pluggy_items")
-    .select("id, item_id, label")
+    .select("id, item_id, label, credential")
     .eq("id", itemRef)
     .eq("household_id", household.id)
     .maybeSingle();
+  if (itemError) {
+    console.error(`[pluggy] falha ao ler conexão code=${itemError.code ?? "-"}`);
+    return { error: CREDENTIAL_READ_ERROR_MSG };
+  }
   if (!item) return { error: "Conexão não encontrada." };
 
+  const decision = credentialForStoredItem(item.credential);
+  if (!decision.ok) return { error: decision.error };
+  const credential = decision.credential;
   let remote;
   try {
-    remote = (await listAccounts(item.item_id)).find((a) => a.id === remoteId);
+    remote = (await listAccounts(item.item_id, credential)).find((a) => a.id === remoteId);
   } catch (e) {
     console.error(pluggyErrorLog(e));
     return { error: pluggyErrorMessage(e) };
@@ -151,6 +164,7 @@ export async function unlinkAccount(form: FormData) {
 }
 
 function describe(r: SyncResult): string {
+  if (r.status === "error") return r.message;
   if (r.status === "skipped") {
     return {
       "nao-configurado": "Open Finance não configurado.",
@@ -167,7 +181,7 @@ function describe(r: SyncResult): string {
 export async function syncNow(): Promise<OfState> {
   const r = await syncHousehold({ force: true });
   refresh();
-  return r.status === "done" && r.errors.length ? { error: describe(r) } : { ok: true, message: describe(r) };
+  return r.status === "error" || (r.status === "done" && r.errors.length) ? { error: describe(r) } : { ok: true, message: describe(r) };
 }
 
 /** Chamado ao abrir Finanças: só sincroniza se a última vez foi há mais de 6 horas. */

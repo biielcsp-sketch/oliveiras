@@ -4,6 +4,10 @@ import { createServer } from "node:http";
 
 const PORT = Number(process.env.PLUGGY_MOCK_PORT ?? 4010);
 const ITEM = "11111111-1111-4111-8111-111111111111";
+// Segunda aplicação Pluggy (conta Meu Pluggy da Karen): item e credenciais próprios.
+const ITEM_KAREN = "44444444-4444-4444-8444-444444444444";
+const KAREN_ACCOUNT = "55555555-5555-4555-8555-555555555555";
+const KEYS = { "mock-key": "principal", "mock-key-karen": "karen" };
 const CHECKING = "22222222-2222-4222-8222-222222222222";
 const CARD = "33333333-3333-4333-8333-333333333333";
 const today = new Date().toISOString().slice(0, 10);
@@ -51,23 +55,33 @@ createServer(async (req, res) => {
     let raw = "";
     for await (const chunk of req) raw += chunk;
     const body = JSON.parse(raw || "{}");
-    return body.clientId === "test-client" && body.clientSecret === "test-secret"
-      ? send(res, 200, { apiKey: "mock-key" })
-      : send(res, 403, { message: "invalid" });
+    if (body.clientId === "test-client" && body.clientSecret === "test-secret") return send(res, 200, { apiKey: "mock-key" });
+    if (body.clientId === "test-client-karen" && body.clientSecret === "test-secret-karen") return send(res, 200, { apiKey: "mock-key-karen" });
+    return send(res, 403, { message: "invalid" });
   }
   if (req.method === "POST" && url.pathname.startsWith("/__scenario/")) {
     scenario = Number(url.pathname.split("/").pop());
     return send(res, 200, { scenario });
   }
   if (url.pathname === "/__today") return send(res, 200, { today, old });
-  if (req.headers["x-api-key"] !== "mock-key") return send(res, 403, { message: "no key" });
+  const app = KEYS[req.headers["x-api-key"]];
+  if (!app) return send(res, 403, { message: "no key" });
 
-  if (url.pathname === `/items/${ITEM}`) {
+  // Cada aplicação só enxerga os próprios itens; a outra recebe 404.
+  if (url.pathname === `/items/${ITEM_KAREN}` && app === "karen") {
+    return send(res, 200, { id: ITEM_KAREN, status: "UPDATED", consentExpiresAt: "2099-11-01T00:00:00.000Z", connector: { name: "Banco da Karen" } });
+  }
+  if (url.pathname === "/accounts" && url.searchParams.get("itemId") === ITEM_KAREN && app === "karen") {
+    return send(res, 200, {
+      results: [{ id: KAREN_ACCOUNT, name: "Conta Corrente", marketingName: "Conta Karen", number: "0002/65432-1", type: "BANK", subtype: "CHECKING_ACCOUNT", balance: 100 }],
+    });
+  }
+  if (url.pathname === `/items/${ITEM}` && app === "principal") {
     const consentExpiresAt = scenario === 3 ? "2026-01-01T00:00:00.000Z" : "2099-11-01T00:00:00.000Z";
     return send(res, 200, { id: ITEM, status: "UPDATED", consentExpiresAt, connector: { name: "Banco Teste" } });
   }
   if (url.pathname.startsWith("/items/")) return send(res, 404, { message: "not found" });
-  if (url.pathname === "/accounts" && url.searchParams.get("itemId") === ITEM) {
+  if (url.pathname === "/accounts" && url.searchParams.get("itemId") === ITEM && app === "principal") {
     return send(res, 200, {
       results: [
         { id: CHECKING, name: "Conta Corrente", marketingName: "Conta Teste", number: "0001/12345-6", type: "BANK", subtype: "CHECKING_ACCOUNT", balance: 4864.5 },

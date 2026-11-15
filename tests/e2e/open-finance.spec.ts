@@ -4,6 +4,7 @@ import { createFamilyWithId } from "./admin";
 import { PASSWORD, signUp, uniqueEmail, watchConsole } from "./helpers";
 
 const ITEM = "11111111-1111-4111-8111-111111111111";
+const ITEM_KAREN = "44444444-4444-4444-8444-444444444444";
 const MOCK = "http://127.0.0.1:4010";
 const text = async (page: Page) => (await page.locator("main").innerText()).replace(/\s/g, " ");
 
@@ -34,13 +35,30 @@ test("Open Finance: conectar item, vincular contas e sincronizar sem duplicar", 
     await page.goto("/financas/open-finance");
     await page.getByLabel(/Id do item/).fill("aaaaaaaa-0000-4000-8000-000000000000");
     await page.getByRole("button", { name: "Conectar" }).click();
-    await expect(page.getByText("Item não encontrado na Pluggy")).toBeVisible();
+    await expect(page.getByText("Item não encontrado nas credenciais do Gabriel")).toBeVisible();
 
     await page.getByLabel(/Id do item/).fill(ITEM);
     await page.getByRole("button", { name: "Conectar" }).click();
     await expect(page.getByText("Banco Teste")).toBeVisible();
     await expect.poll(() => text(page)).toContain("Conta Teste •••• 45-6");
     expect(await text(page)).toContain("-R$ 65,90"); // dívida do cartão em negativo
+  });
+
+  await test.step("item da Karen: conta errada mostra erro claro; conta certa conecta", async () => {
+    await page.goto("/financas/open-finance");
+    await page.getByLabel(/Id do item/).fill(ITEM_KAREN);
+    await page.getByLabel("Conta do Meu Pluggy").selectOption("principal");
+    await page.getByRole("button", { name: "Conectar" }).click();
+    await expect(page.getByText("Item não encontrado nas credenciais do Gabriel")).toBeVisible();
+    await expect(page.getByText("Banco da Karen")).toHaveCount(0);
+
+    // O React reseta os campos do form depois da action (também com erro): preenche tudo de novo.
+    await page.getByLabel(/Id do item/).fill(ITEM_KAREN);
+    await page.getByLabel("Conta do Meu Pluggy").selectOption("karen");
+    await page.getByRole("button", { name: "Conectar" }).click();
+    await expect(page.getByText("Banco da Karen")).toBeVisible();
+    await expect(page.getByText("Conta do Meu Pluggy: Karen")).toBeVisible();
+    await expect.poll(() => text(page)).toContain("Conta Karen •••• 32-1");
   });
 
   await test.step("vincula as duas contas como contas novas", async () => {
