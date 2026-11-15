@@ -12,7 +12,7 @@ $$;
 
 select has_column('public', 'fin_pluggy_items', 'credential', 'coluna credential existe');
 select col_not_null('public', 'fin_pluggy_items', 'credential', 'credential é not null');
-select col_default_is('public', 'fin_pluggy_items', 'credential', '''principal''::text', 'default é principal');
+select col_default_is('public', 'fin_pluggy_items', 'credential', 'principal', 'default é principal');
 
 set local role authenticated;
 select pg_temp.as_user('00000000-0000-0000-0000-0000000026a1');
