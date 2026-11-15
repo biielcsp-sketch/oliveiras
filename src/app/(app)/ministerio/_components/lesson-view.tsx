@@ -3,12 +3,12 @@
 import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Ellipsis, ExternalLink, FileText, Image as ImageIcon, Pencil, Sparkles, Upload } from "lucide-react";
+import { ArrowLeft, Ellipsis, ExternalLink, FileText, Image as ImageIcon, Pencil, Sparkles } from "lucide-react";
 import { Button, Card, EmptyState, Field, FormError, Input, Textarea } from "@/components/ui";
 import { Modal } from "@/components/modal";
 import { brDate } from "@/lib/agenda/dates";
 import { IGREJA_LIMITS } from "@/lib/igreja/input";
-import { ACCEPT_ATTR, baseName, extOf, validateDeclaredUpload } from "@/lib/igreja/files";
+import { ACCEPT_BY_GROUP, baseName, extOf, validateDeclaredUpload } from "@/lib/igreja/files";
 import { formatBytes, putToSession } from "@/lib/igreja/upload-client";
 import {
   cancelDriveUpload,
@@ -23,6 +23,9 @@ import {
 } from "../carisma-actions";
 import { LessonForm } from "./lessons-view";
 import { ConfirmDelete, Feedback, Multiline, smallBtn, useRunner } from "./shared";
+import { NotesEditor, type NotebookApi } from "./notes-editor";
+import { NotesView } from "./notes-view";
+import { StudyPanel } from "./study-panel";
 
 type Lesson = {
   id: string;
@@ -50,6 +53,9 @@ function FileIcon({ mime }: { mime: string }) {
 function FileItem({ file: f, mine, pending, run }: { file: FileVM; mine: boolean; pending: boolean; run: ReturnType<typeof useRunner>["run"] }) {
   const [renaming, setRenaming] = useState(false);
   const [menu, setMenu] = useState(false);
+  // Perto do fim da tela o menu (e a confirmação de exclusão, que o faz crescer) abre para cima: aberto para baixo,
+  // o fim dele ficava sob a barra inferior fixa e o botão Apagar não podia ser tocado.
+  const [up, setUp] = useState(false);
   const [name, setName] = useState(baseName(f.name));
   const [err, setErr] = useState<string | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -57,6 +63,14 @@ function FileItem({ file: f, mine, pending, run }: { file: FileVM; mine: boolean
   const menuId = useId();
   const ext = extOf(f.name);
   const hasActions = Boolean(f.link) || mine;
+
+  useEffect(() => {
+    if (!menu || !btnRef.current) return;
+    const r = btnRef.current.getBoundingClientRect();
+    const NAV = 96; // barra inferior flutuante (62px + 14px do fundo + folga)
+    const MENU = 260; // altura máxima do menu com a confirmação aberta
+    setUp(window.innerHeight - NAV - r.bottom < MENU && r.top > MENU);
+  }, [menu]);
 
   useEffect(() => {
     if (!menu) return;
@@ -105,7 +119,8 @@ function FileItem({ file: f, mine, pending, run }: { file: FileVM; mine: boolean
             hidden={!menu}
             aria-label={`Ações de ${f.name}`}
             role="group"
-            className="absolute right-0 top-12 z-30 flex w-60 flex-col gap-0.5 rounded-[18px] border border-line bg-surface-solid p-1.5 shadow-lg"
+            data-placement={up ? "up" : "down"}
+            className={`absolute right-0 z-30 ${up ? "bottom-12" : "top-12"} flex w-60 flex-col gap-0.5 rounded-[18px] border border-line bg-surface-solid p-1.5 shadow-lg`}
           >
             {f.link && (
               <a href={f.link} target="_blank" rel="noopener noreferrer" className={item} onClick={() => setMenu(false)}>
@@ -164,10 +179,10 @@ function FileItem({ file: f, mine, pending, run }: { file: FileVM; mine: boolean
 /** Envio: prepara no servidor → PUT direto ao Drive com progresso → confirma no servidor (bytes conferidos lá). */
 function UploadBox({ lessonId, onNotice, onError }: { lessonId: string; onNotice: (m: string) => void; onError: (m: string | null) => void }) {
   const router = useRouter();
-  const input = useRef<HTMLInputElement>(null);
+  const inputs = useRef<Record<string, HTMLInputElement | null>>({});
   const [busy, setBusy] = useState<{ name: string; pct: number; phase: "enviando" | "conferindo" } | null>(null);
 
-  async function send(file: File) {
+  async function send(file: File, group: string) {
     onError(null);
     const check = validateDeclaredUpload({ name: file.name, mime: file.type, size: file.size });
     if (!check.ok) return onError(check.erro);
@@ -188,34 +203,46 @@ function UploadBox({ lessonId, onNotice, onError }: { lessonId: string; onNotice
       onError("Não foi possível falar com o servidor. Tente de novo.");
     } finally {
       setBusy(null);
-      if (input.current) input.current.value = "";
+      const el = inputs.current[group];
+      if (el) el.value = "";
       router.refresh();
     }
   }
 
+  const groups = [
+    { key: "texto", label: "Texto", hint: "Texto (.txt ou .docx)", aria: "Escolher arquivo de texto" },
+    { key: "imagem", label: "Imagem", hint: "Imagem JPG ou PNG", aria: "Escolher imagem" },
+    { key: "pdf", label: "PDF", hint: "Arquivo PDF", aria: "Escolher PDF" },
+  ] as const;
+
   return (
     <div className="flex flex-col gap-2">
-      <input
-        ref={input}
-        type="file"
-        accept={ACCEPT_ATTR}
-        className="sr-only"
-        id="carisma-arquivo"
-        aria-label="Escolher arquivo da aula"
-        disabled={busy !== null}
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) void send(f);
-        }}
-      />
-      <label
-        htmlFor="carisma-arquivo"
-        className={`glass-card inline-flex h-12 w-fit cursor-pointer items-center gap-2 rounded-full px-5 text-[15px] font-medium ${busy ? "pointer-events-none opacity-50" : ""}`}
-      >
-        <Upload size={18} aria-hidden /> Adicionar arquivo
-      </label>
+      <div role="group" aria-label="Adicionar arquivo" className="flex flex-wrap items-center gap-2">
+        {groups.map((g) => (
+          <span key={g.key} className="contents">
+            <input
+              ref={(el) => {
+                inputs.current[g.key] = el;
+              }}
+              type="file"
+              accept={ACCEPT_BY_GROUP[g.key]}
+              className="sr-only"
+              tabIndex={-1}
+              aria-label={g.aria}
+              disabled={busy !== null}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void send(f, g.key);
+              }}
+            />
+            <Button type="button" size="sm" variant="ghost" title={g.hint} disabled={busy !== null} onClick={() => inputs.current[g.key]?.click()}>
+              {g.key === "imagem" ? <ImageIcon size={14} aria-hidden /> : <FileText size={14} aria-hidden />} {g.label}
+            </Button>
+          </span>
+        ))}
+      </div>
       <p className="text-[13px] text-muted">
-        PDF, Word (.docx) ou imagem JPG/PNG, até 20 MB cada. Arquivo .doc (Word antigo) não é aceito: abra no Word ou no Google Docs e salve como .docx ou PDF.
+        Texto (.txt ou .docx), imagem JPG/PNG ou PDF, até 20 MB cada. Arquivo .doc (Word antigo) não é aceito: abra no Word ou no Google Docs e salve como .docx ou PDF.
       </p>
       {busy && (
         <div role="status" aria-live="polite" className="flex flex-col gap-1">
@@ -324,6 +351,9 @@ export function LessonView({
   const [uploadError, setUploadError] = useState<string | null>(null);
   // Marca otimista: muda na hora e volta se o Drive ou o banco recusarem.
   const [shared, setShared] = useState(lesson.shared);
+  // Texto vivo do caderno (o editor salva sozinho); o "Editar aula" repassa este texto para não sobrescrever com o antigo.
+  const [notes, setNotes] = useState(lesson.notes ?? "");
+  const notebook = useRef<NotebookApi>(null);
   const ready = files.filter((f) => f.status === "pronto");
   const pendingFiles = files.filter((f) => f.status === "pendente");
 
@@ -336,7 +366,7 @@ export function LessonView({
         {sharedBy && <p className="text-[13px] font-medium text-primary">{sharedBy}</p>}
         <h2 className="text-xl font-semibold tracking-tight">{lesson.title}</h2>
         <p className="text-sm text-muted">{[lesson.lesson_date ? brDate(lesson.lesson_date) : null, lesson.subject, lesson.teacher].filter(Boolean).join(" · ") || "Sem data"}</p>
-        {lesson.notes ? <Multiline text={lesson.notes} className="mt-3 text-[15px]" /> : <p className="mt-3 text-sm text-muted">Sem anotações.</p>}
+        {!mine && (lesson.notes ? <NotesView text={lesson.notes} className="mt-3 text-[15px]" /> : <p className="mt-3 text-sm text-muted">Sem anotações.</p>)}
         {mine && (
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <Button type="button" variant="ghost" className={smallBtn} onClick={() => setEditing(true)}>
@@ -354,6 +384,13 @@ export function LessonView({
         )}
       </Card>
       <Feedback notice={notice} error={error ?? uploadError} />
+
+      {mine && (
+        <div className="flex flex-col gap-3">
+          <NotesEditor lessonId={lesson.id} initial={lesson.notes ?? ""} onChange={setNotes} apiRef={notebook} />
+          {canSummarize && <StudyPanel lessonId={lesson.id} notebook={notebook} />}
+        </div>
+      )}
 
       {mine && (
         <section aria-label="Compartilhamento" className="flex flex-col gap-2">
@@ -436,6 +473,7 @@ export function LessonView({
         {editing && (
           <LessonForm
             item={lesson}
+            notesValue={notes}
             today={today}
             onDone={(m) => {
               setNotice(m ?? "Aula atualizada.");

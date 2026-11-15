@@ -210,6 +210,14 @@ export function validateLessonInput(raw: Record<string, unknown>): Ok<LessonInpu
   return { ok: true, value: { title, lesson_date: date.value, subject: orNull(subject), teacher: orNull(teacher), notes: orNull(notes) } };
 }
 
+/** Caderno da aula (autosave): texto com marcação leve, até 10000 caracteres CONTANDO a marcação. Vazio → null. */
+export function validateNotesEdit(raw: unknown): Ok<string | null> | Fail {
+  if (typeof raw !== "string") return fail("Anotações inválidas.");
+  const notes = clean(raw);
+  const err = tooLong("Anotações", notes, IGREJA_LIMITS.lessonNotes);
+  return err ?? { ok: true, value: orNull(notes) };
+}
+
 /** Resumo editado à mão: texto simples, até 20000. Vazio volta o status para 'nenhum'. */
 export function validateSummaryEdit(raw: unknown): Ok<string | null> | Fail {
   const s = clean(raw);
