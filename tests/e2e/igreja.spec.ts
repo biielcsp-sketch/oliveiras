@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { E2E_IGREJA_HOUSEHOLD_ID } from "../../playwright.config";
 import { addSpouse, adminClient, createFamilyWithId } from "./admin";
 import { PASSWORD, uniqueEmail, watchConsole } from "./helpers";
@@ -52,13 +52,48 @@ async function shot(page: Page, name: string) {
 }
 
 /** Seleciona um trecho do caderno (como o usuário com o dedo ou o mouse). */
-async function selectIn(ta: ReturnType<Page["getByLabel"]>, word: string) {
-  await ta.evaluate((el: HTMLTextAreaElement, w: string) => {
-    const i = el.value.indexOf(w);
-    el.focus();
-    el.setSelectionRange(i, i + w.length);
-    el.dispatchEvent(new Event("select", { bubbles: true }));
+async function selectIn(ed: Locator, word: string) {
+  await ed.evaluate((root: HTMLElement, w: string) => {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const i = (n.nodeValue ?? "").indexOf(w);
+      if (i < 0) continue;
+      root.focus();
+      const r = document.createRange();
+      r.setStart(n, i);
+      r.setEnd(n, i + w.length);
+      const sel = document.getSelection()!;
+      sel.removeAllRanges();
+      sel.addRange(r);
+      return;
+    }
+    throw new Error(`trecho não encontrado: ${w}`);
   }, word);
+}
+
+/** Cola como o navegador faz: evento paste com HTML e texto puro na área de transferência. */
+async function pasteInto(ed: Locator, plain: string, html?: string) {
+  await ed.evaluate(
+    (root: HTMLElement, v: { plain: string; html?: string }) => {
+      root.focus();
+      const dt = new DataTransfer();
+      dt.setData("text/plain", v.plain);
+      if (v.html) dt.setData("text/html", v.html);
+      root.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+    },
+    { plain, html },
+  );
+}
+
+/** Troca todo o caderno por estas linhas (digitando, com Enter entre elas). */
+async function writeNotes(page: Page, ed: Locator, lines: string[]) {
+  await ed.click();
+  await page.keyboard.press("Control+a");
+  await page.keyboard.press("Backspace");
+  for (let i = 0; i < lines.length; i++) {
+    if (i) await page.keyboard.press("Enter");
+    await page.keyboard.type(lines[i]);
+  }
 }
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0, 0x49, 0x45, 0x4e, 0x44]);
@@ -303,71 +338,177 @@ test("Igreja: devocional pessoal com compartilhamento, Carisma com Google Drive 
     await expect(page.getByText("Arquivo .doc (Word antigo) não é aceito. Abra no Word")).toBeVisible();
   });
 
-  await test.step("caderno: formatar na seleção, atalhos, pré-visualização, autosave e persistência", async () => {
+  await test.step("caderno: editor formatado (barra no topo, estilos, menu, atalhos, lista, colar, autosave e persistência)", async () => {
     const caderno = page.getByRole("region", { name: "Caderno de anotações" });
-    const ta = caderno.getByLabel("Anotações da aula");
-    await expect(ta).toHaveValue("Jesus é o Verbo encarnado.\nJoão 1:14 <b>x</b>");
-    await expect(caderno.getByTestId("notas-status")).toContainText("Salvo");
-    // barra de ferramentas ABAIXO da caixa de texto, com botões nomeados
+    const ed = caderno.getByRole("textbox", { name: "Anotações da aula" });
+    const blocks = ed.locator("[data-k]");
+    const status = caderno.getByTestId("notas-status");
     const bar = caderno.getByRole("toolbar", { name: "Formatação do caderno" });
-    expect((await bar.boundingBox())!.y).toBeGreaterThan((await ta.boundingBox())!.y + (await ta.boundingBox())!.height - 1);
-    for (const n of ["Negrito", "Itálico", "Sublinhado", "Marca-texto", "Título", "Lista", "Desfazer", "Refazer"]) await expect(bar.getByRole("button", { name: n })).toBeVisible();
+    const styleBtn = bar.getByRole("button", { name: /^Estilo do texto/ });
+    const menu = caderno.getByRole("listbox", { name: "Estilo do texto" });
+    const notesInDb = async () => (await admin.from("igreja_carisma_lessons").select("notes").eq("household_id", E2E_IGREJA_HOUSEHOLD_ID).single()).data?.notes;
+
+    // já aparece formatado (sem marcação) e o HTML digitado na aula fica literal
+    await expect(blocks).toHaveCount(2);
+    await expect(blocks.nth(0)).toHaveText("Jesus é o Verbo encarnado.");
+    await expect(blocks.nth(1)).toHaveText("João 1:14 <b>x</b>");
+    await expect(ed.locator("b, script, img")).toHaveCount(0);
+    await expect(status).toContainText("Salvo");
+    // barra NO TOPO da caixa, com os botões nomeados (sem código e sem link)
+    expect((await bar.boundingBox())!.y + (await bar.boundingBox())!.height).toBeLessThanOrEqual((await ed.boundingBox())!.y + 1);
+    await expect(styleBtn).toHaveAttribute("aria-haspopup", "listbox");
+    for (const n of ["Negrito", "Itálico", "Tachado", "Sublinhado", "Marca-texto", "Lista", "Desfazer", "Refazer"]) await expect(bar.getByRole("button", { name: n })).toBeVisible();
+    await expect(bar.getByRole("button", { name: /código|link/i })).toHaveCount(0);
     await expect(bar.getByRole("button", { name: "Desfazer" })).toBeDisabled();
 
-    await selectIn(ta, "Verbo");
+    // negrito pelo botão e itálico pelo atalho, com aria-pressed refletindo o texto sob o cursor
+    await selectIn(ed, "Verbo");
     await bar.getByRole("button", { name: "Negrito" }).click();
-    await expect(ta).toHaveValue("Jesus é o **Verbo** encarnado.\nJoão 1:14 <b>x</b>");
+    await expect(ed.locator("strong")).toHaveText("Verbo");
     await expect(bar.getByRole("button", { name: "Negrito" })).toHaveAttribute("aria-pressed", "true");
-    await expect(caderno.getByTestId("notas-status")).toContainText("Alterações não salvas");
-    // atalho Ctrl+I no trecho selecionado
-    await selectIn(ta, "encarnado");
+    await expect(status).toContainText("Alterações não salvas");
+    await selectIn(ed, "encarnado");
+    await expect(bar.getByRole("button", { name: "Negrito" })).toHaveAttribute("aria-pressed", "false");
     await page.keyboard.press("Control+i");
-    await expect(ta).toHaveValue("Jesus é o **Verbo** _encarnado_.\nJoão 1:14 <b>x</b>");
-    await selectIn(ta, "Jesus");
+    await expect(ed.locator("em")).toHaveText("encarnado");
+    await selectIn(ed, "Jesus");
     await bar.getByRole("button", { name: "Marca-texto" }).click();
     await bar.getByRole("button", { name: "Sublinhado" }).click();
-    await selectIn(ta, "Jesus");
-    await bar.getByRole("button", { name: "Título" }).click();
-    await expect(ta).toHaveValue("# ==++Jesus++== é o **Verbo** _encarnado_.\nJoão 1:14 <b>x</b>");
-    await selectIn(ta, "João");
+    await expect(ed.locator("u mark")).toHaveText("Jesus");
+
+    // Título pelo menu de estilo: o botão mostra o estilo do parágrafo onde está o cursor
+    await expect(styleBtn).toContainText("Texto normal");
+    await styleBtn.click();
+    await expect(menu).toBeVisible();
+    await shot(page, "01-aula-caderno-menu");
+    await expect(menu.getByRole("option", { name: "Texto normal" })).toHaveAttribute("aria-selected", "true");
+    await menu.getByRole("option", { name: "Título" }).click();
+    await expect(menu).toHaveCount(0);
+    await expect(blocks.nth(0)).toHaveAttribute("data-k", "h1");
+    await expect(styleBtn).toContainText("Título");
+
+    // lista: marcador, Enter continua, Enter em item vazio sai da lista; acentos e HTML digitado ficam literais
+    await selectIn(ed, "João");
+    await expect(styleBtn).toContainText("Texto normal");
     await bar.getByRole("button", { name: "Lista" }).click();
-    await expect(ta).toHaveValue("# ==++Jesus++== é o **Verbo** _encarnado_.\n- João 1:14 <b>x</b>");
-    // desfazer / refazer (botão e atalho)
-    await bar.getByRole("button", { name: "Desfazer" }).click();
-    await expect(ta).toHaveValue("# ==++Jesus++== é o **Verbo** _encarnado_.\nJoão 1:14 <b>x</b>");
-    await bar.getByRole("button", { name: "Refazer" }).click();
-    await expect(ta).toHaveValue("# ==++Jesus++== é o **Verbo** _encarnado_.\n- João 1:14 <b>x</b>");
-
-    // pré-visualização: elementos reais, HTML digitado só como texto
-    await bar.getByRole("button", { name: "Pré-visualizar" }).click();
-    const prev = caderno.getByTestId("notas-previa");
-    await expect(prev.locator("h4 mark u")).toHaveText("Jesus");
-    await expect(prev.locator("strong")).toHaveText("Verbo");
-    await expect(prev.locator("em")).toHaveText("encarnado");
-    await expect(prev.locator("li")).toContainText("João 1:14 <b>x</b>");
-    await expect(prev.locator("b, script")).toHaveCount(0);
-    await shot(page, "01-aula-caderno-barra");
-
-    // autosave com debounce: "Salvo" e persistido
-    await expect(caderno.getByTestId("notas-status")).toContainText("Salvo", { timeout: 10_000 });
-    const { data: row } = await admin.from("igreja_carisma_lessons").select("notes").eq("household_id", E2E_IGREJA_HOUSEHOLD_ID).single();
-    expect(row?.notes).toBe("# ==++Jesus++== é o **Verbo** _encarnado_.\n- João 1:14 <b>x</b>");
+    await expect(blocks.nth(1)).toHaveAttribute("data-k", "li");
+    await expect(bar.getByRole("button", { name: "Lista" })).toHaveAttribute("aria-pressed", "true");
+    await ed.press("Control+End");
+    await page.keyboard.type(" e mais");
+    await page.keyboard.press("Enter");
+    await expect(blocks).toHaveCount(3);
+    await expect(blocks.nth(2)).toHaveAttribute("data-k", "li");
+    await page.keyboard.type("segundo item");
+    await page.keyboard.press("Enter");
+    // item vazio no fim da lista: o servidor faz trim, então não pode voltar do banco como parágrafo "-"
+    await expect(blocks).toHaveCount(4);
+    await expect(blocks.nth(3)).toHaveAttribute("data-k", "li");
+    await expect(status).toContainText("Salvo", { timeout: 10_000 });
+    expect(await notesInDb()).toMatch(/- segundo item$/);
     await page.reload();
-    await expect(page.getByLabel("Anotações da aula")).toHaveValue("# ==++Jesus++== é o **Verbo** _encarnado_.\n- João 1:14 <b>x</b>");
+    await expect(blocks).toHaveCount(3);
+    await expect(ed).not.toContainText("-");
+    await ed.press("Control+End");
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Enter");
+    await expect(blocks.nth(3)).toHaveAttribute("data-k", "p");
+    await page.keyboard.type("Parágrafo normal com acentos: ação, coração, ü");
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("<b>negrito?</b> <script>x</script>");
+    await expect(blocks).toHaveCount(5);
+    await expect(blocks.nth(4)).toHaveText("<b>negrito?</b> <script>x</script>");
+    await expect(ed.locator("b, script, img")).toHaveCount(0);
+
+    // desfazer / refazer (botão e atalho) funcionam
+    await bar.getByRole("button", { name: "Desfazer" }).click();
+    await expect(ed).not.toContainText("negrito?");
+    await bar.getByRole("button", { name: "Refazer" }).click();
+    await expect(ed).toContainText("<b>negrito?</b> <script>x</script>");
+    await page.keyboard.press("Control+z");
+    await expect(ed).not.toContainText("negrito?");
+    await page.keyboard.press("Control+Shift+z");
+    await expect(blocks.nth(4)).toHaveText("<b>negrito?</b> <script>x</script>");
+
+    // menu pelo teclado: Enter abre e foca a opção atual, setas, Escape fecha e devolve o foco, tocar fora fecha
+    await styleBtn.focus();
+    await page.keyboard.press("Enter");
+    await expect(menu).toBeVisible();
+    await expect(styleBtn).toHaveAttribute("aria-expanded", "true");
+    await expect(menu.getByRole("option", { name: "Texto normal" })).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await expect(menu.getByRole("option", { name: "Título" })).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+    await expect(styleBtn).toBeFocused();
+    await expect(styleBtn).toHaveAttribute("aria-expanded", "false");
+    await page.keyboard.press("ArrowDown");
+    await expect(menu).toBeVisible();
+    await caderno.getByRole("heading", { name: "Caderno" }).click();
+    await expect(menu).toHaveCount(0);
+    await styleBtn.focus();
+    await page.keyboard.press("Enter");
+    await expect(menu.getByRole("option", { name: "Texto normal" })).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await expect(menu).toHaveCount(0);
+    await expect(blocks.nth(4)).toHaveAttribute("data-k", "h2");
+    await expect(styleBtn).toContainText("Subtítulo");
+    await shot(page, "02-aula-caderno-formatado");
+
+    // autosave com debounce: "Salvo" e o que vai para o banco é a MARCAÇÃO (texto), não HTML
+    const MARKUP = [
+      "# ++==Jesus==++ é o **Verbo** _encarnado_.",
+      "- João 1:14 <b>x</b> e mais",
+      "- segundo item",
+      "Parágrafo normal com acentos: ação, coração, ü",
+      "## <b>negrito?</b> <script>x</script>",
+    ].join("\n");
+    await expect(status).toContainText("Salvo", { timeout: 10_000 });
+    expect(await notesInDb()).toBe(MARKUP);
+
+    // recarregar: aparece formatado, com os mesmos estilos
+    await page.reload();
+    const ed2 = page.getByRole("textbox", { name: "Anotações da aula" });
+    const blocks2 = ed2.locator("[data-k]");
+    await expect(blocks2).toHaveCount(5);
+    await expect(ed2.locator('[data-k="h1"] u mark')).toHaveText("Jesus");
+    await expect(ed2.locator("strong")).toHaveText("Verbo");
+    await expect(ed2.locator("em")).toHaveText("encarnado");
+    await expect(ed2.locator('[data-k="li"]')).toHaveCount(2);
+    await expect(ed2.locator('[data-k="h2"]')).toHaveText("<b>negrito?</b> <script>x</script>");
+    await expect(ed2.locator("b, script, img")).toHaveCount(0);
+    await expect(ed2).not.toContainText("**");
+
+    // colar é sempre texto puro (HTML e marcação colados ficam literais); soltar HTML não insere nada
+    await ed2.press("Control+End");
+    await pasteInto(ed2, " colado **x** <i>y</i>", "<b>HTML</b><img src=x onerror=alert(1)>");
+    await expect(blocks2.nth(4)).toContainText("colado **x** <i>y</i>");
+    await expect(ed2.locator("strong")).toHaveCount(1);
+    await expect(ed2.locator("img, i, b")).toHaveCount(0);
+    await ed2.evaluate((root: HTMLElement) => {
+      const dt = new DataTransfer();
+      dt.setData("text/html", "<img src=x onerror=alert(1)><b>solto</b>");
+      root.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
+    });
+    await expect(ed2).not.toContainText("solto");
+    await expect(ed2.locator("img, b")).toHaveCount(0);
 
     // limite de 10000 contando a marcação: o contador mostra e a formatação que estoura é bloqueada
-    const ta2 = page.getByLabel("Anotações da aula");
-    await ta2.fill("a".repeat(10000));
+    await ed2.press("Control+a");
+    await page.getByRole("toolbar", { name: "Formatação do caderno" }).getByRole("button", { name: /^Estilo do texto/ }).click();
+    await page.getByRole("option", { name: "Texto normal" }).click();
+    await pasteInto(ed2, "a".repeat(10000));
     await expect(page.getByTestId("notas-contador")).toContainText("10000/10000");
-    await selectIn(ta2, "a");
+    await selectIn(ed2, "a");
     await page.getByRole("button", { name: "Negrito" }).click();
     await expect(page.getByTestId("notas-contador")).toContainText("Limite de 10000 caracteres");
-    expect(await ta2.inputValue()).toBe("a".repeat(10000));
+    expect(await ed2.evaluate((el) => (el.textContent ?? "").length)).toBe(10000);
     await expect(page.getByTestId("notas-status")).toContainText("Salvo", { timeout: 10_000 });
-    const { data: full } = await admin.from("igreja_carisma_lessons").select("notes").eq("household_id", E2E_IGREJA_HOUSEHOLD_ID).single();
-    expect(full?.notes).toHaveLength(10000);
-    await ta2.fill("Jesus é o Verbo encarnado.\nJoão 1:14");
+    expect((await notesInDb())!).toHaveLength(10000);
+    await writeNotes(page, ed2, ["Jesus é o Verbo encarnado.", "João 1:14"]);
     await expect(page.getByTestId("notas-status")).toContainText("Salvo", { timeout: 10_000 });
+    expect(await notesInDb()).toBe("Jesus é o Verbo encarnado.\nJoão 1:14");
   });
 
   await test.step("anexos Texto, Imagem e PDF: .txt e .png entram; binário disfarçado de .txt é recusado", async () => {
@@ -395,9 +536,9 @@ test("Igreja: devocional pessoal com compartilhamento, Carisma com Google Drive 
 
   let studyCalls = 0;
   await test.step("Estudar com o Oli: lê anotações e arquivos; só grava no caderno depois de confirmar", async () => {
-    const ta = page.getByLabel("Anotações da aula");
+    const ta = page.getByRole("textbox", { name: "Anotações da aula" });
     // texto ainda não salvo é salvo antes de o Oli ler
-    await ta.fill("Jesus é o Verbo encarnado.\nJoão 1:14 extra-novo");
+    await writeNotes(page, ta, ["Jesus é o Verbo encarnado.", "João 1:14 extra-novo"]);
     await page.getByRole("button", { name: "Estudar com o Oli" }).click();
     const d = page.getByRole("dialog", { name: "Estudar com o Oli" });
     for (const n of ["Resumir a aula", "Perguntas de reflexão", "Fazer um teste"]) await expect(d.getByRole("button", { name: n })).toBeVisible();
@@ -436,7 +577,8 @@ test("Igreja: devocional pessoal com compartilhamento, Carisma com Google Drive 
     await expect(d.getByText("Anotado no caderno.")).toBeVisible();
     await expect.poll(notesInDb).toBe(before + "\n\n- O Verbo é Jesus (João 1:1)");
     await page.keyboard.press("Escape");
-    await expect(ta).toHaveValue(before + "\n\n- O Verbo é Jesus (João 1:1)");
+    await expect(ta.locator("[data-k]")).toHaveCount(4);
+    await expect(ta.locator('[data-k="li"]')).toHaveText("O Verbo é Jesus (João 1:1)");
     // cada pedido ao Oli conta no limite diário da família
     const { count: logged } = await admin.from("igreja_summary_log").select("id", { count: "exact", head: true }).eq("household_id", E2E_IGREJA_HOUSEHOLD_ID);
     expect(logged).toBe(studyCalls);

@@ -816,3 +816,54 @@ dialog.calendar-dialog::backdrop {
     animation-duration: 0.01ms !important;
   }
 }
+
+/* Editor formatado do caderno do Carisma: cada bloco é um div[data-k] (p, h1, h2, li) */
+.notes-editor {
+  position: relative;
+  min-height: 220px;
+  padding: 14px 16px;
+  font-size: 15px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  outline: none;
+}
+.notes-editor > div {
+  margin: 0 0 4px;
+  min-height: 1.6em;
+}
+.notes-editor > [data-k="h1"] {
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-bottom: 6px;
+}
+.notes-editor > [data-k="h2"] {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--deep);
+  margin-bottom: 6px;
+}
+.notes-editor > [data-k="li"] {
+  position: relative;
+  padding-left: 20px;
+}
+.notes-editor > [data-k="li"]::before {
+  content: "•";
+  position: absolute;
+  left: 6px;
+}
+.notes-editor mark {
+  background: color-mix(in srgb, #facc15 45%, transparent);
+  color: inherit;
+  border-radius: 4px;
+  padding: 0 2px;
+}
+.notes-editor[data-empty="true"]::before {
+  content: attr(data-placeholder);
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  color: var(--muted);
+  pointer-events: none;
+}
