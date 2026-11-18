@@ -175,7 +175,7 @@ test("Conta avulsa: boleto pela Casa vira avulsa, aparece em Casa e Finanças (f
   });
 
   await test.step("comprovante marca a avulsa como paga, ligada ao lançamento criado", async () => {
-    const compId = await upload(page, "/financas/lancamentos", "comprovante-avulso");
+    const compId = await upload(page, "/financas/documentos", "comprovante-avulso");
     await page.getByRole("radio", { name: "Comprovante" }).click();
     await page.getByLabel("Valor pago (R$)").fill("480,00");
     await page.getByLabel("Data do pagamento").fill("2026-12-13");

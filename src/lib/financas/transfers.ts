@@ -112,29 +112,27 @@ export function findTransferPairs(
   return { pairs, review };
 }
 
-export type TxTipo = "gastos" | "transferencias" | "cartao";
+export type TxTipo = "gastos" | "transferencias";
 export const TX_TIPOS: { value: TxTipo; label: string }[] = [
   { value: "gastos", label: "Gastos" },
   { value: "transferencias", label: "Transferências" },
-  { value: "cartao", label: "Pagamento de cartão" },
 ];
+/** `tipo=cartao` (aba antiga "Pagamento de cartão") agora cai em Transferências; qualquer outro valor vira Gastos. */
 export function parseTipo(v: string | undefined): TxTipo {
-  return v === "transferencias" || v === "cartao" ? v : "gastos";
+  return v === "transferencias" || v === "cartao" ? "transferencias" : "gastos";
 }
 
-/** Categorias sem par que aparecem em cada aba (pelo nome padrão, kind transferência). */
-const UNPAIRED_NAMES: Record<Exclude<TxTipo, "gastos">, string[]> = {
-  transferencias: ["Transferência entre contas", "Aplicação e resgate"],
-  cartao: ["Pagamento Cartão de Crédito"],
-};
+/** Categorias sem par que aparecem em Transferências (pelo nome padrão, kind transferência). Inclui pagamento de fatura. */
+const UNPAIRED_NAMES = new Set(["Transferência entre contas", "Aplicação e resgate", TRANSFER_CATEGORY_NAME.cartao]);
 
 export type ShownPair<T> = { group: string; out: T; in: T; kind: TransferKind; date: string; amount: number };
 
 /**
  * Separa os lançamentos de Lançamentos por aba:
- * - gastos: sem par e com categoria que não é de transferência (ou sem categoria);
- * - transferencias / cartao: pares do tipo (uma linha por par; `legs` completa a perna que o filtro não trouxe)
- *   e lançamentos sem par com as categorias de transferência daquela aba.
+ * - gastos: sem par e com categoria que não é de transferência (ou sem categoria). Pagamento de fatura
+ *   (par conta -> cartão) fica FORA daqui para não contar duas vezes;
+ * - transferencias: pares (uma linha por par, de qualquer tipo; `legs` completa a perna que o filtro não trouxe)
+ *   e lançamentos sem par com categoria de transferência ou de pagamento de fatura.
  */
 export function splitByTipo<T extends PairTx>(
   tipo: TxTipo,
@@ -166,15 +164,13 @@ export function splitByTipo<T extends PairTx>(
     const inn = list.find((t) => t.amount > 0);
     if (!out || !inn) continue;
     const kind: TransferKind = kindOf.get(inn.account_id) === "cartao" && kindOf.get(out.account_id) !== "cartao" ? "cartao" : "transferencia";
-    if ((tipo === "cartao") !== (kind === "cartao")) continue;
     pairs.push({ group: g, out, in: inn, kind, date: out.date, amount: inn.amount });
   }
   pairs.sort((a, b) => b.date.localeCompare(a.date));
-  const names = new Set(UNPAIRED_NAMES[tipo]);
   const rows = txs.filter((t) => {
     if (t.transfer_group) return false;
     const c = catById.get(t.category_id ?? "");
-    return c?.kind === "transferencia" && names.has(c.name);
+    return c?.kind === "transferencia" && UNPAIRED_NAMES.has(c.name);
   });
   return { rows, pairs };
 }

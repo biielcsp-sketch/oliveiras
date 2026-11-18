@@ -64,20 +64,21 @@ test("planejamento: orçamento, fatura do cartão, conta paga vinculada ao extra
     await page.getByRole("button", { name: /Mercado/ }).click();
     await page.getByLabel("Orçamento de Mercado").fill("1.000");
     await page.getByRole("button", { name: "Salvar" }).click();
-    await expect.poll(() => text(page)).toContain("R$ 152,30 / R$ 1.000,00");
+    await expect(page.getByRole("button", { name: /Mercado/ })).toContainText("de R$ 1.000,00");
+    expect(await text(page)).toContain("R$ 152,30");
     expect(await text(page)).toContain("Restam R$ 847,70");
 
     await page.goto("/financas/orcamento?mes=2026-12");
-    await expect.poll(() => text(page)).toContain("R$ 0,00 / R$ 1.000,00");
+    await expect(page.getByRole("button", { name: /Mercado/ })).toContainText("de R$ 1.000,00");
     await page.getByRole("button", { name: /Mercado/ }).click();
     await page.getByLabel("Orçamento de Mercado").fill("500");
     await page.getByLabel("Vale para").selectOption("mes");
     await page.getByRole("button", { name: "Salvar" }).click();
-    await expect.poll(() => text(page)).toContain("R$ 0,00 / R$ 500,00");
+    await expect(page.getByRole("button", { name: /Mercado/ })).toContainText("de R$ 500,00");
     expect(await text(page)).toContain("só este mês");
 
     await page.goto("/financas/orcamento?mes=2026-11");
-    await expect.poll(() => text(page)).toContain("R$ 152,30 / R$ 1.000,00");
+    await expect(page.getByRole("button", { name: /Mercado/ })).toContainText("de R$ 1.000,00");
   });
 
   await test.step("conta fixa marcada como paga com o lançamento do extrato", async () => {

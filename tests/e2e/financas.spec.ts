@@ -26,9 +26,10 @@ test("finanças: contas, lançamento manual, importação OFX/CSV sem duplicar e
     await page.getByRole("button", { name: "Criar conta" }).click();
     await expect(page).toHaveURL(/\/financas\/contas$/);
 
-    await page.getByRole("link", { name: "Nova conta" }).click();
+    await page.getByRole("link", { name: "Novo cartão" }).click();
+    await expect(page).toHaveURL(/\/financas\/contas\/nova\?tipo=cartao$/);
+    await expect(page.locator('select[name="kind"]')).toHaveValue("cartao");
     await page.getByLabel("Nome", { exact: true }).fill("Cartão Teste");
-    await page.locator('select[name="kind"]').selectOption("cartao");
     await page.getByLabel("Limite (R$)").fill("5.000");
     await page.getByRole("button", { name: "Criar conta" }).click();
     await expect(page.getByText("Cartão Teste")).toBeVisible();

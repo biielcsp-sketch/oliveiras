@@ -44,9 +44,10 @@ test("finanças: aba Transferências junta Pix entre contas do casal e separa do
   });
 
   await test.step("Procurar pares junta só a transferência", async () => {
-    await page.goto(`/financas/lancamentos?mes=${mes}&tipo=transferencias`);
+    await page.goto(`/financas/lancamentos/conferir?mes=${mes}`);
     await page.getByRole("button", { name: "Procurar pares" }).click();
     await expect(page.getByRole("status")).toContainText("1 par juntado.");
+    await page.goto(`/financas/lancamentos?mes=${mes}&tipo=transferencias`);
     const pares = page.getByRole("list", { name: "Transferências entre contas" });
     await expect(pares.getByRole("listitem")).toHaveCount(1);
     await expect(pares).toContainText(contaA);
@@ -62,9 +63,17 @@ test("finanças: aba Transferências junta Pix entre contas do casal e separa do
     expect(brl(await main.innerText())).toContain("2 lançamentos");
   });
 
+  await test.step("tipo=cartao antigo cai em Transferências", async () => {
+    await page.goto(`/financas/lancamentos?mes=${mes}&tipo=cartao`);
+    await expect(page.getByRole("link", { name: "Transferências", exact: true })).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("link", { name: "Pagamento de cartão" })).toHaveCount(0);
+  });
+
   await test.step("Separar desfaz o par", async () => {
-    await page.goto(`/financas/lancamentos?mes=${mes}&tipo=transferencias`);
+    await page.goto(`/financas/lancamentos/conferir?mes=${mes}`);
     await page.getByRole("button", { name: "Separar" }).click();
+    await expect(page.getByRole("list", { name: "Transferências entre contas" })).toHaveCount(0);
+    await page.goto(`/financas/lancamentos?mes=${mes}&tipo=transferencias`);
     await expect(page.getByRole("list", { name: "Transferências entre contas" })).toHaveCount(0);
   });
 

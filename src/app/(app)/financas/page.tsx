@@ -15,6 +15,7 @@ import { MonthSwitcher } from "./_components/month-switcher";
 import { BudgetSummary } from "./_components/budget-summary";
 import { DueCards, type Due } from "./_components/due-cards";
 import { QuickActions } from "./_components/quick-actions";
+import { accountTotals } from "@/lib/financas/contas-view";
 import { ResumoSaldo } from "./_components/resumo-saldo";
 import { TxList } from "./_components/tx-list";
 
@@ -39,10 +40,8 @@ export default async function FinancasPage({ searchParams }: { searchParams: Pro
   }
 
   const active = accounts.filter((a) => !a.archived);
-  const available = active.filter((a) => a.kind !== "cartao").reduce((s, a) => s + Math.round(a.balance * 100), 0) / 100;
+  const { available, cardDebt } = accountTotals(active);
   const cards = active.filter((a) => a.kind === "cartao");
-  // Dívida dos cartões em positivo; crédito na fatura (saldo positivo) não abate a de outro cartão.
-  const cardDebt = cards.reduce((s, a) => s + Math.max(0, -Math.round(a.balance * 100)), 0) / 100;
   const cardIds = new Set(accounts.filter((a) => a.kind === "cartao").map((a) => a.id));
   const { income, expense, result, expenseByCategory } = summarize(transactions, categories, cardIds);
 

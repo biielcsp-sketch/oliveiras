@@ -65,7 +65,7 @@ test("finanças: mais de 1000 lançamentos somam todos e a regra categoriza todo
     await page.goto(`/financas/lancamentos?mes=${MES}`);
     const text = brl(await page.locator("main").innerText());
     expect(text).toContain(`${TOTAL} lançamentos`);
-    expect(text).toContain("saídas -R$ 1.005,00");
+    expect(text).toContain("Saídas -R$ 1.005,00");
     await expect(page.getByTestId("lista-incompleta")).toHaveCount(0);
   });
 

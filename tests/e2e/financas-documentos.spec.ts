@@ -230,7 +230,7 @@ test("Finanças: leitura de boleto e comprovante com conferência", async ({ bro
   });
 
   await test.step("conta já paga no mês: aviso e o servidor recusa", async () => {
-    await upload(a, "/financas/lancamentos", pdfWith({ tipo: "comprovante", beneficiario: "Outro", valor: 10, data_pagamento: "2026-12-09", descricao: "Pagamento extra" }));
+    await upload(a, "/financas/documentos", pdfWith({ tipo: "comprovante", beneficiario: "Outro", valor: 10, data_pagamento: "2026-12-09", descricao: "Pagamento extra" }));
     await a.getByLabel("Marcar como paga a conta").selectOption({ label: "Luz" });
     await a.getByLabel("Mês da conta paga").fill("2026-12");
     await expect(a.getByRole("alert").filter({ hasText: "Esta conta já está paga em 12/2026" })).toBeVisible();
