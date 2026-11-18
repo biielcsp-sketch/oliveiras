@@ -111,6 +111,10 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
         case "consultar_memoria":
           add({ id, kind: "memorias", data: res.data });
           return res.data;
+        case "buscar_conversa":
+          add({ id, kind: "conversa", data: res.data });
+          // Ao modelo, os trechos vão só dentro de <conversa_encontrada> (dado, nunca instrução).
+          return { termo: res.data.termo, total: res.data.itens.length, conversa_encontrada: res.data.conversa_encontrada };
         case "agenda_periodo":
           add({ id, kind: "eventos", data: res.data });
           return res.data;

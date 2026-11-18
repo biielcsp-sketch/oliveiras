@@ -8,6 +8,7 @@ import { EVENT_LIMITS } from "@/lib/agenda/input";
 import { todaySP } from "@/lib/financas/today";
 import { KINDS, LIMITS as SAUDE_LIMITS } from "@/lib/saude/input";
 import type { AppointmentKind } from "@/lib/saude/types";
+import { cleanLine, CONVERSA_TERMO_MAX, CONVERSA_TERMO_MIN, type BuscarConversaArgs } from "./conversa";
 
 export const OLI_TOOL_NAMES = [
   "resumo_do_mes",
@@ -18,6 +19,7 @@ export const OLI_TOOL_NAMES = [
   "salvar_memoria",
   "consultar_memoria",
   "esquecer_memoria",
+  "buscar_conversa",
   "agenda_periodo",
   "criar_evento",
   "documentos_recentes",
@@ -186,6 +188,26 @@ export function parseEsquecerMemoriaArgs(args: unknown): Result<{ id: string }> 
   const id = obj(args).id;
   if (typeof id !== "string" || !UUID_RE.test(id.trim())) return fail("Id de memória inválido.");
   return ok({ id: id.trim().toLowerCase() });
+}
+
+/**
+ * buscar_conversa: termo (2 a 80, uma linha, sem < > nem controles; "*" sai porque vira curinga no ilike do
+ * PostgREST) e desde/ate opcionais em AAAA-MM-DD.
+ */
+export function parseBuscarConversaArgs(args: unknown): Result<BuscarConversaArgs> {
+  const a = obj(args);
+  if (typeof a.termo !== "string") return fail("Termo é obrigatório.");
+  const termo = cleanLine(a.termo.replace(/\*/g, " "));
+  if (termo.length < CONVERSA_TERMO_MIN) return fail(`Termo muito curto (mínimo ${CONVERSA_TERMO_MIN} caracteres).`);
+  if (termo.length > CONVERSA_TERMO_MAX) return fail(`Termo muito longo (máximo ${CONVERSA_TERMO_MAX}).`);
+  const desde = optText(a.desde, 10, "Data inicial");
+  if (!desde.ok) return fail("Data inicial inválida. Use AAAA-MM-DD.");
+  const ate = optText(a.ate, 10, "Data final");
+  if (!ate.ok) return fail("Data final inválida. Use AAAA-MM-DD.");
+  if (desde.value && !isDate(desde.value)) return fail("Data inicial inválida. Use AAAA-MM-DD.");
+  if (ate.value && !isDate(ate.value)) return fail("Data final inválida. Use AAAA-MM-DD.");
+  if (desde.value && ate.value && desde.value > ate.value) return fail("A data inicial é depois da final.");
+  return ok({ termo, desde: desde.value, ate: ate.value });
 }
 
 /** Comparação de nomes sem acento e sem caixa ("Alimentação" = "alimentacao"). */

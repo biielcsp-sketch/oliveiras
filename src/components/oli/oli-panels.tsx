@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { Brain, CalendarClock, CalendarDays, Check, Church, FileText, HeartPulse, Home, ListOrdered, Paperclip, PawPrint, PieChart, Search, Trash2, Wallet, X } from "lucide-react";
+import { Brain, CalendarClock, MessagesSquare, CalendarDays, Check, Church, FileText, HeartPulse, Home, ListOrdered, Paperclip, PawPrint, PieChart, Search, Trash2, Wallet, X } from "lucide-react";
 import { brDate, shortDayLabel } from "@/lib/agenda/dates";
 import { safeHex } from "@/lib/agenda/view";
 import type { ReactNode } from "react";
@@ -228,6 +228,26 @@ export function PanelView({
                 <li key={m.id} className="flex items-start gap-3 py-2.5 text-[15px]">
                   <span className="min-w-0 flex-1">{m.conteudo}</span>
                   <CategoryChip value={m.categoria} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      );
+    case "conversa":
+      return (
+        <Card>
+          <Head icon={<MessagesSquare size={16} aria-hidden />} title={`Conversas: “${p.data.termo}”`} />
+          {p.data.itens.length === 0 ? (
+            <p className="text-sm text-muted">Nada encontrado nas conversas anteriores.</p>
+          ) : (
+            <ul className="divide-y divide-line" aria-label="Trechos de conversas anteriores">
+              {p.data.itens.map((m, i) => (
+                <li key={i} className="py-2.5 text-[15px]">
+                  <span className="block text-[12px] text-muted">
+                    {m.quem} · {m.quando}
+                  </span>
+                  <span className="block">{m.trecho}</span>
                 </li>
               ))}
             </ul>

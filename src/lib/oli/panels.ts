@@ -18,6 +18,7 @@ import type { OliFileDest, OliFileOptions, OliFileReading } from "./arquivo";
 import type { ConsultaData } from "./consultas";
 import type { LerArquivoData } from "./ler-arquivo";
 import type { AlteracaoPreview } from "./alterar";
+import type { ConversaData } from "./conversa";
 
 const cents = (v: number) => Math.round(v * 100);
 const reais = (c: number) => c / 100;
@@ -143,6 +144,7 @@ export type OliPanel =
   | { id: string; kind: "lancamentos"; data: LancamentosData }
   | { id: string; kind: "memoria"; data: MemoriaData; titulo: string }
   | { id: string; kind: "memorias"; data: MemoriasData }
+  | { id: string; kind: "conversa"; data: ConversaData }
   | { id: string; kind: "confirmar_lancamento"; data: LancamentoPreview; status: ConfirmStatus; erro?: string }
   | { id: string; kind: "confirmar_esquecer"; data: MemoriaData; status: ConfirmStatus; erro?: string }
   | { id: string; kind: "confirmar_memoria"; data: MemoriaPreview; status: ConfirmStatus; erro?: string }
