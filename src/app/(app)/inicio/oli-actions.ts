@@ -34,6 +34,7 @@ import {
   parseConsultarIgrejaArgs,
   parseBuscarNoAppArgs,
   parseLerArquivoArgs,
+  parseBuscarConversaArgs,
   matchByName,
   type OliToolName,
 } from "@/lib/oli/tool-args";
@@ -71,6 +72,8 @@ import { buscarNoApp, consultarCasa, consultarExamesLab, consultarFinancas, cons
 import { lerArquivo } from "@/lib/oli/ler-arquivo-server";
 import { ITEM_MUDOU, parseAlterarArgs, previewFingerprint, type AlteracaoPreview, type AlterarAba } from "@/lib/oli/alterar";
 import { executarAlteracao, prepararAlteracao } from "@/lib/oli/alterar-server";
+import type { ConversaData } from "@/lib/oli/conversa";
+import { buscarConversa } from "@/lib/oli/conversa-server";
 
 /**
  * Ferramentas do Oli. Rodam com a sessão do usuário (RLS), nunca com chave de serviço.
@@ -85,6 +88,7 @@ export type OliToolResult =
   | { ok: true; tool: "salvar_memoria"; data: MemoriaPreview }
   | { ok: true; tool: "consultar_memoria"; data: MemoriasData }
   | { ok: true; tool: "esquecer_memoria"; data: MemoriaData }
+  | { ok: true; tool: "buscar_conversa"; data: ConversaData }
   | { ok: true; tool: "agenda_periodo"; data: EventosData }
   | { ok: true; tool: "criar_evento"; data: EventoPreview }
   | { ok: true; tool: "documentos_recentes"; data: DocumentosData }
@@ -200,6 +204,15 @@ async function dispatch(name: OliToolName, args: unknown): Promise<OliToolResult
       const memory = await findMemory(a.value.id);
       if (!memory) return err("Memória não encontrada.");
       return { ok: true, tool: name, data: memory };
+    }
+    case "buscar_conversa": {
+      // Só as mensagens da própria pessoa (sessão + RLS); o conteúdo nunca vai para log.
+      const a = parseBuscarConversaArgs(args);
+      if (!a.ok) return err(a.erro);
+      const { user } = await getAppContext();
+      const data = await buscarConversa(await createClient(), user.id, a.value);
+      if (!data) return err("Não consegui procurar nas conversas.");
+      return { ok: true, tool: name, data };
     }
     case "agenda_periodo": {
       const a = parseAgendaPeriodoArgs(args, todaySP());

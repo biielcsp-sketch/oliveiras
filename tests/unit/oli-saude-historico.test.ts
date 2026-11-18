@@ -130,12 +130,12 @@ describe("Oli: histórico da conversa (regressão: toda vez recomeçava)", () =>
   });
 
   it("limite de itens (mantém as mais recentes, em ordem) e vazio → sem bloco", () => {
-    const hist = Array.from({ length: 40 }, (_, i) => ({ role: i % 2 ? "model" : "user", content: `msg${i}` }));
+    const hist = Array.from({ length: MAX_PROMPT_HISTORY + 20 }, (_, i) => ({ role: i % 2 ? "model" : "user", content: `msg${i}` }));
     const block = buildHistoryBlock(hist)!;
     const lines = block.split("\n").filter((l) => l.startsWith("- "));
     expect(lines).toHaveLength(MAX_PROMPT_HISTORY);
-    expect(lines[0]).toContain("msg24");
-    expect(lines.at(-1)).toContain("msg39");
+    expect(lines[0]).toMatch(/: msg20$/);
+    expect(lines.at(-1)).toMatch(new RegExp(`: msg${MAX_PROMPT_HISTORY + 19}$`));
     expect(buildHistoryBlock([])).toBeNull();
     expect(buildHistoryBlock([{ role: "user", content: " <> " }])).toBeNull();
   });

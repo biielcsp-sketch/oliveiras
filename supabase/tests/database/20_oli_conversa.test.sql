@@ -1,8 +1,8 @@
 -- Histórico da Oli (oli_messages): conversa privada por pessoa (outra família e
 -- colega da mesma família não leem/escrevem/apagam), sem UPDATE, checks,
--- teto de 300 por pessoa, anon e RLS ligado.
+-- teto de 2000 por pessoa (0028), anon e RLS ligado.
 begin;
-select plan(30);
+select plan(36);
 
 insert into auth.users (id, email, aud, role) values
   ('00000000-0000-0000-0000-0000000000c1', 'ca@teste.invalid', 'authenticated', 'authenticated'),
@@ -90,20 +90,46 @@ select is((select count(*)::int from public.oli_messages where user_id = '000000
   'apagar as de Ana não toca nas de Caio');
 set local role authenticated;
 
--- teto de 300: insere 305 de uma vez (m1 mais antiga ... m305 mais nova)
+-- teto de 2000 (0028). Semeia m1..m1998 de Ana sem trigger (só para acelerar o
+-- teste) e depois insere como Ana, pela sessão/RLS, até passar do teto.
+reset role;
+set local session_replication_role = replica;
+insert into public.oli_messages (household_id, user_id, role, content, created_at)
+  select current_setting('t.ha')::uuid, '00000000-0000-0000-0000-0000000000c1', 'user', 'm' || g,
+    now() - ((10000 - g) * interval '1 minute')
+  from generate_series(1, 1998) g;
+set local session_replication_role = origin;
+set local role authenticated;
 select pg_temp.as_user('00000000-0000-0000-0000-0000000000c1');
 insert into public.oli_messages (household_id, role, content, created_at)
-  select current_setting('t.ha')::uuid, 'user', 'm' || g, now() - ((1000 - g) * interval '1 minute')
-  from generate_series(1, 305) g;
-select is((select count(*)::int from public.oli_messages), 300, 'teto: Ana fica com 300 mensagens');
-select is((select count(*)::int from public.oli_messages where content in ('m1','m2','m3','m4','m5')), 0, 'teto: as 5 mais antigas foram apagadas');
-select ok((select bool_and(true) from public.oli_messages where content in ('m6','m305')) and
-  (select count(*) = 2 from public.oli_messages where content in ('m6','m305')), 'teto: a 6a e a mais nova continuam');
+  select current_setting('t.ha')::uuid, 'user', 'm' || g, now() - ((10000 - g) * interval '1 minute')
+  from generate_series(1999, 2000) g;
+select is((select count(*)::int from public.oli_messages), 2000, 'teto: com 2000 mensagens nada é apagado');
+select is((select count(*)::int from public.oli_messages where content = 'm1'), 1, 'teto: m1 continua com 2000');
+insert into public.oli_messages (household_id, role, content, created_at)
+  values (current_setting('t.ha')::uuid, 'model', 'm2001', now() - ((10000 - 2001) * interval '1 minute'));
+select is((select count(*)::int from public.oli_messages), 2000, 'teto: a 2001a mensagem deixa Ana com 2000');
+select is((select count(*)::int from public.oli_messages where content = 'm1'), 0, 'teto: a mais antiga (m1) foi apagada');
+select is((select count(*)::int from public.oli_messages where content in ('m2','m2001')), 2, 'teto: a 2a e a mais nova continuam');
 insert into public.oli_messages (household_id, role, content) values (current_setting('t.ha')::uuid, 'model', 'nova');
-select is((select count(*)::int from public.oli_messages where content in ('m6','nova')), 1, 'teto: nova mensagem empurra a mais antiga (m6) para fora');
+select is((select count(*)::int from public.oli_messages where content in ('m2','nova')), 1, 'teto: nova mensagem empurra a mais antiga (m2) para fora');
+select is((select count(*)::int from public.oli_messages), 2000, 'teto: continua em 2000');
 reset role;
 select is((select count(*)::int from public.oli_messages where user_id = '00000000-0000-0000-0000-0000000000c3'), 1,
   'teto de Ana não afeta as mensagens de Caio');
+
+-- com 2000 mensagens, colega e outra família seguem sem ler nem apagar as de Ana
+set local role authenticated;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000c3');
+select is((select count(*)::int from public.oli_messages where user_id = '00000000-0000-0000-0000-0000000000c1'), 0,
+  'Caio (mesma família) não lê as 2000 de Ana');
+delete from public.oli_messages where user_id = '00000000-0000-0000-0000-0000000000c1';
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000c2');
+select is((select count(*)::int from public.oli_messages where content ilike '%m1%'), 0, 'Bruno (outra família) não acha nada buscando por texto');
+delete from public.oli_messages where user_id = '00000000-0000-0000-0000-0000000000c1';
+reset role;
+select is((select count(*)::int from public.oli_messages where user_id = '00000000-0000-0000-0000-0000000000c1'), 2000,
+  'Caio e Bruno não apagam as mensagens de Ana');
 
 -- anon
 set local role anon;
