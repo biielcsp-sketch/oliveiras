@@ -12,7 +12,8 @@ import type { Account, Category, Transaction } from "./types";
 export type RuleRow = { id: string; pattern: string; category_id: string };
 
 
-const TX_COLUMNS = "id, account_id, date, description, amount, category_id, member_id, notes, source";
+const TX_COLUMNS =
+  "id, account_id, date, description, amount, category_id, member_id, notes, source, transfer_group, transfer_checked, category_source, pluggy_category";
 
 /** Contas (com saldo), categorias e regras da família. */
 export const getFinanceBase = cache(async () => {
@@ -89,4 +90,22 @@ export async function getTransaction(id: string): Promise<Transaction | null> {
     .eq("id", id)
     .maybeSingle();
   return data ? ({ ...data, amount: Number(data.amount) } as Transaction) : null;
+}
+
+/** Pernas dos pares (transfer_group), para mostrar o par inteiro quando o filtro ou o mês trouxe só uma delas. */
+export async function getTransferLegs(groups: string[]): Promise<Transaction[]> {
+  const ids = [...new Set(groups)].filter((g) => /^[0-9a-f-]{36}$/i.test(g));
+  if (ids.length === 0) return [];
+  const { household } = await getAppContext();
+  const supabase = await createClient();
+  const out: Transaction[] = [];
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data } = await supabase
+      .from("fin_transactions")
+      .select(TX_COLUMNS)
+      .eq("household_id", household.id)
+      .in("transfer_group", ids.slice(i, i + 200));
+    out.push(...((data ?? []).map((t) => ({ ...t, amount: Number(t.amount) })) as Transaction[]));
+  }
+  return out;
 }

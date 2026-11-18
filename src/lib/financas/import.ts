@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { ParsedTx } from "./ofx";
-import { matchCategory, normalizeText, type Rule } from "./rules";
+import { categorize, EMPTY_CTX, normalizeText, type CategorizeCtx, type Rule } from "./rules";
 
 export type ImportRow = {
   date: string;
@@ -8,6 +8,7 @@ export type ImportRow = {
   amount: number;
   external_id: string;
   category_id: string | null;
+  category_source: "regra" | "historico" | "pluggy" | null;
 };
 
 /**
@@ -16,9 +17,17 @@ export type ImportRow = {
  * - garante um identificador estável para não duplicar ao reimportar o mesmo arquivo.
  *   Sem FITID/ID, usa hash de data+valor+descrição+ocorrência (duas compras iguais no
  *   mesmo dia continuam sendo duas).
- * - sugere categoria pelas regras.
+ * - sugere categoria pelas regras e, sem regra, pelo histórico da família (categorize).
  */
-export function buildImportRows(txs: ParsedTx[], opts: { invert: boolean; rules: Rule[] }): ImportRow[] {
+export function buildImportRows(
+  txs: ParsedTx[],
+  opts: { invert: boolean; rules: Rule[]; history?: CategorizeCtx["history"]; categoryIdByName?: CategorizeCtx["categoryIdByName"] },
+): ImportRow[] {
+  const ctx: CategorizeCtx = {
+    rules: opts.rules,
+    history: opts.history ?? EMPTY_CTX.history,
+    categoryIdByName: opts.categoryIdByName ?? EMPTY_CTX.categoryIdByName,
+  };
   const seen = new Map<string, number>();
   return txs.map((t) => {
     const amount = opts.invert ? -t.amount : t.amount;
@@ -34,7 +43,7 @@ export function buildImportRows(txs: ParsedTx[], opts: { invert: boolean; rules:
       description: t.description,
       amount,
       external_id: externalId,
-      category_id: matchCategory(t.description, opts.rules),
+      ...categorize({ description: t.description }, ctx),
     };
   });
 }

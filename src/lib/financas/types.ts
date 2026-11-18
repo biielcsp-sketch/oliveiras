@@ -10,6 +10,13 @@ export type Transaction = {
   member_id: string | null;
   notes: string | null;
   source: string;
+  /** As 2 pernas de uma transferência/pagamento de cartão compartilham o mesmo uuid (0027). */
+  transfer_group?: string | null;
+  /** Usuário disse "não é transferência" (0027). */
+  transfer_checked?: boolean;
+  /** 'manual' | 'regra' | 'historico' | 'pluggy' | 'par'; null = legado (0027). */
+  category_source?: string | null;
+  pluggy_category?: string | null;
 };
 
 export type AccountKind = "corrente" | "poupanca" | "cartao" | "dinheiro" | "investimento";

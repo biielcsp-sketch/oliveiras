@@ -5,10 +5,12 @@ import clsx from "clsx";
 import { confirmImport, previewImport, type ImportState } from "../actions";
 import { Button, Card, Field, FormError, Input, LinkButton, Select } from "@/components/ui";
 import type { Account } from "@/lib/financas/types";
+import { accountLabel } from "@/lib/financas/account-label";
 import { formatBRL } from "@/lib/financas/money";
 import { shortDate } from "@/lib/financas/period";
 
-export function ImportWizard({ accounts }: { accounts: Account[] }) {
+export function ImportWizard({ accounts, members = [] }: { accounts: Account[]; members?: { id: string; name: string }[] }) {
+  const memberName = new Map(members.map((m) => [m.id, m.name]));
   const [preview, previewAction, previewing] = useActionState<ImportState, FormData>(previewImport, null);
   const [result, confirmAction, confirming] = useActionState<ImportState, FormData>(confirmImport, null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -57,7 +59,7 @@ export function ImportWizard({ accounts }: { accounts: Account[] }) {
         <Field label="Conta ou cartão">
           <Select name="account_id" required defaultValue={p?.accountId ?? accounts[0]?.id}>
             {accounts.map((a) => (
-              <option key={a.id} value={a.id}>{a.name}</option>
+              <option key={a.id} value={a.id}>{accountLabel(a, memberName)}</option>
             ))}
           </Select>
         </Field>

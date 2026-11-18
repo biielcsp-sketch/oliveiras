@@ -27,10 +27,13 @@ function fakeFrom(table: string) {
   b.is = (col: keyof Tx, v: null) => (filters.push((t) => t[col] === v), b);
   b.in = (col: keyof Tx, vals: string[]) => (filters.push((t) => vals.includes(t[col] as string)), b);
   b.order = () => b;
+  b.not = (col: keyof Tx) => (filters.push((t) => t[col] !== null), b);
+  b.gte = () => b;
   b.limit = (n: number) => ((to = n - 1), b);
   b.range = (a: number, z: number) => ((from = a), (to = z), b);
   b.update = (p: Partial<Tx>) => ((patch = p), b);
   b.then = (resolve: (v: unknown) => unknown) => {
+    if (table === "fin_categories") return Promise.resolve({ data: [], error: null }).then(resolve);
     if (table === "fin_rules") return Promise.resolve({ data: [{ pattern: "mercado", category_id: "cat-mercado" }], error: null }).then(resolve);
     const match = txs.filter((t) => filters.every((f) => f(t)));
     if (patch) {

@@ -54,7 +54,7 @@ test("finanças: contas, lançamento manual, importação OFX/CSV sem duplicar e
       await page.getByRole("button", { name: "Pré-visualizar" }).click();
       if (round === 1) {
         await expectText(page, "3 novos");
-        await expect(page.getByText("Pagamento de fatura", { exact: true })).toBeVisible();
+        await expect(page.getByText("Pagamento Cartão de Crédito", { exact: true })).toBeVisible();
         await page.getByRole("button", { name: "Importar 3 lançamentos" }).click();
         await expect(page.getByRole("status")).toContainText("3 lançamentos importados");
       } else {
@@ -94,8 +94,8 @@ test("finanças: contas, lançamento manual, importação OFX/CSV sem duplicar e
     await expect(panel).not.toHaveAttribute("inert");
     // Conta: 1000 − 150,50 − 152,30 + 3500 − 89,90 = 4.107,30
     await expect(main).toContainText("R$ 4.107,30", { useInnerText: true });
-    // Cartão: −45,90 −45,90 −23,10 +10 +500 (pagamento) = 395,10
-    expect(brl(await main.innerText())).toContain("Cartões: R$ 395,10");
+    // Cartão: −45,90 −45,90 −23,10 +10 +500 (pagamento) = +395,10 de crédito: fatura atual R$ 0,00
+    expect(brl(await main.innerText())).toContain("Faturas dos cartões: R$ 0,00");
     // Entradas: só o salário. Pagamento da fatura (nos dois lados) e estorno sem categoria
     // no cartão ficam fora, para o dinheiro não contar duas vezes.
     expect(brl(await main.innerText())).toContain("R$ 3.500,00");

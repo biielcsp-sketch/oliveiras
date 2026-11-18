@@ -74,10 +74,9 @@ test("finanças: mais de 1000 lançamentos somam todos e a regra categoriza todo
     await page.getByLabel("Texto da regra").fill("compra");
     await page.getByLabel("Categoria da regra").selectOption({ label: "Mercado" });
     await page.getByRole("button", { name: "Criar regra" }).click();
-    await expect(page.getByText("“compra”")).toBeVisible();
-    await page.getByRole("button", { name: "Aplicar regras aos sem categoria" }).click();
+    // A regra nova já se aplica aos sem categoria ao ser criada.
     await expect(page.getByRole("status")).toContainText(`${TOTAL} lançamentos categorizados.`, { timeout: 30_000 });
-    await expect(page.getByRole("status")).not.toContainText("Ainda pode haver");
+    await expect(page.getByText("“compra”")).toBeVisible();
     const { data: acc } = await admin.from("fin_accounts").select("id").eq("name", accountName).single();
     const { count } = await admin
       .from("fin_transactions")

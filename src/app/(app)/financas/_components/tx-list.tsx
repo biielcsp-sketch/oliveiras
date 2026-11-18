@@ -3,23 +3,27 @@ import clsx from "clsx";
 import type { Account, Category, Transaction } from "@/lib/financas/types";
 import { formatBRL } from "@/lib/financas/money";
 import { shortDate } from "@/lib/financas/period";
+import { accountLabel } from "@/lib/financas/account-label";
 
 export function TxList({
   transactions,
   accounts,
   categories,
+  members = [],
 }: {
   transactions: Transaction[];
   accounts: Account[];
   categories: Category[];
+  members?: { id: string; name: string }[];
 }) {
+  const memberName = new Map(members.map((m) => [m.id, m.name]));
   const account = new Map(accounts.map((a) => [a.id, a]));
   const category = new Map(categories.map((c) => [c.id, c]));
   return (
     <ul className="divide-y divide-line">
       {transactions.map((t) => {
         const cat = t.category_id ? category.get(t.category_id) : undefined;
-        const transfer = cat?.kind === "transferencia";
+        const transfer = cat?.kind === "transferencia" || Boolean(t.transfer_group);
         return (
           <li key={t.id}>
             <Link href={`/financas/lancamentos/${t.id}`} className="-mx-2 flex items-center gap-3 rounded-2xl px-2 py-2.5 transition hover:bg-accent-soft/60">
@@ -31,7 +35,10 @@ export function TxList({
                     className="inline-block size-2 shrink-0 rounded-full"
                     style={{ background: cat?.color ?? "var(--line)" }}
                   />
-                  {cat?.name ?? "Sem categoria"} · {account.get(t.account_id)?.name ?? "—"}
+                  {cat?.name ?? "Sem categoria"} · {(() => {
+                    const a = account.get(t.account_id);
+                    return a ? accountLabel(a, memberName) : "—";
+                  })()}
                 </p>
               </div>
               <span

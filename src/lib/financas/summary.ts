@@ -2,7 +2,8 @@ import type { Category, Transaction } from "./types";
 
 /**
  * Totais do mês.
- * - Categoria de transferência (ex.: pagamento de fatura) fica fora de entradas e saídas.
+ * - Categoria de transferência (ex.: pagamento de cartão) fica fora de entradas e saídas.
+ * - Perna de um par de transferência (transfer_group preenchido) também fica fora.
  * - Crédito sem categoria em cartão (pagamento da fatura ou estorno) também fica fora:
  *   o dinheiro já foi contado quando saiu da conta corrente.
  * - Valor positivo em categoria de despesa (estorno categorizado) abate a despesa.
@@ -15,7 +16,7 @@ export function summarize(txs: Transaction[], categories: Category[], cardAccoun
   for (const t of txs) {
     const kind = t.category_id ? kindById.get(t.category_id) : undefined;
     const cents = Math.round(t.amount * 100);
-    if (kind === "transferencia") continue;
+    if (kind === "transferencia" || t.transfer_group) continue;
     if (cents > 0 && !kind && cardAccountIds.has(t.account_id)) continue;
     if (kind === "despesa" || (cents < 0 && kind !== "receita")) {
       expense -= cents;

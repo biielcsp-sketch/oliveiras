@@ -10,6 +10,7 @@ import {
 } from "./normalize";
 import { countBaixas, monthsAround } from "@/lib/financas/baixa";
 import { runBaixaAutomatica, type TxCode } from "@/lib/financas/baixa-data";
+import { loadCategorizeCtx, runLinkTransfers } from "@/lib/financas/transfers-data";
 
 export type SyncResult =
   | { status: "skipped"; reason: "nao-configurado" | "nao-autorizado" | "sem-conexoes" | "recente" }
@@ -41,7 +42,8 @@ export async function syncHousehold({ force }: { force: boolean }): Promise<Sync
   }
 
   const today = todaySP();
-  const { data: rules } = await supabase.from("fin_rules").select("pattern, category_id").eq("household_id", household.id);
+  // Regras + histórico da família + mapa da categoria da Pluggy (categorize).
+  const ctx = await loadCategorizeCtx(supabase, household.id);
   let inserted = 0;
   let updated = 0;
   let removed = 0;
@@ -112,11 +114,11 @@ export async function syncHousehold({ force }: { force: boolean }): Promise<Sync
         const recentStart = syncWindowStart(acc.sync_from, today);
         const windowStart = syncFetchStart(acc.sync_from, today, oldest?.date ?? null);
         const remoteTxs = await listTransactions(r.id, windowStart, credential);
-        const rows = buildSyncRows(remoteTxs, rules ?? []);
+        const rows = buildSyncRows(remoteTxs, ctx);
         for (const c of syncRowCodes(remoteTxs, rows)) codes.push({ ...c, account_id: acc.id });
         const { data: existing } = await supabase
           .from("fin_transactions")
-          .select("id, external_id, date, amount, description")
+          .select("id, external_id, date, amount, description, category_id, pluggy_category")
           .eq("household_id", household.id)
           .eq("account_id", acc.id)
           .eq("source", "openfinance")
@@ -154,6 +156,25 @@ export async function syncHousehold({ force }: { force: boolean }): Promise<Sync
             .eq("household_id", household.id);
           if (!error) updated++;
         }
+        // Preenche só o que está vazio; a guarda `.is(..., null)` impede sobrescrever categoria posta no meio do caminho.
+        for (const f of plan.fills) {
+          if (f.category) {
+            await supabase
+              .from("fin_transactions")
+              .update(f.category)
+              .eq("id", f.id)
+              .eq("household_id", household.id)
+              .is("category_id", null);
+          }
+          if (f.pluggy_category) {
+            await supabase
+              .from("fin_transactions")
+              .update({ pluggy_category: f.pluggy_category })
+              .eq("id", f.id)
+              .eq("household_id", household.id)
+              .is("pluggy_category", null);
+          }
+        }
         for (let i = 0; i < plan.deletes.length; i += 200) {
           const ids = plan.deletes.slice(i, i + 200);
           const { error } = await supabase
@@ -185,6 +206,12 @@ export async function syncHousehold({ force }: { force: boolean }): Promise<Sync
   // Mesma sessão do usuário (RLS). Falha aqui nunca derruba a sincronização.
   // Fixas e avulsas pagas pelo extrato entram na mesma contagem.
   const baixas = outflowDates.length ? countBaixas(await runBaixaAutomatica(monthsAround(outflowDates), codes)) : 0;
+  // Junta transferências entre contas da família e pagamentos de fatura. Falha aqui não derruba a sincronização.
+  try {
+    await runLinkTransfers(supabase, household.id);
+  } catch {
+    console.error("[pluggy] falha ao procurar pares de transferência");
+  }
   return { status: "done", inserted, updated, removed, errors, baixas };
 }
 

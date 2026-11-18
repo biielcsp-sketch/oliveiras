@@ -85,7 +85,7 @@ const ARQ = acc(4, "Antiga", "corrente", 99, { archived: true });
 const ACCOUNTS = [CONTA, POUP, CARTAO, ARQ];
 const MERCADO = cat(10, "Alimentação", "despesa", "#ff8800");
 const SALARIO = cat(11, "Salário", "receita");
-const TRANSF = cat(12, "Pagamento de fatura", "transferencia");
+const TRANSF = cat(12, "Pagamento Cartão de Crédito", "transferencia");
 const CASA = cat(13, "Casa", "despesa");
 const CATS = [MERCADO, SALARIO, TRANSF, CASA];
 
@@ -161,7 +161,7 @@ describe("Oli: dados dos painéis", () => {
     tx(2, 1, "2026-11-03", -300, 10), // mercado
     tx(3, 3, "2026-11-04", -200, 10), // mercado no cartão
     tx(4, 1, "2026-11-05", -150, 13), // casa
-    tx(5, 1, "2026-11-06", -820, 12), // pagamento de fatura: fora dos totais
+    tx(5, 1, "2026-11-06", -820, 12), // pagamento do cartão: fora dos totais
     tx(6, 3, "2026-11-06", 820, null), // crédito sem categoria no cartão: fora
   ];
 
@@ -240,7 +240,7 @@ describe("Oli: dados dos painéis", () => {
       resolveLancamento({ ...base, categoria: "Salário", conta: "poupanca", data: "2026-11-01" }, ACCOUNTS, CATS, "2026-11-08"),
     ).toMatchObject({ ok: true, preview: { valor: 12.5, tipo: "entrada", conta: { nome: "Poupança" }, data: "2026-11-01" } });
     // Transferência não é categoria válida para o Oli
-    expect(resolveLancamento({ ...base, categoria: "Pagamento de fatura" }, ACCOUNTS, CATS, "x")).toMatchObject({ ok: false });
+    expect(resolveLancamento({ ...base, categoria: "Pagamento Cartão de Crédito" }, ACCOUNTS, CATS, "x")).toMatchObject({ ok: false });
     expect(resolveLancamento({ ...base, categoria: "Lazer" }, ACCOUNTS, CATS, "x")).toMatchObject({
       ok: false,
       erro: "Categoria não encontrada. Opções: Alimentação, Salário, Casa.",
