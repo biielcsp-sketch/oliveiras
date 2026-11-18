@@ -40,7 +40,8 @@ export default async function FinancasPage({ searchParams }: { searchParams: Pro
   const active = accounts.filter((a) => !a.archived);
   const available = active.filter((a) => a.kind !== "cartao").reduce((s, a) => s + Math.round(a.balance * 100), 0) / 100;
   const cards = active.filter((a) => a.kind === "cartao");
-  const cardDebt = cards.reduce((s, a) => s + Math.round(a.balance * 100), 0) / 100;
+  // Dívida dos cartões em positivo; crédito na fatura (saldo positivo) não abate a de outro cartão.
+  const cardDebt = cards.reduce((s, a) => s + Math.max(0, -Math.round(a.balance * 100)), 0) / 100;
   const cardIds = new Set(accounts.filter((a) => a.kind === "cartao").map((a) => a.id));
   const { income, expense, result, expenseByCategory } = summarize(transactions, categories, cardIds);
 
@@ -97,7 +98,7 @@ export default async function FinancasPage({ searchParams }: { searchParams: Pro
                 <p className="mt-1 text-[32px] font-bold tracking-tight tabular-nums">{formatBRL(available)}</p>
                 {cards.length > 0 && (
                   <p className="mt-1 text-[13px] text-info">
-                    Cartões: <span className="tabular-nums">{formatBRL(cardDebt)}</span>
+                    Faturas dos cartões: <span className="tabular-nums">{formatBRL(cardDebt)}</span>
                   </p>
                 )}
               </Card>

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { matchCategory, normalizeText, type Rule } from "@/lib/financas/rules";
+import { categorize, EMPTY_CTX, normalizeText, type CategorizeCtx, type Rule } from "@/lib/financas/rules";
 import { toBarcode44 } from "@/lib/financas/baixa";
 
 export type PluggyTransaction = {
@@ -10,6 +10,8 @@ export type PluggyTransaction = {
   type: "DEBIT" | "CREDIT" | string;
   status?: string;
   providerId?: string | null;
+  /** Categoria da Pluggy, em inglês (ex.: 'Groceries', 'Credit card payment'). */
+  category?: string | null;
   /**
    * Dados do pagamento. Pela documentação da Pluggy (docs.pluggy.ai, Transaction → Payment Data →
    * Boleto Metadata), `paymentData.boletoMetadata.digitableLine` / `.barcode` vêm quando o
@@ -28,7 +30,15 @@ export type PluggyAccount = {
   balance: number;
 };
 
-export type SyncRow = { date: string; description: string; amount: number; external_id: string; category_id: string | null };
+export type SyncRow = {
+  date: string;
+  description: string;
+  amount: number;
+  external_id: string;
+  category_id: string | null;
+  category_source: "regra" | "historico" | "pluggy" | null;
+  pluggy_category: string | null;
+};
 
 /**
  * Sinal do app: saída negativa, entrada positiva. A Pluggy usa sinais diferentes em
@@ -45,7 +55,8 @@ export function toAppAmount(tx: Pick<PluggyTransaction, "amount" | "type">) {
  * a fatura; por isso usamos o providerId (Open Finance) ou, sem ele, data + valor +
  * descrição + ocorrência no dia, como a própria Pluggy recomenda.
  */
-export function buildSyncRows(txs: PluggyTransaction[], rules: Rule[]): SyncRow[] {
+export function buildSyncRows(txs: PluggyTransaction[], rulesOrCtx: Rule[] | CategorizeCtx): SyncRow[] {
+  const ctx: CategorizeCtx = Array.isArray(rulesOrCtx) ? { ...EMPTY_CTX, rules: rulesOrCtx } : rulesOrCtx;
   const seen = new Map<string, number>();
   return txs
     .filter((t) => Number.isFinite(t.amount) && t.amount !== 0 && /^\d{4}-\d{2}-\d{2}/.test(t.date))
@@ -62,7 +73,8 @@ export function buildSyncRows(txs: PluggyTransaction[], rules: Rule[]): SyncRow[
         seen.set(key, n);
         external_id = `pluggy:h:${createHash("sha256").update(`${key}|${n}`).digest("hex").slice(0, 40)}`;
       }
-      return { date, description, amount, external_id, category_id: matchCategory(description, rules) };
+      const pluggy_category = typeof t.category === "string" ? t.category.trim().slice(0, 80) || null : null;
+      return { date, description, amount, external_id, ...categorize({ description, pluggyCategory: pluggy_category }, ctx), pluggy_category };
     });
 }
 
@@ -89,12 +101,30 @@ export function syncRowCodes(txs: PluggyTransaction[], rows: SyncRow[]): { exter
   return out;
 }
 
-export type ExistingRow = { id: string; external_id: string | null; date: string; amount: number; description: string };
+export type ExistingRow = {
+  id: string;
+  external_id: string | null;
+  date: string;
+  amount: number;
+  description: string;
+  category_id?: string | null;
+  /** 'manual' com category_id null = usuário escolheu "Sem categoria": o sync não preenche. */
+  category_source?: string | null;
+  pluggy_category?: string | null;
+};
+
+/** Preenchimento de linha existente: só campos hoje vazios (a gravação também exige que continuem vazios). */
+export type SyncFill = {
+  id: string;
+  category?: { category_id: string; category_source: NonNullable<SyncRow["category_source"]> };
+  pluggy_category?: string;
+};
 
 /**
  * O que gravar: novos lançamentos, os que mudaram (pendente → lançado, valor ajustado)
  * e os que sumiram na Pluggy dentro da janela sincronizada (reapresentação da fatura).
- * A categoria nunca é sobrescrita em atualização.
+ * A categoria nunca é sobrescrita em atualização: `updates` só leva data, valor e descrição; `fills`
+ * só preenche categoria (ou pluggy_category) de linha que está sem ela.
  */
 export function planSync(
   existing: ExistingRow[],
@@ -105,10 +135,18 @@ export function planSync(
   const incomingKeys = new Set(incoming.map((r) => r.external_id));
   const inserts: SyncRow[] = [];
   const updates: { id: string; date: string; amount: number; description: string }[] = [];
+  const fills: SyncFill[] = [];
   for (const r of incoming) {
     const e = byKey.get(r.external_id);
-    if (!e) inserts.push(r);
-    else if (e.date !== r.date || Math.round(e.amount * 100) !== Math.round(r.amount * 100) || e.description !== r.description) {
+    if (!e) {
+      inserts.push(r);
+      continue;
+    }
+    const fill: SyncFill = { id: e.id };
+    if (e.category_id === null && (e.category_source ?? null) === null && r.category_id && r.category_source) fill.category = { category_id: r.category_id, category_source: r.category_source };
+    if (e.pluggy_category === null && r.pluggy_category) fill.pluggy_category = r.pluggy_category;
+    if (fill.category || fill.pluggy_category) fills.push(fill);
+    if (e.date !== r.date || Math.round(e.amount * 100) !== Math.round(r.amount * 100) || e.description !== r.description) {
       updates.push({ id: e.id, date: r.date, amount: r.amount, description: r.description });
     }
   }
@@ -122,7 +160,7 @@ export function planSync(
           .filter((e) => !opts.deleteFrom || e.date >= opts.deleteFrom)
           .map((e) => e.id)
       : [];
-  return { inserts, updates, deletes };
+  return { inserts, updates, deletes, fills };
 }
 
 export function accountKindFrom(a: Pick<PluggyAccount, "type" | "subtype">) {

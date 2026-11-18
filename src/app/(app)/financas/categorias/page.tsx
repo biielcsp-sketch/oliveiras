@@ -17,7 +17,10 @@ export default async function CategoriasPage() {
       <Card>
         <h2 className="font-medium">Regras automáticas</h2>
         <p className="mb-4 mt-1 text-sm text-muted">
-          Na importação, a descrição que contém o texto recebe a categoria. Maiúsculas e acentos não importam.
+          O lançamento cuja descrição contém o texto como palavra inteira recebe a categoria (“tim” não pega “ótimo”).
+          Maiúsculas, acentos e pontuação não importam. As regras valem sozinhas na importação, no Open Finance e, ao criar,
+          para os lançamentos sem categoria. Ao corrigir a categoria de um lançamento com “Usar para os próximos parecidos”,
+          o app cria a regra para você.
         </p>
         <AddRuleForm categories={categories} />
         <ul className="mt-4 divide-y divide-line">
@@ -64,8 +67,8 @@ export default async function CategoriasPage() {
           </section>
         ))}
         <p className="mt-5 text-[13px] text-muted">
-          Ao remover uma categoria, os lançamentos dela ficam “sem categoria”. Transferências (como pagamento de fatura) não
-          entram em entradas e saídas, para a compra no cartão não ser contada duas vezes. Crédito sem categoria em cartão também fica fora; um estorno com categoria de despesa abate o gasto.
+          Ao remover uma categoria, os lançamentos dela ficam “sem categoria”. Transferências (como Pagamento Cartão de Crédito e
+          Transferência entre contas) não entram em entradas e saídas, para a compra no cartão não ser contada duas vezes. Crédito sem categoria em cartão também fica fora; um estorno com categoria de despesa abate o gasto.
         </p>
       </Card>
     </div>

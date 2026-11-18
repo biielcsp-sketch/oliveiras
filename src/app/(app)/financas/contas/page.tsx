@@ -35,6 +35,7 @@ export default async function ContasPage() {
                       {a.archived && " · arquivada"}
                       {a.external_id && " · Open Finance"}
                     </p>
+                    {a.kind === "cartao" && <CardLine balance={a.balance} limit={a.credit_limit} />}
                     {a.bank_balance !== null && Math.round(a.bank_balance * 100) !== Math.round(a.balance * 100) && (
                       <p className="text-[12px] text-danger">Banco informa {formatBRL(a.bank_balance)}</p>
                     )}
@@ -48,5 +49,25 @@ export default async function ContasPage() {
         </Card>
       )}
     </div>
+  );
+}
+
+/** Cartão: saldo negativo é a fatura; positivo é crédito na fatura (pagamento a mais ou estorno), não dinheiro disponível. */
+function CardLine({ balance, limit }: { balance: number; limit: number | null }) {
+  const debt = Math.max(0, -Math.round(balance * 100)) / 100;
+  return (
+    <p className="truncate text-[12.5px] text-muted">
+      Fatura atual <span className="tabular-nums">{formatBRL(debt)}</span>
+      {limit !== null && (
+        <>
+          {" · "}Limite disponível <span className="tabular-nums">{formatBRL((Math.round(limit * 100) - Math.round(debt * 100)) / 100)}</span>
+        </>
+      )}
+      {balance > 0 && (
+        <>
+          {" · "}Crédito na fatura <span className="tabular-nums">{formatBRL(balance)}</span>
+        </>
+      )}
+    </p>
   );
 }

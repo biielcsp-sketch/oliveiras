@@ -33,7 +33,7 @@ export function AddCategoryForm() {
 }
 
 export function AddRuleForm({ categories }: { categories: Category[] }) {
-  const [state, action, pending] = useActionState<FormState, FormData>(addRule, null);
+  const [state, action, pending] = useActionState<(FormState & { updated?: number }) | null, FormData>(addRule, null);
   const ref = useResetOnOk(state);
   return (
     <form ref={ref} action={action} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
@@ -47,6 +47,11 @@ export function AddRuleForm({ categories }: { categories: Category[] }) {
       <Button disabled={pending}>Criar regra</Button>
       <div className="sm:col-span-3">
         <FormError message={state?.error} />
+        {state?.ok && (
+          <span className="text-sm text-muted" role="status">
+            Regra criada. {state.updated === 1 ? "1 lançamento categorizado." : `${state.updated ?? 0} lançamentos categorizados.`}
+          </span>
+        )}
       </div>
     </form>
   );

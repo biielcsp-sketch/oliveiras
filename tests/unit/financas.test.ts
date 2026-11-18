@@ -128,7 +128,7 @@ describe("resumo do mês", () => {
   const categories = [
     { id: "merc", name: "Mercado", kind: "despesa" as const, color: "#000000" },
     { id: "sal", name: "Salário", kind: "receita" as const, color: "#000000" },
-    { id: "fat", name: "Pagamento de fatura", kind: "transferencia" as const, color: "#000000" },
+    { id: "fat", name: "Pagamento Cartão de Crédito", kind: "transferencia" as const, color: "#000000" },
   ];
   const tx = (amount: number, category_id: string | null, account_id = "a") => ({
     id: Math.random().toString(), account_id, date: "2026-11-01", description: "x",

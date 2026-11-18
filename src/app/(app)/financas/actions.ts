@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getAppContext } from "@/lib/data";
 import { parseBRL } from "@/lib/financas/money";
-import { matchCategory } from "@/lib/financas/rules";
+import { categorize, cleanDescription, matchCategory, type CategorizeCtx } from "@/lib/financas/rules";
 import { decodeStatement, parseOfx } from "@/lib/financas/ofx";
 import { parseCsv } from "@/lib/financas/csv";
 import { buildImportRows, suggestInvert } from "@/lib/financas/import";
@@ -13,6 +13,8 @@ import { validateManualTransaction } from "@/lib/financas/transaction-input";
 import { baixaLabels, countBaixas, monthsAround } from "@/lib/financas/baixa";
 import { runBaixaAutomatica } from "@/lib/financas/baixa-data";
 import { fetchAllPages } from "@/lib/financas/paginate";
+import { loadCategorizeCtx, runLinkTransfers } from "@/lib/financas/transfers-data";
+import type { Category } from "@/lib/financas/types";
 
 export type FormState = { error?: string; ok?: boolean } | null;
 
@@ -52,13 +54,109 @@ export async function saveTransaction(_: FormState, form: FormData): Promise<For
 
   const supabase = await createClient();
   const id = optUuid(str(form, "id"));
+  // Categoria escolhida no formulário é do usuário: vira histórico para aprender ("parecidos").
+  // Ao editar, só vira 'manual' se a categoria mudou (inclusive para "Sem categoria": 'manual' + null =
+  // "usuário escolheu sem categoria", que regras, histórico, Pluggy e pares não preenchem de novo).
+  // Sem mudança, mantém a origem (ex.: perna 'par' continua 'par').
+  let data: typeof parsed.data & { category_source?: string | null } = parsed.data;
+  if (id) {
+    const { data: current } = await supabase
+      .from("fin_transactions")
+      .select("category_id")
+      .eq("id", id)
+      .eq("household_id", household.id)
+      .maybeSingle();
+    if (!current || (current.category_id ?? null) !== parsed.data.category_id) data = { ...data, category_source: "manual" };
+  } else {
+    data = { ...data, category_source: parsed.data.category_id ? "manual" : null };
+  }
   const { error } = id
-    ? await supabase.from("fin_transactions").update(parsed.data).eq("id", id).eq("household_id", household.id)
-    : await supabase.from("fin_transactions").insert({ ...parsed.data, household_id: household.id, source: "manual" });
+    ? await supabase.from("fin_transactions").update(data).eq("id", id).eq("household_id", household.id)
+    : await supabase.from("fin_transactions").insert({ ...data, household_id: household.id, source: "manual" });
   if (error) return { error: "Não foi possível salvar. Confira conta e categoria." };
 
+  // "Usar para os próximos parecidos": vira regra e já categoriza os parecidos que estão sem categoria.
+  let learned = 0;
+  const key = cleanDescription(data.description);
+  if (form.get("learn") === "on" && data.category_id && key) {
+    learned = (await learnRule(supabase, household.id, key, data.category_id)) ?? 0;
+  }
+
   refresh();
-  redirect(`/financas/lancamentos?mes=${parsed.data.date.slice(0, 7)}`);
+  redirect(`/financas/lancamentos?mes=${data.date.slice(0, 7)}${learned > 0 ? `&aprendeu=${learned}` : ""}`);
+}
+
+type Db = Awaited<ReturnType<typeof createClient>>;
+
+/** Cria a regra (ou troca a categoria da regra com o mesmo texto) e aplica aos sem categoria. Devolve quantos mudaram. */
+async function learnRule(supabase: Db, householdId: string, pattern: string, categoryId: string) {
+  const { data: existing } = await supabase
+    .from("fin_rules")
+    .select("id")
+    .eq("household_id", householdId)
+    .eq("pattern", pattern)
+    .maybeSingle();
+  const { error } = existing
+    ? await supabase.from("fin_rules").update({ category_id: categoryId }).eq("id", existing.id).eq("household_id", householdId)
+    : await supabase.from("fin_rules").insert({ household_id: householdId, pattern, category_id: categoryId });
+  if (error) return null;
+  const rule = [{ pattern, category_id: categoryId }];
+  const r = await categorizeUncategorized(supabase, householdId, (description) => {
+    const id = matchCategory(description, rule);
+    return id ? { category_id: id, category_source: "regra" } : null;
+  });
+  return r.updated;
+}
+
+/**
+ * Categoriza os lançamentos que estão sem categoria. Lê todos primeiro (paginado: o PostgREST corta em 1000)
+ * e só depois atualiza, em lotes, para a paginação não pular linhas que saem do filtro "sem categoria".
+ * `updated` conta as linhas que o banco de fato mudou; `partial` = teto ou falha de leitura/gravação.
+ */
+async function categorizeUncategorized(
+  supabase: Db,
+  householdId: string,
+  pick: (description: string) => { category_id: string; category_source: string } | null,
+) {
+  const { rows: txs, incomplete } = await fetchAllPages<{ id: string; description: string }>((from, to) =>
+    supabase
+      .from("fin_transactions")
+      .select("id, description")
+      .eq("household_id", householdId)
+      .is("category_id", null)
+      // 'manual' + null = usuário escolheu "Sem categoria": não recategoriza.
+      .is("category_source", null)
+      .order("id")
+      .range(from, to),
+  );
+  const groups = new Map<string, { category_id: string; category_source: string; ids: string[] }>();
+  for (const t of txs) {
+    const c = pick(t.description);
+    if (!c) continue;
+    const k = `${c.category_id}|${c.category_source}`;
+    const g = groups.get(k) ?? { ...c, ids: [] };
+    g.ids.push(t.id);
+    groups.set(k, g);
+  }
+  let updated = 0;
+  let failed = false;
+  for (const g of groups.values()) {
+    for (let i = 0; i < g.ids.length; i += 200) {
+      const chunk = g.ids.slice(i, i + 200);
+      const { data, error } = await supabase
+        .from("fin_transactions")
+        .update({ category_id: g.category_id, category_source: g.category_source })
+        .in("id", chunk)
+        .eq("household_id", householdId)
+        // Não sobrescreve categoria (nem "Sem categoria" escolhido) que alguém pôs no meio do caminho.
+        .is("category_id", null)
+        .is("category_source", null)
+        .select("id");
+      if (error) failed = true;
+      else updated += data?.length ?? 0;
+    }
+  }
+  return { updated, partial: incomplete || failed };
 }
 
 export async function deleteTransaction(form: FormData) {
@@ -138,17 +236,37 @@ export async function deleteAccount(_: FormState, form: FormData): Promise<FormS
 
 /* ---------- Categorias e regras ---------- */
 
-export async function addCategory(_: FormState, form: FormData): Promise<FormState> {
+async function createCategory(rawName: string, rawKind: string): Promise<{ error: string } | { category: Category }> {
   const { household } = await getAppContext();
-  const name = str(form, "name");
-  const kind = str(form, "kind");
+  const name = rawName.trim();
+  const kind = rawKind.trim();
   if (!name || name.length > 40) return { error: "Nome da categoria inválido." };
   if (!CATEGORY_KINDS.includes(kind)) return { error: "Tipo inválido." };
   const supabase = await createClient();
-  const { error } = await supabase.from("fin_categories").insert({ household_id: household.id, name, kind });
-  if (error) return { error: error.code === "23505" ? "Já existe uma categoria com esse nome." : "Não foi possível salvar." };
+  const { data, error } = await supabase
+    .from("fin_categories")
+    .insert({ household_id: household.id, name, kind })
+    .select("id, name, kind, color")
+    .single();
+  if (error || !data) return { error: error?.code === "23505" ? "Já existe uma categoria com esse nome." : "Não foi possível salvar." };
+  return { category: data as Category };
+}
+
+export async function addCategory(_: FormState, form: FormData): Promise<FormState> {
+  const r = await createCategory(str(form, "name"), str(form, "kind"));
+  if ("error" in r) return { error: r.error };
   refresh();
   return { ok: true };
+}
+
+/**
+ * "+ Nova" no formulário de lançamento: mesma validação de addCategory, devolve a categoria criada.
+ * Não revalida a rota: o formulário aberto não perde o que já foi digitado (a lista de categorias
+ * das outras telas é lida de novo a cada navegação).
+ */
+export async function addCategoryInline(name: string, kind: string): Promise<{ error: string } | { category: Category }> {
+  if (typeof name !== "string" || typeof kind !== "string") return { error: "Nome da categoria inválido." };
+  return createCategory(name, kind);
 }
 
 export async function deleteCategory(form: FormData) {
@@ -160,7 +278,7 @@ export async function deleteCategory(form: FormData) {
   refresh();
 }
 
-export async function addRule(_: FormState, form: FormData): Promise<FormState> {
+export async function addRule(_: FormState, form: FormData): Promise<FormState & { updated?: number }> {
   const { household } = await getAppContext();
   const pattern = str(form, "pattern").toLowerCase();
   const categoryId = optUuid(str(form, "category_id"));
@@ -171,8 +289,9 @@ export async function addRule(_: FormState, form: FormData): Promise<FormState> 
     .from("fin_rules")
     .insert({ household_id: household.id, pattern, category_id: categoryId });
   if (error) return { error: error.code === "23505" ? "Já existe uma regra com esse texto." : "Não foi possível salvar." };
-  refresh();
-  return { ok: true };
+  // Regra nova já vale para os lançamentos que estão sem categoria.
+  const applied = await applyRules();
+  return { ok: true, updated: applied.updated ?? 0 };
 }
 
 export async function deleteRule(form: FormData) {
@@ -185,50 +304,20 @@ export async function deleteRule(form: FormData) {
 }
 
 /**
- * Aplica as regras aos lançamentos que ainda estão sem categoria. Lê todos primeiro (paginado: o antigo
- * `.limit(5000)` voltava só 1000 por causa do max_rows do PostgREST) e só depois atualiza, para a paginação
- * não pular linhas que saem do filtro "sem categoria". `updated` conta as linhas que o banco de fato mudou.
- * `partial` = passou do teto ou uma leitura/gravação falhou: ainda pode haver lançamento para categorizar.
+ * Aplica regras e histórico da família (categorize) aos lançamentos que ainda estão sem categoria e grava
+ * category_source ('regra' | 'historico'). A categoria da Pluggy não entra aqui: só vale na chegada.
+ * `updated` conta as linhas que o banco de fato mudou; `partial` = teto ou falha: toque de novo.
  */
 export async function applyRules(): Promise<FormState & { updated?: number; partial?: boolean }> {
   const { household } = await getAppContext();
   const supabase = await createClient();
-  const [{ data: rules }, { rows: txs, incomplete }] = await Promise.all([
-    supabase.from("fin_rules").select("pattern, category_id").eq("household_id", household.id),
-    fetchAllPages<{ id: string; description: string }>((from, to) =>
-      supabase
-        .from("fin_transactions")
-        .select("id, description")
-        .eq("household_id", household.id)
-        .is("category_id", null)
-        .order("id")
-        .range(from, to),
-    ),
-  ]);
-  const byCategory = new Map<string, string[]>();
-  for (const t of txs) {
-    const cat = matchCategory(t.description, rules ?? []);
-    if (cat) byCategory.set(cat, [...(byCategory.get(cat) ?? []), t.id]);
-  }
-  let updated = 0;
-  let failed = false;
-  for (const [categoryId, ids] of byCategory) {
-    for (let i = 0; i < ids.length; i += 200) {
-      const chunk = ids.slice(i, i + 200);
-      const { data, error } = await supabase
-        .from("fin_transactions")
-        .update({ category_id: categoryId })
-        .in("id", chunk)
-        .eq("household_id", household.id)
-        // Não sobrescreve categoria que alguém pôs no meio do caminho.
-        .is("category_id", null)
-        .select("id");
-      if (error) failed = true;
-      else updated += data?.length ?? 0;
-    }
-  }
+  const ctx: CategorizeCtx = { ...(await loadCategorizeCtx(supabase, household.id)), categoryIdByName: new Map() };
+  const { updated, partial } = await categorizeUncategorized(supabase, household.id, (description) => {
+    const c = categorize({ description }, ctx);
+    return c.category_id && c.category_source ? { category_id: c.category_id, category_source: c.category_source } : null;
+  });
   refresh();
-  return { ok: true, updated, ...(incomplete || failed ? { partial: true } : {}) };
+  return { ok: true, updated, ...(partial ? { partial: true } : {}) };
 }
 
 /* ---------- Importação ---------- */
@@ -263,9 +352,9 @@ async function readStatement(form: FormData) {
   if (file.size > MAX_FILE_BYTES) return { error: "Arquivo muito grande (máximo 900 KB). Exporte um período menor." } as const;
 
   const supabase = await createClient();
-  const [{ data: account }, { data: rules }, { data: categories }] = await Promise.all([
+  const [{ data: account }, ctx, { data: categories }] = await Promise.all([
     supabase.from("fin_accounts").select("id, kind").eq("id", accountId).eq("household_id", household.id).maybeSingle(),
-    supabase.from("fin_rules").select("pattern, category_id").eq("household_id", household.id),
+    loadCategorizeCtx(supabase, household.id),
     supabase.from("fin_categories").select("id, name").eq("household_id", household.id),
   ]);
   if (!account) return { error: "Conta não encontrada." } as const;
@@ -285,7 +374,7 @@ async function readStatement(form: FormData) {
     file,
     parsed,
     source: isOfx ? "ofx" : "csv",
-    rules: rules ?? [],
+    ctx,
     categoryName: new Map((categories ?? []).map((c) => [c.id, c.name])),
   } as const;
 }
@@ -314,7 +403,7 @@ export async function previewImport(_: ImportState, form: FormData): Promise<Imp
   const invert = form.has("invert_set")
     ? form.get("invert") === "on"
     : suggestInvert(r.parsed.transactions, r.account.kind);
-  const rows = buildImportRows(r.parsed.transactions, { invert, rules: r.rules });
+  const rows = buildImportRows(r.parsed.transactions, { invert, rules: r.ctx.rules, history: r.ctx.history });
   const existing = await existingIds(r.supabase, r.account.id, rows.map((x) => x.external_id));
   return {
     step: "preview",
@@ -337,7 +426,7 @@ export async function confirmImport(_: ImportState, form: FormData): Promise<Imp
   const r = await readStatement(form);
   if ("error" in r) return { error: r.error as string };
   const invert = form.get("invert") === "on";
-  const rows = buildImportRows(r.parsed.transactions, { invert, rules: r.rules }).filter(
+  const rows = buildImportRows(r.parsed.transactions, { invert, rules: r.ctx.rules, history: r.ctx.history }).filter(
     (x) => Math.abs(x.amount) <= MAX_AMOUNT,
   );
 
@@ -382,6 +471,14 @@ export async function confirmImport(_: ImportState, form: FormData): Promise<Imp
       new Map((bills ?? []).map((b) => [b.id, b.name])),
       new Map((oneOffs ?? []).map((o) => [o.id, { name: o.name, due_date: o.due_date }])),
     );
+  }
+  // Junta transferências entre contas e pagamentos de fatura. Falha aqui não desfaz a importação.
+  if (inserted > 0) {
+    try {
+      await runLinkTransfers(r.supabase, r.household.id);
+    } catch {
+      console.error("[importar] falha ao procurar pares de transferência");
+    }
   }
   refresh();
   return { step: "done", inserted, skipped: rows.length - inserted, baixas };

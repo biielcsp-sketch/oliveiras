@@ -50,12 +50,13 @@ test("planejamento: orçamento, fatura do cartão, conta paga vinculada ao extra
 
   await test.step("regra nova categoriza lançamentos antigos", async () => {
     await page.goto("/financas/categorias");
-    await page.getByLabel("Texto da regra").fill("pão de açúcar");
-    await page.getByLabel("Categoria da regra").selectOption({ label: "Mercado" });
+    // 'Pão de Açúcar' já vem categorizado pela regra padrão (0027); o salário não tem regra padrão.
+    // A regra nova já se aplica aos sem categoria ao ser criada.
+    await page.getByLabel("Texto da regra").fill("salario empresa");
+    await page.getByLabel("Categoria da regra").selectOption({ label: "Salário" });
     await page.getByRole("button", { name: "Criar regra" }).click();
-    await expect(page.getByText("“pão de açúcar”")).toBeVisible();
-    await page.getByRole("button", { name: "Aplicar regras aos sem categoria" }).click();
     await expect(page.getByRole("status")).toContainText("1 lançamento categorizado.");
+    await expect(page.getByText("“salario empresa”")).toBeVisible();
   });
 
   await test.step("orçamento padrão e ajuste de um mês", async () => {

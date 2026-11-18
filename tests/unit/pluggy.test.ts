@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   itemHealthy,
   accountKindFrom, bankBalanceToApp, buildSyncRows, defaultSyncFrom, maskNumber, openingToMatchBank, planSync, syncFetchStart,
-  syncWindowStart, toAppAmount,
+  syncWindowStart, toAppAmount, type SyncRow,
 } from "@/lib/pluggy/normalize";
 
 const tx = (o: Partial<Parameters<typeof toAppAmount>[0]> & Record<string, unknown>) => ({
@@ -25,7 +25,15 @@ describe("linhas da sincronização", () => {
 
   it("usa providerId quando existe e aplica regras", () => {
     const [r] = buildSyncRows([tx({ providerId: "P1", description: "IFOOD *X" })], rules);
-    expect(r).toEqual({ date: "2026-11-05", description: "IFOOD *X", amount: -10, external_id: "pluggy:p:P1", category_id: "alim" });
+    expect(r).toEqual({
+      date: "2026-11-05",
+      description: "IFOOD *X",
+      amount: -10,
+      external_id: "pluggy:p:P1",
+      category_id: "alim",
+      category_source: "regra",
+      pluggy_category: null,
+    });
   });
 
   it("sem providerId: chave por data+valor+descrição+ocorrência, estável e sem colidir", () => {
@@ -49,10 +57,15 @@ describe("plano de sincronização", () => {
     { id: "2", external_id: "k2", date: "2026-11-02", amount: -20, description: "B pendente" },
     { id: "3", external_id: "k3", date: "2026-11-03", amount: -30, description: "C" },
   ];
+  const row = (o: Pick<SyncRow, "external_id" | "date" | "amount" | "description" | "category_id">): SyncRow => ({
+    ...o,
+    category_source: o.category_id ? "regra" : null,
+    pluggy_category: null,
+  });
   const incoming = [
-    { external_id: "k1", date: "2026-11-01", amount: -10, description: "A", category_id: null },
-    { external_id: "k2", date: "2026-11-02", amount: -21.5, description: "B", category_id: "x" },
-    { external_id: "k4", date: "2026-11-04", amount: -40, description: "D", category_id: null },
+    row({ external_id: "k1", date: "2026-11-01", amount: -10, description: "A", category_id: null }),
+    row({ external_id: "k2", date: "2026-11-02", amount: -21.5, description: "B", category_id: "x" }),
+    row({ external_id: "k4", date: "2026-11-04", amount: -40, description: "D", category_id: null }),
   ];
 
   it("insere novos, atualiza alterados (sem mexer na categoria) e remove os que sumiram", () => {
@@ -60,7 +73,25 @@ describe("plano de sincronização", () => {
       inserts: [incoming[2]],
       updates: [{ id: "2", date: "2026-11-02", amount: -21.5, description: "B" }],
       deletes: ["3"],
+      fills: [],
     });
+  });
+
+  it("linha existente com categoria nunca é sobrescrita; sem categoria, só é preenchida", () => {
+    const withCat = [
+      { ...existing[1], description: "B", amount: -21.5, category_id: "manual-cat", pluggy_category: null },
+      { ...existing[0], category_id: null, pluggy_category: null },
+    ];
+    const inc = [
+      { ...incoming[1], pluggy_category: "Groceries" },
+      { ...incoming[0], category_id: "y", category_source: "pluggy" as const, pluggy_category: "Groceries" },
+    ];
+    const plan = planSync(withCat, inc);
+    expect(plan.updates).toEqual([]);
+    expect(plan.fills).toEqual([
+      { id: "2", pluggy_category: "Groceries" },
+      { id: "1", category: { category_id: "y", category_source: "pluggy" }, pluggy_category: "Groceries" },
+    ]);
   });
 
   // Regressão: com autorização vencida a Pluggy devolve lista vazia, e a sincronização
@@ -82,7 +113,7 @@ describe("plano de sincronização", () => {
   });
 
   it("nada muda quando já está igual", () => {
-    expect(planSync(existing.slice(0, 1), incoming.slice(0, 1))).toEqual({ inserts: [], updates: [], deletes: [] });
+    expect(planSync(existing.slice(0, 1), incoming.slice(0, 1))).toEqual({ inserts: [], updates: [], deletes: [], fills: [] });
   });
 });
 
