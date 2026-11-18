@@ -270,6 +270,7 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
         return;
       }
       files.current.set(id, file);
+      // Fica na memória da tela até "Limpar conversa" ou recarregar a página (nunca salvo por isso).
       lastFile.current = file;
       add({
         id,
