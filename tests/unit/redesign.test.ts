@@ -248,10 +248,11 @@ describe("cabeçalhos: mesma onda e sem a setinha", () => {
       expect(src).not.toMatch(/<path d="M0 0H390/);
     }
   });
-  it("a setinha redonda saiu dos cabeçalhos; o saldo das contas abre por uma linha na página", () => {
+  it("a setinha redonda saiu dos cabeçalhos; o saldo das contas aparece direto no card azul do Resumo", () => {
     expect(readFileSync("src/components/module-hero.tsx", "utf8")).not.toContain("HeroDrawerButton");
     const fin = readFileSync("src/app/(app)/financas/page.tsx", "utf8");
-    expect(fin).toContain('<HeroDrawerButton label="saldo das contas" title="Saldo das contas" />');
+    expect(fin).toContain("<ResumoSaldo");
+    expect(fin).not.toContain("HeroDrawerButton");
     const drawer = readFileSync("src/components/hero-drawer.tsx", "utf8");
     expect(drawer).not.toContain("glass-orb absolute");
     expect(drawer).toContain("aria-expanded={ctx.open}");
