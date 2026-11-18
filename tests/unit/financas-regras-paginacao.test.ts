@@ -24,7 +24,7 @@ function fakeFrom(table: string) {
     return b;
   };
   b.eq = () => b; // household_id: tudo é da mesma família aqui
-  b.is = (col: keyof Tx, v: null) => (filters.push((t) => t[col] === v), b);
+  b.is = (col: keyof Tx, v: null) => (filters.push((t) => (t[col] ?? null) === v), b);
   b.in = (col: keyof Tx, vals: string[]) => (filters.push((t) => vals.includes(t[col] as string)), b);
   b.order = () => b;
   b.not = (col: keyof Tx) => (filters.push((t) => t[col] !== null), b);

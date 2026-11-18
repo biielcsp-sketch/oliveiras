@@ -118,7 +118,7 @@ export async function syncHousehold({ force }: { force: boolean }): Promise<Sync
         for (const c of syncRowCodes(remoteTxs, rows)) codes.push({ ...c, account_id: acc.id });
         const { data: existing } = await supabase
           .from("fin_transactions")
-          .select("id, external_id, date, amount, description, category_id, pluggy_category")
+          .select("id, external_id, date, amount, description, category_id, category_source, pluggy_category")
           .eq("household_id", household.id)
           .eq("account_id", acc.id)
           .eq("source", "openfinance")
@@ -164,7 +164,8 @@ export async function syncHousehold({ force }: { force: boolean }): Promise<Sync
               .update(f.category)
               .eq("id", f.id)
               .eq("household_id", household.id)
-              .is("category_id", null);
+              .is("category_id", null)
+              .is("category_source", null);
           }
           if (f.pluggy_category) {
             await supabase

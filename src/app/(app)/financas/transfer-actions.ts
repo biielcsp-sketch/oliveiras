@@ -77,7 +77,8 @@ export async function dismissPair(outId: string, inId: string): Promise<Transfer
 
 /**
  * "Separar": desfaz o par e marca as pernas como conferidas (não voltam a ser pareadas sozinhas).
- * A categoria que o próprio pareamento pôs (category_source 'par') sai, para o lançamento voltar aos totais.
+ * A categoria que o próprio pareamento pôs (category_source 'par') sai, para o lançamento voltar aos totais,
+ * gravada como "Sem categoria" escolhido (null + 'manual'): sync, regras e pares não a recolocam.
  */
 export async function unlinkPair(group: string): Promise<TransferActionState> {
   const { household } = await getAppContext();
@@ -85,7 +86,7 @@ export async function unlinkPair(group: string): Promise<TransferActionState> {
   const supabase = await createClient();
   const { error: e1 } = await supabase
     .from("fin_transactions")
-    .update({ category_id: null, category_source: null })
+    .update({ category_id: null, category_source: "manual" })
     .eq("household_id", household.id)
     .eq("transfer_group", group)
     .eq("category_source", "par");

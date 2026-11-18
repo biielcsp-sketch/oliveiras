@@ -4,10 +4,11 @@
 --   "não é transferência" (transfer_checked), a origem das categorias
 --   (category_source) e a categoria da Pluggy (pluggy_category). Os lançamentos
 --   e suas categorias continuam.
--- - Remove as regras padrão criadas por 0027 que ainda apontam para a categoria
---   padrão correspondente. Uma regra idêntica (mesmo padrão e mesma categoria)
---   criada pelo usuário depois de 0027 é indistinguível e também será removida.
---   Regras padrão que o usuário redirecionou para outra categoria ficam.
+-- - Remove só as 50 regras padrão novas de 0027 marcadas origem = 'padrao' e que
+--   ainda apontam para a categoria padrão correspondente. Regras do usuário
+--   (origem = 'usuario'), criadas antes ou depois de 0027, ficam. Regras padrão
+--   que o usuário redirecionou para outra categoria ficam. Depois a coluna
+--   fin_rules.origem é removida.
 -- - As regras de 0002 ('pagamento de fatura', 'pgto fatura', 'ifood', 'uber',
 --   'dizimo') são mantidas.
 
@@ -41,7 +42,8 @@ using public.fin_categories c,
     ('iof','Impostos e taxas','despesa'), ('tarifa','Impostos e taxas','despesa'), ('anuidade','Impostos e taxas','despesa'),
     ('rendimento','Rendimentos','receita')
   ) as d(pattern, category, kind)
-where r.pattern = d.pattern
+where r.origem = 'padrao'
+  and r.pattern = d.pattern
   and c.id = r.category_id
   and c.household_id = r.household_id
   and c.name = d.category
@@ -97,6 +99,7 @@ revoke execute on function public.seed_fin_defaults(uuid) from public, anon, aut
 drop trigger if exists fin_transactions_transfer_guard on public.fin_transactions;
 drop function if exists public.fin_transactions_transfer_guard();
 drop index if exists public.fin_transactions_transfer_group_idx;
+alter table public.fin_rules drop column if exists origem;
 alter table public.fin_transactions
   drop column if exists transfer_group,
   drop column if exists transfer_checked,

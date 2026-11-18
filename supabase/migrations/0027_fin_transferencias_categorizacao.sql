@@ -6,6 +6,7 @@
 -- 2) Categoria 'Pagamento de fatura' (transferencia) passa a 'Pagamento Cartão de Crédito'.
 -- 3) seed_fin_defaults usa o novo nome e semeia mais regras padrão.
 -- 4) Famílias existentes recebem as regras padrão novas (sem tocar nas do usuário).
+--    fin_rules ganha origem ('usuario'|'padrao') para o rollback apagar só as padrão.
 -- 5) Backfill: lançamentos existentes ficam com category_source null (legado).
 -- RLS e políticas de fin_transactions não mudam (política "for all" por household_id
 -- e grants por tabela cobrem as colunas novas).
@@ -60,6 +61,13 @@ create trigger fin_transactions_transfer_guard
   execute function public.fin_transactions_transfer_guard();
 revoke execute on function public.fin_transactions_transfer_guard() from public, anon, authenticated;
 
+-- 1b) Origem das regras -------------------------------------------------------
+-- 'padrao' = criada pela seed/0027; 'usuario' = criada pela família (default).
+-- Regras que já existem ficam 'usuario'. O rollback apaga só as 'padrao' novas.
+alter table public.fin_rules
+  add column origem text not null default 'usuario'
+    constraint fin_rules_origem_check check (origem in ('usuario', 'padrao'));
+
 -- 2) Renomeia a categoria de fatura -------------------------------------------
 -- Só onde a família ainda não tem 'Pagamento Cartão de Crédito' no mesmo kind
 -- (unique (household_id, kind, name)).
@@ -97,8 +105,8 @@ begin
   ) as c(name, kind, color)
   on conflict (household_id, kind, name) do nothing;
 
-  insert into public.fin_rules (household_id, pattern, category_id)
-  select p_household, r.pattern, c.id
+  insert into public.fin_rules (household_id, pattern, category_id, origem)
+  select p_household, r.pattern, c.id, 'padrao'
   from (values
     ('pagamento de fatura','Pagamento Cartão de Crédito','transferencia'),
     ('pgto fatura','Pagamento Cartão de Crédito','transferencia'),
@@ -138,8 +146,8 @@ revoke execute on function public.seed_fin_defaults(uuid) from public, anon, aut
 -- 4) Regras padrão para as famílias existentes --------------------------------
 -- Só regras (não recria categorias que a família apagou). Padrão que a família já
 -- tem (mesmo apontando para outra categoria) fica como está.
-insert into public.fin_rules (household_id, pattern, category_id)
-select c.household_id, r.pattern, c.id
+insert into public.fin_rules (household_id, pattern, category_id, origem)
+select c.household_id, r.pattern, c.id, 'padrao'
 from (values
   ('pagamento de fatura','Pagamento Cartão de Crédito','transferencia'),
   ('pgto fatura','Pagamento Cartão de Crédito','transferencia'),

@@ -108,6 +108,8 @@ export type ExistingRow = {
   amount: number;
   description: string;
   category_id?: string | null;
+  /** 'manual' com category_id null = usuário escolheu "Sem categoria": o sync não preenche. */
+  category_source?: string | null;
   pluggy_category?: string | null;
 };
 
@@ -141,7 +143,7 @@ export function planSync(
       continue;
     }
     const fill: SyncFill = { id: e.id };
-    if (e.category_id === null && r.category_id && r.category_source) fill.category = { category_id: r.category_id, category_source: r.category_source };
+    if (e.category_id === null && (e.category_source ?? null) === null && r.category_id && r.category_source) fill.category = { category_id: r.category_id, category_source: r.category_source };
     if (e.pluggy_category === null && r.pluggy_category) fill.pluggy_category = r.pluggy_category;
     if (fill.category || fill.pluggy_category) fills.push(fill);
     if (e.date !== r.date || Math.round(e.amount * 100) !== Math.round(r.amount * 100) || e.description !== r.description) {

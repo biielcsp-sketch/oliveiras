@@ -60,7 +60,9 @@ export async function writePair(
   const transferIds = new Set(categories.filter((c) => c.kind === "transferencia").map((c) => c.id));
   let ok = 0;
   for (const leg of legs) {
-    const keepManual = leg.category_id && transferIds.has(leg.category_id) && leg.category_source === "manual";
+    // Mantém categoria de transferência escolhida à mão e "Sem categoria" escolhido à mão (null + 'manual').
+    const keepManual =
+      leg.category_source === "manual" && (!leg.category_id || transferIds.has(leg.category_id));
     const patch: Record<string, unknown> = { transfer_group: group };
     if (catId && !keepManual) Object.assign(patch, { category_id: catId, category_source: "par" });
     const { data, error } = await supabase

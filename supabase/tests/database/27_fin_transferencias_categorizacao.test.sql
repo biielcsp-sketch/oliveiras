@@ -2,7 +2,7 @@
 -- trigger do par (máx. 2 por transfer_group, mesma família), seed com
 -- 'Pagamento Cartão de Crédito' e regras padrão, e isolamento entre famílias.
 begin;
-select plan(37);
+select plan(42);
 
 insert into auth.users (id, email, aud, role) values
   ('00000000-0000-0000-0000-0000000027a1', 'ta@teste.invalid', 'authenticated', 'authenticated'),
@@ -24,6 +24,8 @@ select col_is_null('public', 'fin_transactions', 'category_source', 'category_so
 select col_type_is('public', 'fin_transactions', 'pluggy_category', 'text', 'pluggy_category é text');
 select has_index('public', 'fin_transactions', 'fin_transactions_transfer_group_idx', 'índice de transfer_group existe');
 select has_trigger('public', 'fin_transactions', 'fin_transactions_transfer_guard', 'trigger do par existe');
+select has_column('public', 'fin_rules', 'origem', 'coluna fin_rules.origem existe');
+select col_default_is('public', 'fin_rules', 'origem', 'usuario', 'origem default usuario');
 
 -- Duas famílias: A e B
 set local role authenticated;
@@ -55,6 +57,26 @@ select is((select c.name || '/' || c.kind from public.fin_rules r join public.fi
 select is((select c.name from public.fin_rules r join public.fin_categories c on c.id = r.category_id
            where r.household_id = current_setting('t.ha')::uuid and r.pattern = 'pagamento de fatura'),
   'Pagamento Cartão de Crédito', 'regra antiga pagamento de fatura aponta para o nome novo');
+
+select is((select count(*)::int from public.fin_rules
+           where household_id = current_setting('t.ha')::uuid and origem = 'padrao'),
+  55, 'regras da seed ficam com origem padrao');
+
+-- Regra do usuário com o mesmo padrão de uma padrão: a seed não a sobrescreve
+delete from public.fin_rules where household_id = current_setting('t.ha')::uuid and pattern = 'netflix';
+insert into public.fin_rules (household_id, pattern, category_id)
+  select current_setting('t.ha')::uuid, 'netflix', c.id from public.fin_categories c
+  where c.household_id = current_setting('t.ha')::uuid and c.name = 'Assinaturas' and c.kind = 'despesa';
+reset role;
+select public.seed_fin_defaults(current_setting('t.ha')::uuid);
+select is((select origem from public.fin_rules
+           where household_id = current_setting('t.ha')::uuid and pattern = 'netflix'),
+  'usuario', 'regra do usuário com mesmo padrão continua usuario após a seed');
+select is((select count(*)::int from public.fin_rules
+           where household_id = current_setting('t.ha')::uuid and origem = 'padrao'),
+  54, 'seed não remarca regra do usuário como padrao');
+set local role authenticated;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000027a1');
 
 -- A cria duas contas (corrente e cartão)
 select lives_ok(format($$ insert into public.fin_accounts (household_id, name, kind)

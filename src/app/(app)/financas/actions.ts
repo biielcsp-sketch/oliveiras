@@ -55,7 +55,21 @@ export async function saveTransaction(_: FormState, form: FormData): Promise<For
   const supabase = await createClient();
   const id = optUuid(str(form, "id"));
   // Categoria escolhida no formulário é do usuário: vira histórico para aprender ("parecidos").
-  const data = { ...parsed.data, category_source: parsed.data.category_id ? "manual" : null };
+  // Ao editar, só vira 'manual' se a categoria mudou (inclusive para "Sem categoria": 'manual' + null =
+  // "usuário escolheu sem categoria", que regras, histórico, Pluggy e pares não preenchem de novo).
+  // Sem mudança, mantém a origem (ex.: perna 'par' continua 'par').
+  let data: typeof parsed.data & { category_source?: string | null } = parsed.data;
+  if (id) {
+    const { data: current } = await supabase
+      .from("fin_transactions")
+      .select("category_id")
+      .eq("id", id)
+      .eq("household_id", household.id)
+      .maybeSingle();
+    if (!current || (current.category_id ?? null) !== parsed.data.category_id) data = { ...data, category_source: "manual" };
+  } else {
+    data = { ...data, category_source: parsed.data.category_id ? "manual" : null };
+  }
   const { error } = id
     ? await supabase.from("fin_transactions").update(data).eq("id", id).eq("household_id", household.id)
     : await supabase.from("fin_transactions").insert({ ...data, household_id: household.id, source: "manual" });
@@ -110,6 +124,8 @@ async function categorizeUncategorized(
       .select("id, description")
       .eq("household_id", householdId)
       .is("category_id", null)
+      // 'manual' + null = usuário escolheu "Sem categoria": não recategoriza.
+      .is("category_source", null)
       .order("id")
       .range(from, to),
   );
@@ -132,8 +148,9 @@ async function categorizeUncategorized(
         .update({ category_id: g.category_id, category_source: g.category_source })
         .in("id", chunk)
         .eq("household_id", householdId)
-        // Não sobrescreve categoria que alguém pôs no meio do caminho.
+        // Não sobrescreve categoria (nem "Sem categoria" escolhido) que alguém pôs no meio do caminho.
         .is("category_id", null)
+        .is("category_source", null)
         .select("id");
       if (error) failed = true;
       else updated += data?.length ?? 0;
