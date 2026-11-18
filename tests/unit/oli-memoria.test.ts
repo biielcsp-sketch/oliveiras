@@ -62,6 +62,7 @@ vi.mock("@google/genai", async (orig) => {
 });
 
 import {
+  sanitizeMemory,
   buildHistoryBlock,
   buildSystemInstruction,
   MAX_HISTORY_CHARS_IN_PROMPT,
@@ -264,5 +265,23 @@ describe("buscar_conversa", () => {
     state.ctx = null;
     expect(await runOliTool("buscar_conversa", { termo: "dentista" })).toMatchObject({ ok: false });
     expect(state.calls.some((c) => c.table === "oli_messages")).toBe(false);
+  });
+});
+
+describe("ajustes da revisão: termo dentro do bloco e bidi nas memórias", () => {
+  it("termo buscado fica dentro de <conversa_encontrada>, não na frase de fora", () => {
+    const d = buildConversa(
+      [{ role: "user", content: "a natação do filho é terça", created_at: "2026-11-10T12:00:00Z" }],
+      { termo: "natação" },
+    );
+    const [antes, depois] = d.conversa_encontrada.split(CONVERSA_OPEN);
+    expect(antes).not.toContain("natação");
+    expect(depois).toContain("termo buscado: natação");
+    const vazio = buildConversa([], { termo: "xyz" });
+    expect(vazio.conversa_encontrada.split(CONVERSA_OPEN)[0]).not.toContain("xyz");
+  });
+
+  it("sanitizeMemory remove marcas de direção de texto (bidi)", () => {
+    expect(sanitizeMemory("abc\u202edef\u2066x\u200b")).toBe("abc def x");
   });
 });

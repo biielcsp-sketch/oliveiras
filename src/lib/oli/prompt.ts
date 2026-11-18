@@ -66,7 +66,7 @@ const MEM_CLOSE = "</memorias_da_familia>";
 export function sanitizeMemory(text: string, max = MAX_MEMORY_CHARS_IN_PROMPT) {
   const clean = text
     .replace(/[<>]/g, " ") // impede fechar/abrir o bloco delimitado
-    .replace(/[\u0000-\u001f\u007f]+/g, " ")
+    .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069]+/g, " ") // controle e marcas de direção (bidi)
     .replace(/\s+/g, " ")
     .trim();
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
