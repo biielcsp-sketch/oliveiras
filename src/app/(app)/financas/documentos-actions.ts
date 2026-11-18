@@ -77,14 +77,22 @@ export async function uploadDocument(_: DocState, form: FormData): Promise<DocSt
 
   // Família sem leitura automática: o arquivo fica guardado e pendente, sem chamar o Gemini.
   const r = docsAiAllowedFor(household.id) ? await extractDocument(file.bytes, file.kind.mime) : null;
-  const items = r?.ok ? r.data.documentos : [];
+  const all = r?.ok ? r.data.documentos : [];
+  // Vários itens: só boleto e comprovante viram documentos (como no "+" do Oli); "outro" não gasta o limite do dia.
+  const items = all.length > 1 ? all.filter((d) => d.tipo === "boleto" || d.tipo === "comprovante") : all;
   if (items.length > 1) {
     const more = await addPendingForFile(db, household.id, stored.file, items.length - 1);
     if (!more.ok) {
       // Nenhum documento do arquivo fica pendente. O primeiro já contou no limite do dia (a IA foi chamada),
       // então vira 'descartado' em vez de sumir: reenviar o mesmo arquivo não chama a IA sem limite.
-      await db.from("fin_documents").update({ status: "descartado" }).eq("household_id", household.id).eq("id", stored.id);
-      await removeDocFileIfUnused(db, household.id, stored.id, stored.file.path);
+      // O arquivo só sai se o descarte gravou: senão ficaria um pendente sem arquivo.
+      const { data: discarded } = await db
+        .from("fin_documents")
+        .update({ status: "descartado" })
+        .eq("household_id", household.id)
+        .eq("id", stored.id)
+        .select("id");
+      if (discarded?.length) await removeDocFileIfUnused(db, household.id, stored.id, stored.file.path);
       refresh();
       return { error: more.error };
     }
@@ -94,7 +102,9 @@ export async function uploadDocument(_: DocState, form: FormData): Promise<DocSt
     // Vários documentos: o lote abre sempre nas Finanças (também quando o envio veio da Casa).
     redirect(docBatchPath(stored.id));
   }
-  if (items.length === 1) await applyExtraction(db, household.id, stored.id, items[0]);
+  // Um documento (ou nenhum boleto/comprovante entre vários): fluxo de sempre, com o item que sobrou ou o primeiro lido.
+  const single = items[0] ?? all[0];
+  if (single) await applyExtraction(db, household.id, stored.id, single);
   refresh();
   // `origem` só aceita "casa" (lista fechada): enviado pela Casa, a conferência abre dentro da Casa.
   redirect(docReviewPath(stored.id, str(form, "origem"), str(form, "mes")));

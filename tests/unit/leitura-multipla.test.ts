@@ -28,6 +28,7 @@ const mem = vi.hoisted(() => ({
   removed: [] as string[],
   seq: 0,
   failCount: false,
+  failUpdate: false,
   extraction: null as unknown,
   geminiReq: null as null | Record<string, unknown>,
 }));
@@ -48,6 +49,7 @@ function table(name: string) {
       return { data: { id: row.id }, error: null };
     }
     if (op === "update") {
+      if (mem.failUpdate) return { data: null, error: { message: "falhou" } };
       const m = match();
       m.forEach((r) => Object.assign(r, payload));
       return { data: m.map((r) => ({ id: r.id })), error: null };
@@ -180,6 +182,7 @@ beforeEach(() => {
   mem.removed = [];
   mem.seq = 0;
   mem.failCount = false;
+  mem.failUpdate = false;
   mem.extraction = null;
   mem.geminiReq = null;
 });
@@ -280,6 +283,46 @@ describe("Finanças: envio de um PDF com 3 boletos", () => {
     expect(r).toEqual({ error: expect.stringMatching(/3 documentos e passa do limite/) });
     expect(mem.rows.filter((d) => d.status === "pendente")).toHaveLength(0);
     expect(mem.files.size).toBe(0);
+  });
+});
+
+describe("Finanças: correções do revisor", () => {
+  const full = (t: Record<string, unknown>) => ({ beneficiario: null, valor: null, vencimento: null, data_pagamento: null, codigo: null, descricao: null, ...t });
+
+  it("limite estourado e o descarte do primeiro falha: o arquivo NÃO é apagado (sem pendente sem arquivo)", async () => {
+    for (let i = 0; i < 28; i++) mem.rows.push({ id: U(600 + i), household_id: HH, status: "confirmado", file_path: "x", created_at: new Date().toISOString() });
+    mem.extraction = { ok: true, data: { documentos: TRES.map(full), truncado: false } };
+    // A falha vale para os updates (descarte); os inserts seguem normais. Sem leitura aplicada: só o limite importa.
+    mem.failUpdate = true;
+    const r = await uploadDocument(null, pdfForm());
+    expect(r).toEqual({ error: expect.stringMatching(/passa do limite/) });
+    const first = mem.rows.find((d) => d.status === "pendente")!;
+    expect(first).toBeTruthy();
+    expect(mem.files.has(first.file_path as string)).toBe(true);
+    expect(mem.removed).toEqual([]);
+  });
+
+  it("vários itens: só boleto/comprovante viram documentos; 'outro' não gasta o limite", async () => {
+    mem.extraction = { ok: true, data: { documentos: [full({ tipo: "outro" }), full(TRES[0]), full({ tipo: "comprovante", beneficiario: "Pix", valor: 5 }), full({ tipo: "outro" })], truncado: false } };
+    const url = await expectRedirect(uploadDocument(null, pdfForm()));
+    expect(mem.rows.map((d) => [d.kind, d.payee])).toEqual([["boleto", "Luz SA"], ["comprovante", "Pix"]]);
+    expect(url).toBe(docBatchPath(mem.rows[0].id as string));
+  });
+
+  it("vários itens com um só boleto: fluxo de documento único com esse boleto", async () => {
+    mem.extraction = { ok: true, data: { documentos: [full({ tipo: "outro" }), full(TRES[1]), full({ tipo: "outro" })], truncado: false } };
+    const url = await expectRedirect(uploadDocument(null, pdfForm()));
+    expect(mem.rows).toHaveLength(1);
+    expect(mem.rows[0]).toMatchObject({ kind: "boleto", payee: "Água SA", status: "pendente" });
+    expect(url).toBe(`/financas/documentos/${mem.rows[0].id}`);
+  });
+
+  it("vários itens sem boleto/comprovante: um documento só, com o primeiro lido", async () => {
+    mem.extraction = { ok: true, data: { documentos: [full({ tipo: "outro", descricao: "Folheto" }), full({ tipo: "outro" })], truncado: false } };
+    const url = await expectRedirect(uploadDocument(null, pdfForm()));
+    expect(mem.rows).toHaveLength(1);
+    expect(mem.rows[0]).toMatchObject({ kind: "outro", status: "pendente" });
+    expect(url).toBe(`/financas/documentos/${mem.rows[0].id}`);
   });
 });
 
