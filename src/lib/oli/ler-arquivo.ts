@@ -31,9 +31,15 @@ export const OLI_READ_MAX_BYTES = 10 * 1024 * 1024;
 /** Teto do texto de um docx enviado à IA. */
 export const OLI_READ_MAX_DOCX_CHARS = 100_000;
 
-export const CONTENT_LIMITS = { titulo: 160, resumo: 1200, ponto: 300, pontos: 12, docLido: 2500 } as const;
+/**
+ * Limites da leitura (18/11/2026; antes resumo 1200, ponto 300, 12 pontos e 2500 no bloco, o que cortava
+ * documentos longos). resumo/resposta 4000 ≈ 15 frases longas; 60 pontos de até 400 cobrem um laudo ou um PDF
+ * com vários boletos; o bloco para a conversa vai até 12000 (≈ 3 mil tokens, cabe com folga no contexto da
+ * sessão de voz) e corta pelo fim (os pontos), nunca a resposta. rawChars limita a resposta bruta da IA.
+ */
+export const CONTENT_LIMITS = { titulo: 160, resposta: 4000, resumo: 4000, ponto: 400, pontos: 60, docLido: 12000, rawChars: 200_000 } as const;
 
-export type OliContentReading = { titulo: string | null; resumo: string; pontos: string[] };
+export type OliContentReading = { titulo: string | null; resposta: string | null; resumo: string; pontos: string[] };
 
 /** Dado para a conversa: sem < > (não abre/fecha blocos), sem controle nem marcas de direção. */
 export function dataLine(v: unknown, max: number): string | null {
@@ -46,6 +52,7 @@ export function dataLine(v: unknown, max: number): string | null {
 export function parseOliContent(text: unknown): OliContentReading | null {
   let raw: unknown = text;
   if (typeof text === "string") {
+    if (text.length > CONTENT_LIMITS.rawChars) return null;
     try {
       raw = JSON.parse(text);
     } catch {
@@ -62,12 +69,15 @@ export function parseOliContent(text: unknown): OliContentReading | null {
         .filter((p): p is string => Boolean(p))
         .slice(0, CONTENT_LIMITS.pontos)
     : [];
-  return { titulo: dataLine(o.titulo, CONTENT_LIMITS.titulo), resumo, pontos };
+  return { titulo: dataLine(o.titulo, CONTENT_LIMITS.titulo), resposta: dataLine(o.resposta, CONTENT_LIMITS.resposta), resumo, pontos };
 }
 
 export type LerArquivoData = {
   arquivo: { id: string; tipo: ArquivoTipo; rotulo: string; nome: string | null; pessoa: string | null };
   titulo: string | null;
+  /** Pergunta do usuário (já limpa) e a resposta lida do documento. */
+  pergunta: string | null;
+  resposta: string | null;
   resumo: string;
   pontos: string[];
   /** O mesmo conteúdo para o modelo, marcado como DADO. */
@@ -75,9 +85,11 @@ export type LerArquivoData = {
 };
 
 /** Bloco <documento_lido> com o conteúdo lido (uma linha, limitado). */
-export function documentoLidoConteudo(rotulo: string, r: OliContentReading): string {
+export function documentoLidoConteudo(rotulo: string, r: OliContentReading, pergunta?: string | null): string {
   const parts = [`arquivo: ${rotulo}`];
   if (r.titulo) parts.push(`título: ${r.titulo}`);
+  if (pergunta) parts.push(`pergunta: ${pergunta}`);
+  if (r.resposta) parts.push(`resposta: ${r.resposta}`);
   parts.push(`resumo: ${r.resumo}`);
   if (r.pontos.length) parts.push(`pontos: ${r.pontos.join(" | ")}`);
   let body = dataLine(parts.join("; "), CONTENT_LIMITS.docLido * 2) ?? "";
@@ -85,15 +97,22 @@ export function documentoLidoConteudo(rotulo: string, r: OliContentReading): str
   return `${DOC_LIDO_OPEN}${body}${DOC_LIDO_CLOSE}`;
 }
 
-export function buildLerArquivo(meta: { id: string; tipo: ArquivoTipo; nome?: unknown; pessoa?: unknown }, r: OliContentReading): LerArquivoData {
+export function buildLerArquivo(
+  meta: { id: string; tipo: ArquivoTipo; nome?: unknown; pessoa?: unknown },
+  r: OliContentReading,
+  pergunta?: string | null,
+): LerArquivoData {
   const rotulo = ARQUIVO_TIPO_LABEL[meta.tipo];
   const nome = dataLine(meta.nome, 160);
+  const q = dataLine(pergunta, 500);
   return {
     arquivo: { id: meta.id, tipo: meta.tipo, rotulo, nome, pessoa: dataLine(meta.pessoa, 80) },
     titulo: r.titulo,
+    pergunta: q,
+    resposta: r.resposta,
     resumo: r.resumo,
     pontos: r.pontos,
-    documento_lido: documentoLidoConteudo(nome ? `${rotulo} (${nome})` : rotulo, r),
+    documento_lido: documentoLidoConteudo(nome ? `${rotulo} (${nome})` : rotulo, r, q),
   };
 }
 

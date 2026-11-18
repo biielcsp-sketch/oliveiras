@@ -4,9 +4,14 @@
  * e nunca registra o conteúdo do documento nem a resposta.
  */
 import { Type, type Schema } from "@google/genai";
-import { DOC_KINDS, parseExtraction, type Extracted } from "./schema";
+import { DOC_KINDS, MAX_DOCS_PER_FILE, parseExtractionList, type ExtractedList } from "./schema";
 
-export const EXTRACTION_TIMEOUT_MS = 30_000;
+/**
+ * Tempo limite de uma leitura (60 s desde 18/11/2026; antes 30 s). Um PDF com muitos boletos (até 20 itens)
+ * gera uma resposta bem maior, e o modelo padrão (Flash, não mais o Flash-Lite) é mais lento por token;
+ * 30 s cortava leituras longas como "demorou demais". 60 s cabe com folga na duração padrão das funções da Vercel.
+ */
+export const EXTRACTION_TIMEOUT_MS = 60_000;
 
 /**
  * Endereço alternativo do Gemini (só para o servidor simulado dos testes).
@@ -18,8 +23,8 @@ export function geminiBaseUrl(env: Record<string, string | undefined>): string |
   return base && /^https?:\/\/[^\s]+$/.test(base) ? base : undefined;
 }
 
-/** Schema de saída estruturada enviado ao Gemini (responseSchema). */
-export const EXTRACTION_SCHEMA: Schema = {
+/** Um boleto/comprovante (item da lista). */
+export const EXTRACTION_ITEM_SCHEMA: Schema = {
   type: Type.OBJECT,
   properties: {
     tipo: { type: Type.STRING, enum: [...DOC_KINDS], description: "boleto (cobrança a pagar), comprovante (pagamento já feito) ou outro" },
@@ -34,9 +39,26 @@ export const EXTRACTION_SCHEMA: Schema = {
   propertyOrdering: ["tipo", "beneficiario", "valor", "vencimento", "data_pagamento", "codigo", "descricao"],
 };
 
+/** Schema de saída estruturada enviado ao Gemini (responseSchema): um item por documento do arquivo. */
+export const EXTRACTION_SCHEMA: Schema = {
+  type: Type.OBJECT,
+  properties: {
+    documentos: {
+      type: Type.ARRAY,
+      items: EXTRACTION_ITEM_SCHEMA,
+      maxItems: String(MAX_DOCS_PER_FILE),
+      description: `Um item por boleto/comprovante distinto no arquivo (no máximo ${MAX_DOCS_PER_FILE})`,
+    },
+    truncado: { type: Type.BOOLEAN, description: `true se o arquivo tem mais de ${MAX_DOCS_PER_FILE} documentos` },
+  },
+  required: ["documentos"],
+  propertyOrdering: ["documentos", "truncado"],
+};
+
 /** Instrução fixa: o conteúdo do arquivo é dado e nunca muda a tarefa. */
-export const EXTRACTION_INSTRUCTION = `Você extrai dados de um documento financeiro brasileiro (boleto ou comprovante de pagamento) enviado como arquivo.
+export const EXTRACTION_INSTRUCTION = `Você extrai dados de documentos financeiros brasileiros (boletos ou comprovantes de pagamento) enviados num arquivo.
 Responda só com o JSON do schema. Regras:
+- documentos: um item por boleto/comprovante distinto no arquivo; não junte nem pule nenhum. Um arquivo pode ter vários boletos (um por página ou vários na mesma página). Se houver mais de ${MAX_DOCS_PER_FILE}, devolva os ${MAX_DOCS_PER_FILE} primeiros e marque truncado: true.
 - tipo: "boleto" se é uma cobrança a pagar; "comprovante" se mostra um pagamento já feito (Pix, TED, boleto pago); senão "outro".
 - beneficiario: quem recebe o dinheiro. valor: em reais, número com ponto decimal.
 - vencimento e data_pagamento: AAAA-MM-DD, ou null se não aparecer.
@@ -53,11 +75,13 @@ export type GenerateRequest = {
   mime: "application/pdf" | "image/jpeg" | "image/png" | "text/plain";
   base64: string;
   signal: AbortSignal;
+  /** Texto do pedido que vai junto do arquivo (padrão: "Extraia os dados deste documento conforme o schema."). */
+  prompt?: string;
 };
 /** Devolve o texto JSON da resposta (ou undefined). */
 export type Generate = (req: GenerateRequest) => Promise<string | undefined>;
 
-export type ExtractionResult = { ok: true; data: Extracted } | { ok: false; motivo: "timeout" | "erro" | "resposta_invalida" };
+export type ExtractionResult = { ok: true; data: ExtractedList } | { ok: false; motivo: "timeout" | "erro" | "resposta_invalida" };
 
 export async function runExtraction(
   generate: Generate,
@@ -65,7 +89,7 @@ export async function runExtraction(
   mime: GenerateRequest["mime"],
   timeoutMs = EXTRACTION_TIMEOUT_MS,
 ): Promise<ExtractionResult> {
-  return runStructured(generate, bytes, mime, { systemInstruction: EXTRACTION_INSTRUCTION, schema: EXTRACTION_SCHEMA, parse: parseExtraction }, timeoutMs);
+  return runStructured(generate, bytes, mime, { systemInstruction: EXTRACTION_INSTRUCTION, schema: EXTRACTION_SCHEMA, parse: parseExtractionList }, timeoutMs);
 }
 
 export type StructuredResult<T> = { ok: true; data: T } | { ok: false; motivo: "timeout" | "erro" | "resposta_invalida" };
@@ -78,7 +102,7 @@ export async function runStructured<T>(
   generate: Generate,
   bytes: Uint8Array,
   mime: GenerateRequest["mime"],
-  spec: { systemInstruction: string; schema: Schema; parse: (text: unknown) => T | null },
+  spec: { systemInstruction: string; schema: Schema; parse: (text: unknown) => T | null; prompt?: string },
   timeoutMs = EXTRACTION_TIMEOUT_MS,
 ): Promise<StructuredResult<T>> {
   const controller = new AbortController();
@@ -97,6 +121,7 @@ export async function runStructured<T>(
         mime,
         base64: Buffer.from(bytes).toString("base64"),
         signal: controller.signal,
+        ...(spec.prompt ? { prompt: spec.prompt } : {}),
       }),
       timeout,
     ]);

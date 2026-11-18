@@ -38,6 +38,8 @@ type Props = {
   /** "casa": veio de Casa > Contas (conta nova já é da casa; ao terminar volta para a Casa). */
   origem?: "casa" | null;
   mes?: string;
+  /** Aberta a partir do lote (vários documentos do mesmo arquivo): ao terminar volta para o lote. */
+  lote?: boolean;
 };
 
 const KINDS: { key: DocKind; label: string }[] = [
@@ -59,12 +61,13 @@ function Warning({ children }: { children: React.ReactNode }) {
   return <div role="alert" className="rounded-2xl bg-warning-soft px-4 py-3 text-sm text-warning">{children}</div>;
 }
 
-function DiscardButton({ id, origem, mes }: { id: string; origem?: "casa" | null; mes?: string }) {
+function DiscardButton({ id, origem, mes, lote }: { id: string; origem?: "casa" | null; mes?: string; lote?: boolean }) {
   return (
     <form action={discardDocument}>
       <input type="hidden" name="id" value={id} />
       {origem === "casa" && <input type="hidden" name="origem" value="casa" />}
       {origem === "casa" && mes && <input type="hidden" name="mes" value={mes} />}
+      {lote && <input type="hidden" name="lote" value="1" />}
       <Button variant="danger" className="w-full">Descartar este documento</Button>
     </form>
   );
@@ -120,11 +123,12 @@ export function DocReview(p: Props) {
             <input type="hidden" name="id" value={p.doc.id} />
             {p.origem === "casa" && <input type="hidden" name="origem" value="casa" />}
             {p.origem === "casa" && p.mes && <input type="hidden" name="mes" value={p.mes} />}
+            {p.lote && <input type="hidden" name="lote" value="1" />}
             <Button className="w-full">Guardar documento</Button>
           </form>
         </div>
       )}
-      <DiscardButton id={p.doc.id} origem={p.origem} mes={p.mes} />
+      <DiscardButton id={p.doc.id} origem={p.origem} mes={p.mes} lote={p.lote} />
     </div>
   );
 }
@@ -147,6 +151,7 @@ function BoletoForm(p: Props) {
     <form action={action} className="flex flex-col gap-4">
       <input type="hidden" name="id" value={p.doc.id} />
       {p.origem === "casa" && <input type="hidden" name="origem" value="casa" />}
+      {p.lote && <input type="hidden" name="lote" value="1" />}
       <input type="hidden" name="bill_kind" value={billKind ?? ""} />
       <div className="flex flex-col gap-1.5">
         <span className="text-sm text-muted" id="tipo-conta">Tipo de conta</span>
@@ -296,6 +301,7 @@ function ComprovanteForm(p: Props) {
     <form action={action} className="flex flex-col gap-4">
       <input type="hidden" name="id" value={p.doc.id} />
       {p.origem === "casa" && <input type="hidden" name="origem" value="casa" />}
+      {p.lote && <input type="hidden" name="lote" value="1" />}
       <Field label="Favorecido">
         <Input name="payee" maxLength={120} defaultValue={p.doc.payee ?? ""} />
       </Field>

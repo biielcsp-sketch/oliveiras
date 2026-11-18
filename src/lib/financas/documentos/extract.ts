@@ -4,15 +4,21 @@ import { geminiBaseUrl, runExtraction, EXTRACTION_TIMEOUT_MS, type Generate, typ
 
 /**
  * Leitura de boleto/comprovante com o Gemini (GEMINI_API_KEY só no servidor).
- * Modelo padrão: gemini-3.5-flash-lite — estável, aceita PDF e imagem e tem saída estruturada
- * (conferido em ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite em 10/11/2026).
+ * Modelo padrão: gemini-3.8-flash — estável, multimodal (PDF e imagem) e com saída estruturada; trocado em
+ * 18/11/2026 (antes gemini-3.5-flash-lite) para ler com mais fidelidade arquivos longos e com vários
+ * boletos (a leitura agora devolve uma lista e o ler_arquivo responde à pergunta do usuário).
  * GEMINI_DOCS_MODEL troca o modelo sem deploy de código.
  * GEMINI_API_BASE (opcional, ignorada com VERCEL_ENV=production) aponta para o servidor simulado dos testes E2E; GEMINI_DOCS_API_KEY
  * (opcional) tem prioridade sobre GEMINI_API_KEY, para os testes não ligarem o Oli.
  */
-export const DOCS_DEFAULT_MODEL = "gemini-3.5-flash-lite";
+export const DOCS_DEFAULT_MODEL = "gemini-3.8-flash";
 
-/** Gerador do Gemini (exportado para a leitura de arquivos do Oli reaproveitar o mesmo cliente e limites). */
+export const DEFAULT_PROMPT = "Extraia os dados deste documento conforme o schema.";
+
+/**
+ * Gerador do Gemini (exportado para a leitura de arquivos do Oli reaproveitar o mesmo cliente e limites).
+ * O arquivo vai inline; `prompt` (opcional) troca o texto do pedido que vai junto.
+ */
 export function geminiGenerate(apiKey: string): Generate {
   const baseUrl = geminiBaseUrl(process.env);
   const client = new GoogleGenAI({
@@ -24,13 +30,13 @@ export function geminiGenerate(apiKey: string): Generate {
     },
   });
   const model = process.env.GEMINI_DOCS_MODEL?.trim() || DOCS_DEFAULT_MODEL;
-  return async ({ systemInstruction, schema, mime, base64, signal }) => {
+  return async ({ systemInstruction, schema, mime, base64, signal, prompt }) => {
     const res = await client.models.generateContent({
       model,
       contents: [
         {
           role: "user",
-          parts: [{ inlineData: { mimeType: mime, data: base64 } }, { text: "Extraia os dados deste documento conforme o schema." }],
+          parts: [{ inlineData: { mimeType: mime, data: base64 } }, { text: prompt ?? DEFAULT_PROMPT }],
         },
       ],
       config: {

@@ -9,14 +9,16 @@ import { validateManualTransaction, UUID_RE, optUuid } from "@/lib/financas/tran
 import { extractDocument } from "@/lib/financas/documentos/extract";
 import { docsAiAllowedFor } from "@/lib/financas/documentos/access";
 import { cleanText, DOC_LIMITS } from "@/lib/financas/documentos/schema";
-import { applyExtraction, readUploadedFile, revalidateDocPaths, storePendingDocument } from "@/lib/financas/documentos/store";
+import {
+  addPendingForFile, applyExtraction, docFileInUse, readUploadedFile, removeDocFileIfUnused, revalidateDocPaths, storePendingDocument,
+} from "@/lib/financas/documentos/store";
 import { DOC_BUCKET, isDocPath, planDocDelete, retry, sameBillMonthDocs, type DocRef } from "@/lib/financas/documentos/rules";
 import {
   boletoEditConflict, docEditBlock, duplicateBlock, editSaveError, readBarcode, validateBoletoEdit, validateBoletoForm, validateComprovanteEdit,
 } from "@/lib/financas/documentos/input";
 import { BILL_KIND_REQUIRED, dueMonth, parseBillKind, parsePayTarget, validateOneOffInput } from "@/lib/financas/avulsas";
 import { runBaixaAutomatica } from "@/lib/financas/baixa-data";
-import { docReviewPath, flowOrigin, flowReturnPath } from "@/lib/financas/routes";
+import { docBatchPath, docDonePath, docReviewPath, flowOrigin, flowReturnPath } from "@/lib/financas/routes";
 
 export type DocState = { error?: string } | null;
 
@@ -61,6 +63,8 @@ async function relatedDocs(db: Db, householdId: string, barcode: string | null, 
 /**
  * Recebe PDF/JPG, confere tamanho e bytes no servidor, guarda no bucket com a sessão (RLS),
  * cria o documento 'pendente' e só então chama a IA. Falha da IA não perde o arquivo.
+ * Um arquivo com vários boletos/comprovantes vira um documento pendente por item, todos com o MESMO
+ * arquivo, e a pessoa confere um a um na tela do lote.
  */
 export async function uploadDocument(_: DocState, form: FormData): Promise<DocState> {
   const { household } = await getAppContext();
@@ -73,7 +77,34 @@ export async function uploadDocument(_: DocState, form: FormData): Promise<DocSt
 
   // Família sem leitura automática: o arquivo fica guardado e pendente, sem chamar o Gemini.
   const r = docsAiAllowedFor(household.id) ? await extractDocument(file.bytes, file.kind.mime) : null;
-  if (r?.ok) await applyExtraction(db, household.id, stored.id, r.data);
+  const all = r?.ok ? r.data.documentos : [];
+  // Vários itens: só boleto e comprovante viram documentos (como no "+" do Oli); "outro" não gasta o limite do dia.
+  const items = all.length > 1 ? all.filter((d) => d.tipo === "boleto" || d.tipo === "comprovante") : all;
+  if (items.length > 1) {
+    const more = await addPendingForFile(db, household.id, stored.file, items.length - 1);
+    if (!more.ok) {
+      // Nenhum documento do arquivo fica pendente. O primeiro já contou no limite do dia (a IA foi chamada),
+      // então vira 'descartado' em vez de sumir: reenviar o mesmo arquivo não chama a IA sem limite.
+      // O arquivo só sai se o descarte gravou: senão ficaria um pendente sem arquivo.
+      const { data: discarded } = await db
+        .from("fin_documents")
+        .update({ status: "descartado" })
+        .eq("household_id", household.id)
+        .eq("id", stored.id)
+        .select("id");
+      if (discarded?.length) await removeDocFileIfUnused(db, household.id, stored.id, stored.file.path);
+      refresh();
+      return { error: more.error };
+    }
+    const ids = [stored.id, ...more.ids];
+    for (let i = 0; i < ids.length; i++) await applyExtraction(db, household.id, ids[i], items[i]);
+    refresh();
+    // Vários documentos: o lote abre sempre nas Finanças (também quando o envio veio da Casa).
+    redirect(docBatchPath(stored.id));
+  }
+  // Um documento (ou nenhum boleto/comprovante entre vários): fluxo de sempre, com o item que sobrou ou o primeiro lido.
+  const single = items[0] ?? all[0];
+  if (single) await applyExtraction(db, household.id, stored.id, single);
   refresh();
   // `origem` só aceita "casa" (lista fechada): enviado pela Casa, a conferência abre dentro da Casa.
   redirect(docReviewPath(stored.id, str(form, "origem"), str(form, "mes")));
@@ -208,7 +239,7 @@ export async function confirmBoleto(_: DocState, form: FormData): Promise<DocSta
   // O pagamento pode ter chegado no extrato antes do boleto: cruza agora (mesma sessão, RLS).
   await runBaixaAutomatica([val.bill_month]);
   refresh();
-  redirect(flowReturnPath(str(form, "origem"), `/financas/contas-fixas?mes=${val.bill_month}`, val.bill_month));
+  redirect(docDonePath(str(form, "lote"), doc.id, flowReturnPath(str(form, "origem"), `/financas/contas-fixas?mes=${val.bill_month}`, val.bill_month)));
 }
 
 /**
@@ -286,7 +317,7 @@ async function confirmBoletoAvulsa(
   // O pagamento pode ter chegado no extrato antes do boleto: cruza agora (mesma sessão, RLS).
   await runBaixaAutomatica([month]);
   refresh();
-  redirect(flowReturnPath(str(form, "origem"), `/financas/contas-fixas?mes=${month}`, month));
+  redirect(docDonePath(str(form, "lote"), doc.id, flowReturnPath(str(form, "origem"), `/financas/contas-fixas?mes=${month}`, month)));
 }
 
 /* ---------- Conferência: comprovante → lançamento (e conta paga) ---------- */
@@ -424,7 +455,7 @@ export async function confirmComprovante(_: DocState, form: FormData): Promise<D
     return { error: error?.code === "23505" ? CONFLICT : GENERIC };
   }
   refresh();
-  redirect(flowReturnPath(str(form, "origem"), `/financas/lancamentos?mes=${tx.date.slice(0, 7)}`, tx.date.slice(0, 7)));
+  redirect(docDonePath(str(form, "lote"), doc.id, flowReturnPath(str(form, "origem"), `/financas/lancamentos?mes=${tx.date.slice(0, 7)}`, tx.date.slice(0, 7))));
 }
 
 /* ---------- Outro: guardar ou descartar ---------- */
@@ -437,10 +468,14 @@ export async function keepDocument(form: FormData) {
     await db.from("fin_documents").update({ kind: "outro", status: "confirmado" }).eq("household_id", household.id).eq("id", doc.id).eq("status", "pendente");
   }
   refresh();
-  redirect(flowReturnPath(str(form, "origem"), "/financas/documentos", str(form, "mes")));
+  const done = flowReturnPath(str(form, "origem"), "/financas/documentos", str(form, "mes"));
+  redirect(doc ? docDonePath(str(form, "lote"), doc.id, done) : done);
 }
 
-/** Descarta: status 'descartado' e o arquivo sai do bucket. Lançamentos e contas já criados ficam. */
+/**
+ * Descarta: status 'descartado' e o arquivo sai do bucket, a não ser que outro documento da família (outro boleto
+ * lido do mesmo PDF) ainda use o mesmo arquivo. Lançamentos e contas já criados ficam.
+ */
 export async function discardDocument(form: FormData) {
   const { household } = await getAppContext();
   const db = await createClient();
@@ -451,10 +486,11 @@ export async function discardDocument(form: FormData) {
       doc.status === "descartado"
         ? { data: [doc] }
         : await db.from("fin_documents").update({ status: "descartado" }).eq("household_id", household.id).eq("id", doc.id).select("id");
-    if (data?.length && isDocPath(doc.file_path)) await db.storage.from(DOC_BUCKET).remove([doc.file_path]);
+    if (data?.length) await removeDocFileIfUnused(db, household.id, doc.id, doc.file_path);
   }
   refresh();
-  redirect(flowReturnPath(str(form, "origem"), "/financas/documentos", str(form, "mes")));
+  const done = flowReturnPath(str(form, "origem"), "/financas/documentos", str(form, "mes"));
+  redirect(doc ? docDonePath(str(form, "lote"), doc.id, done) : done);
 }
 
 /* ---------- Editar documento confirmado ---------- */
@@ -512,7 +548,8 @@ export async function editDocument(_: DocState, form: FormData): Promise<DocStat
 /**
  * Apaga o documento e o arquivo do bucket, com a sessão (RLS). O arquivo sai primeiro, com até 3
  * tentativas e conferência de que sumiu: se não sair, nada é apagado (a linha continua sendo a dona
- * do arquivo). Modo "tudo": apaga também o lançamento criado por este documento e a baixa ligada a ele.
+ * do arquivo). Arquivo dividido com outro documento não descartado (vários boletos no mesmo PDF) fica no
+ * bucket e só a linha sai. Modo "tudo": apaga também o lançamento criado por este documento e a baixa ligada a ele.
  */
 export async function deleteDocument(_: DocState, form: FormData): Promise<DocState> {
   const { household } = await getAppContext();
@@ -540,7 +577,10 @@ export async function deleteDocument(_: DocState, form: FormData): Promise<DocSt
   }
   const plan = planDocDelete({ mode, docTransactionId: doc.transaction_id, tx, otherDocsWithTx });
 
-  if (isDocPath(doc.file_path)) {
+  // Vários documentos lidos do mesmo PDF dividem o arquivo: só sai do bucket se nenhum outro (não descartado) o usa.
+  const inUse = isDocPath(doc.file_path) ? await docFileInUse(db, household.id, doc.id, doc.file_path) : false;
+  if (inUse === null) return { error: "Não consegui apagar o arquivo. Nada foi apagado; tente de novo em instantes." };
+  if (isDocPath(doc.file_path) && !inUse) {
     const bucket = db.storage.from(DOC_BUCKET);
     const gone = await retry(async () => {
       const { error } = await bucket.remove([doc.file_path]);

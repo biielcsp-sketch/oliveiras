@@ -628,6 +628,12 @@ function ArquivoLidoPanel({ data: d }: { data: LerArquivoData }) {
     <Card role="group" aria-label="Arquivo lido pelo Oli (guardado)">
       <Head icon={<FileText size={16} aria-hidden />} title={title} aside={d.arquivo.pessoa ? <span className="text-sm text-muted">{d.arquivo.pessoa}</span> : undefined} />
       {d.titulo && <p className="text-[13px] font-medium text-muted">{d.titulo}</p>}
+      {d.resposta && (
+        <div className="mt-2 rounded-2xl bg-accent-soft px-4 py-3" data-testid="arquivo-lido-resposta">
+          {d.pergunta && <p className="text-[13px] text-muted">{d.pergunta}</p>}
+          <p className="text-[15px] leading-relaxed">{d.resposta}</p>
+        </div>
+      )}
       <p className="mt-1 text-[15px] leading-relaxed" data-testid="arquivo-lido-resumo">
         {d.resumo}
       </p>

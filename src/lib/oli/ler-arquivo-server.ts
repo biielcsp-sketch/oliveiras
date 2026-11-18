@@ -11,7 +11,7 @@ import { DOCX_MIME, headMatches, isDriveId, TXT_MIME, txtToText, type CarismaMim
 import { docxToText } from "@/lib/igreja/summarize";
 import { downloadFile } from "@/lib/google/drive";
 import { checkDailyLimit } from "./file-limit";
-import { OLI_CONTENT_INSTRUCTION, OLI_CONTENT_SCHEMA } from "./conteudo-schema";
+import { contentPrompt, OLI_CONTENT_INSTRUCTION, OLI_CONTENT_SCHEMA } from "./conteudo-schema";
 import {
   ARQUIVO_NAO_ENCONTRADO,
   buildLerArquivo,
@@ -24,7 +24,7 @@ import {
   type LerArquivoData,
   type OliContentReading,
 } from "./ler-arquivo";
-import type { ArquivoRef } from "./tool-args";
+import { cleanPergunta, type ArquivoRef } from "./tool-args";
 
 /**
  * ler_arquivo no servidor. Tudo com a SESSÃO do usuário (RLS), nunca chave de serviço:
@@ -128,8 +128,11 @@ async function download(db: Db, ctx: Ctx, s: Source): Promise<{ ok: true; bytes:
   return { ok: true, bytes, mime: s.mime as ContentMime };
 }
 
-/** Chamada à IA (mesmo cliente, tempo limite e chave da leitura de documentos). `generate` injetável nos testes. */
-export async function summarizeContent(bytes: Uint8Array, mime: ContentMime, generate?: Generate) {
+/**
+ * Chamada à IA (mesmo cliente, tempo limite e chave da leitura de documentos). A pergunta do usuário vai no pedido,
+ * marcada como pergunta (o arquivo continua sendo DADO). `generate` injetável nos testes.
+ */
+export async function summarizeContent(bytes: Uint8Array, mime: ContentMime, generate?: Generate, pergunta?: string | null) {
   let gen = generate;
   if (!gen) {
     const apiKey = docsApiKey();
@@ -140,13 +143,14 @@ export async function summarizeContent(bytes: Uint8Array, mime: ContentMime, gen
     systemInstruction: OLI_CONTENT_INSTRUCTION,
     schema: OLI_CONTENT_SCHEMA,
     parse: parseOliContent,
+    prompt: contentPrompt(cleanPergunta(pergunta)),
   });
   // Só o motivo; nunca o conteúdo do arquivo nem a resposta da IA.
   if (!r.ok) console.error("Oli: ler_arquivo falhou:", r.motivo);
   return r;
 }
 
-export async function lerArquivo(ctx: Ctx, ref: ArquivoRef): Promise<LerArquivoResult> {
+export async function lerArquivo(ctx: Ctx, ref: ArquivoRef & { pergunta?: string }): Promise<LerArquivoResult> {
   const db = await createClient();
   const src = await resolveSource(db, ctx, ref);
   if (!src.ok) return src;
@@ -158,11 +162,12 @@ export async function lerArquivo(ctx: Ctx, ref: ArquivoRef): Promise<LerArquivoR
   const file = await download(db, ctx, src.source);
   if (!file.ok) return file;
 
-  const r = await summarizeContent(file.bytes, file.mime);
+  const pergunta = cleanPergunta(ref.pergunta) ?? null;
+  const r = await summarizeContent(file.bytes, file.mime, undefined, pergunta);
   if (!r.ok) {
     return { ok: false, erro: r.motivo === "timeout" ? "A leitura demorou demais. Tente de novo." : "Não consegui ler o arquivo agora. Tente de novo." };
   }
   const nome = src.source.nome;
   const pessoa = src.source.kind === "storage" ? src.source.pessoa : null;
-  return { ok: true, data: buildLerArquivo({ id: `${ref.tipo}:${ref.id}`, tipo: ref.tipo, nome, pessoa }, r.data) };
+  return { ok: true, data: buildLerArquivo({ id: `${ref.tipo}:${ref.id}`, tipo: ref.tipo, nome, pessoa }, r.data, pergunta) };
 }

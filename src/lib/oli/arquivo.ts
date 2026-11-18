@@ -118,7 +118,14 @@ export const OLI_FILE_LIMITS = {
   numero: 60,
   beneficiario: 120,
   rawChars: 20_000,
+  /** Resposta com a lista (até 20 itens). */
+  listRawChars: 100_000,
 } as const;
+
+/** Máximo de itens lidos de um arquivo (vários boletos num PDF). Mesmo teto de Finanças. */
+export const MAX_OLI_FILE_ITEMS = 20;
+
+export type OliFileReadingList = { documentos: OliFileReading[]; truncado: boolean };
 
 /* ---------- Limite diário de leituras (cada leitura chama o Gemini, pago) ---------- */
 
@@ -177,6 +184,37 @@ export function parseOliReading(text: unknown): OliFileReading | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   return sanitizeOliReading(raw);
 }
+
+/**
+ * Lista já decodificada ({ documentos: [...], truncado }) → itens validados. Item que não é objeto é
+ * descartado; no máximo 20 (o excedente é cortado e marca `truncado`). Lista vazia → null (falha de leitura).
+ */
+export function sanitizeOliReadings(raw: unknown): OliFileReadingList | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  if (!Array.isArray(o.documentos)) return null;
+  const valid = o.documentos.filter((d) => d && typeof d === "object" && !Array.isArray(d));
+  const documentos = valid.slice(0, MAX_OLI_FILE_ITEMS).map(sanitizeOliReading);
+  if (documentos.length === 0) return null;
+  return { documentos, truncado: o.truncado === true || valid.length > MAX_OLI_FILE_ITEMS };
+}
+
+/** Texto bruto da IA → lista validada, ou null (resposta descartada). */
+export function parseOliReadings(text: unknown): OliFileReadingList | null {
+  if (typeof text !== "string" || text.length === 0 || text.length > OLI_FILE_LIMITS.listRawChars) return null;
+  try {
+    return sanitizeOliReadings(JSON.parse(text));
+  } catch {
+    return null;
+  }
+}
+
+/** Itens que vão para Finanças (boleto ou comprovante). */
+export const financeItems = (list: OliFileReading[]) => list.filter((r) => r.tipo === "boleto" || r.tipo === "comprovante");
+
+/** Destino inicial do painel: com 2+ boletos/comprovantes no arquivo, Finanças (lote); senão pelo primeiro item. */
+export const routeForList = (list: OliFileReading[]): OliFileDest =>
+  financeItems(list).length > 1 ? "financas" : routeFor(list[0]?.tipo ?? "outro");
 
 /* ---------- Painel: campos editáveis por destino ---------- */
 
@@ -361,7 +399,7 @@ export function financeExtracted(r: OliFileReading): Extracted {
 
 export const DOC_LIDO_OPEN = "<documento_lido>";
 export const DOC_LIDO_CLOSE = "</documento_lido>";
-export const MAX_DOC_LIDO_CHARS = 700;
+export const MAX_DOC_LIDO_CHARS = 4000;
 
 /** Dado para o prompt: uma linha, sem < > (não fecha nem abre o bloco), sem controle. */
 const dataText = (v: string) =>
@@ -371,23 +409,51 @@ const dataText = (v: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
+const docLine = (r: OliFileReading) => {
+  const p: string[] = [];
+  p.push(`tipo: ${OLI_FILE_KIND_LABEL[r.tipo]}`);
+  if (r.beneficiario) p.push(`beneficiário: ${r.beneficiario}`);
+  if (r.valor !== null) p.push(`valor: R$ ${brMoney(r.valor)}`);
+  if (r.vencimento) p.push(`vencimento: ${r.vencimento}`);
+  if (r.data_pagamento) p.push(`pago em: ${r.data_pagamento}`);
+  return p.join(", ");
+};
+
 /**
- * Texto curto enviado à sessão de voz depois da leitura: tipo, destino e alguns campos, dentro de
- * <documento_lido>…</documento_lido> (dado, nunca instrução). O Oli só comenta; a tela pede a confirmação.
+ * Texto enviado à sessão de voz depois da leitura, dentro de <documento_lido>…</documento_lido> (dado, nunca
+ * instrução). Com boletos/comprovantes: quantos foram achados, o total em R$ e cada um (beneficiário, valor,
+ * vencimento). Outros tipos: os campos do primeiro item e, se houver mais, quantos itens o arquivo tem.
+ * O Oli só comenta; a tela pede a confirmação.
  */
-export function documentoLidoText(r: OliFileReading, dest: OliFileDest): string {
-  const parts = [`tipo: ${OLI_FILE_KIND_LABEL[r.tipo]}`, `destino sugerido: ${OLI_FILE_DEST_LABEL[dest]}`];
-  if (r.nome) parts.push(`nome: ${r.nome}`);
-  if (r.pessoa) parts.push(`de: ${r.pessoa}`);
-  if (r.beneficiario) parts.push(`beneficiário: ${r.beneficiario}`);
-  if (r.valor !== null) parts.push(`valor: R$ ${brMoney(r.valor)}`);
-  if (r.vencimento) parts.push(`vencimento: ${r.vencimento}`);
-  if (r.data) parts.push(`data: ${r.data}`);
-  if (r.resumo) parts.push(`resumo: ${r.resumo}`);
+export function documentoLidoText(leitura: OliFileReading | OliFileReading[], dest: OliFileDest, truncado = false): string {
+  const list = Array.isArray(leitura) ? leitura : [leitura];
+  const r = list[0] ?? sanitizeOliReading({ tipo: "outro" });
+  const fin = financeItems(list);
+  const parts: string[] = [];
+  if (dest === "financas" && fin.length > 0) {
+    const total = fin.reduce((sum, d) => sum + (d.valor ?? 0), 0);
+    parts.push(`documentos encontrados: ${fin.length}`, `destino sugerido: ${OLI_FILE_DEST_LABEL[dest]}`, `total: R$ ${brMoney(Math.round(total * 100) / 100)}`);
+    if (fin.some((d) => d.valor === null)) parts.push("algum documento veio sem valor legível");
+    fin.forEach((d, i) => parts.push(`${i + 1}) ${docLine(d)}`));
+  } else {
+    parts.push(`tipo: ${OLI_FILE_KIND_LABEL[r.tipo]}`, `destino sugerido: ${OLI_FILE_DEST_LABEL[dest]}`);
+    if (r.nome) parts.push(`nome: ${r.nome}`);
+    if (r.pessoa) parts.push(`de: ${r.pessoa}`);
+    if (r.beneficiario) parts.push(`beneficiário: ${r.beneficiario}`);
+    if (r.valor !== null) parts.push(`valor: R$ ${brMoney(r.valor)}`);
+    if (r.vencimento) parts.push(`vencimento: ${r.vencimento}`);
+    if (r.data) parts.push(`data: ${r.data}`);
+    if (r.resumo) parts.push(`resumo: ${r.resumo}`);
+    if (list.length > 1) parts.push(`itens no arquivo: ${list.length} (a tela mostra o primeiro)`);
+  }
+  if (truncado) parts.push(`o arquivo tem mais de ${MAX_OLI_FILE_ITEMS} documentos; só os ${MAX_OLI_FILE_ITEMS} primeiros foram lidos`);
   let body = dataText(parts.join("; "));
   if (body.length > MAX_DOC_LIDO_CHARS) body = `${body.slice(0, MAX_DOC_LIDO_CHARS - 1)}…`;
+  const many = dest === "financas" && fin.length > 1;
   return [
-    "O usuário enviou um arquivo pela tela e ele foi lido. Diga em poucas palavras o que encontrou e lembre que a tela pede para conferir e tocar em Confirmar.",
+    many
+      ? "O usuário enviou um arquivo pela tela e ele foi lido. Diga quantos documentos encontrou e o total, cite cada um em poucas palavras e lembre que a tela pede para conferir e tocar em Confirmar."
+      : "O usuário enviou um arquivo pela tela e ele foi lido. Diga em poucas palavras o que encontrou e lembre que a tela pede para conferir e tocar em Confirmar.",
     `${DOC_LIDO_OPEN}${body}${DOC_LIDO_CLOSE}`,
   ].join("\n");
 }

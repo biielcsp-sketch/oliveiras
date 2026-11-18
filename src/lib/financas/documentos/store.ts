@@ -5,7 +5,7 @@ import type { createClient } from "@/lib/supabase/server";
 import { todaySP } from "@/lib/financas/today";
 import { checkUpload, MAX_FILE_BYTES, type FileKind } from "@/lib/saude/files";
 import { reconcile, type Extracted } from "./schema";
-import { dailyLimitError, docStoragePath, DOC_BUCKET, spDayStartIso } from "./rules";
+import { dailyLimitError, docStoragePath, DOC_BUCKET, isDocPath, spDayStartIso } from "./rules";
 
 /**
  * Envio de documento de Finanças, compartilhado entre a tela de Finanças (uploadDocument) e o "+" do Oli.
@@ -28,38 +28,122 @@ export async function readUploadedFile(form: FormData, key = "file"): Promise<Up
   return { ok: true, bytes, kind: check.kind };
 }
 
-/**
- * Limite diário da família → arquivo no bucket → documento 'pendente' (kind "outro").
- * Se o registro falhar, o arquivo recém-enviado é apagado. Devolve o id do documento.
- */
-export async function storePendingDocument(
-  db: Db,
-  householdId: string,
-  file: { bytes: Uint8Array; kind: FileKind },
-): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
-  const { count, error: countError } = await db
+/** Documentos criados hoje pela família (dia de São Paulo); null se a contagem falhou. */
+async function countToday(db: Db, householdId: string): Promise<number | null> {
+  const { count, error } = await db
     .from("fin_documents")
     .select("id", { count: "exact", head: true })
     .eq("household_id", householdId)
     .gte("created_at", spDayStartIso(todaySP()));
-  if (countError) return { ok: false, error: GENERIC };
-  const limit = dailyLimitError(count ?? 0);
+  return error ? null : (count ?? 0);
+}
+
+export type StoredFile = { path: string; mime: FileKind["mime"]; size: number };
+
+/**
+ * Cria `n` documentos 'pendente' (kind "outro") que apontam para o MESMO arquivo, um insert por vez
+ * (created_at crescente = ordem do arquivo no lote). Se algum falhar, os já criados aqui são apagados.
+ */
+async function insertPendingRows(db: Db, householdId: string, file: StoredFile, n: number): Promise<string[] | null> {
+  const ids: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const { data: doc, error } = await db
+      .from("fin_documents")
+      .insert({ household_id: householdId, kind: "outro", status: "pendente", file_path: file.path, file_mime: file.mime, file_size: file.size })
+      .select("id")
+      .single();
+    if (error || !doc) {
+      if (ids.length) await db.from("fin_documents").delete().eq("household_id", householdId).in("id", ids);
+      return null;
+    }
+    ids.push(doc.id as string);
+  }
+  return ids;
+}
+
+/**
+ * Limite diário da família (contando os `n` novos) → arquivo no bucket UMA vez → `n` documentos 'pendente'
+ * com o mesmo file_path. Se estourar o limite, nada é enviado nem criado. Se o registro falhar, o arquivo
+ * recém-enviado é apagado. Devolve os ids na ordem.
+ */
+export async function storePendingDocuments(
+  db: Db,
+  householdId: string,
+  file: { bytes: Uint8Array; kind: FileKind },
+  n = 1,
+): Promise<{ ok: true; ids: string[]; file: StoredFile } | { ok: false; error: string }> {
+  const count = await countToday(db, householdId);
+  if (count === null) return { ok: false, error: GENERIC };
+  const limit = dailyLimitError(count, undefined, n);
   if (limit) return { ok: false, error: limit };
 
-  const path = docStoragePath(householdId, randomUUID(), file.kind.ext);
-  const up = await db.storage.from(DOC_BUCKET).upload(path, file.bytes, { contentType: file.kind.mime, upsert: false });
+  const stored: StoredFile = { path: docStoragePath(householdId, randomUUID(), file.kind.ext), mime: file.kind.mime, size: file.bytes.length };
+  const up = await db.storage.from(DOC_BUCKET).upload(stored.path, file.bytes, { contentType: file.kind.mime, upsert: false });
   if (up.error) return { ok: false, error: "Não foi possível enviar o arquivo. Tente de novo." };
 
-  const { data: doc, error } = await db
-    .from("fin_documents")
-    .insert({ household_id: householdId, kind: "outro", status: "pendente", file_path: path, file_mime: file.kind.mime, file_size: file.bytes.length })
-    .select("id")
-    .single();
-  if (error || !doc) {
-    await db.storage.from(DOC_BUCKET).remove([path]);
+  const ids = await insertPendingRows(db, householdId, stored, Math.max(1, n));
+  if (!ids) {
+    await db.storage.from(DOC_BUCKET).remove([stored.path]);
     return { ok: false, error: GENERIC };
   }
-  return { ok: true, id: doc.id as string };
+  return { ok: true, ids, file: stored };
+}
+
+/** Um documento: o envio de sempre (Finanças cria antes de chamar a IA, para a falha da IA não perder o arquivo). */
+export async function storePendingDocument(
+  db: Db,
+  householdId: string,
+  file: { bytes: Uint8Array; kind: FileKind },
+): Promise<{ ok: true; id: string; file: StoredFile } | { ok: false; error: string }> {
+  const r = await storePendingDocuments(db, householdId, file, 1);
+  return r.ok ? { ok: true, id: r.ids[0], file: r.file } : r;
+}
+
+/**
+ * A IA achou mais documentos no arquivo já guardado: cria mais `n` pendentes com o mesmo arquivo.
+ * O limite do dia conta os `n` (o primeiro já está na contagem). Se estourar ou falhar, nenhum é criado.
+ */
+export async function addPendingForFile(
+  db: Db,
+  householdId: string,
+  file: StoredFile,
+  n: number,
+): Promise<{ ok: true; ids: string[] } | { ok: false; error: string }> {
+  const count = await countToday(db, householdId);
+  if (count === null) return { ok: false, error: GENERIC };
+  // O primeiro documento do arquivo já está na contagem: a mensagem fala do total do arquivo (n + 1).
+  const limit = dailyLimitError(Math.max(0, count - 1), undefined, n + 1);
+  if (limit) return { ok: false, error: limit };
+  const ids = await insertPendingRows(db, householdId, file, n);
+  return ids ? { ok: true, ids } : { ok: false, error: GENERIC };
+}
+
+/**
+ * Outro documento da família (não descartado) ainda usa este arquivo? Vários documentos lidos do mesmo PDF
+ * dividem o file_path. Descartado não conta (o descarte já tirou o arquivo dele). null = não deu para conferir.
+ */
+export async function docFileInUse(db: Db, householdId: string, docId: string, path: string): Promise<boolean | null> {
+  const { count, error } = await db
+    .from("fin_documents")
+    .select("id", { count: "exact", head: true })
+    .eq("household_id", householdId)
+    .eq("file_path", path)
+    .neq("id", docId)
+    .neq("status", "descartado");
+  if (error) return null;
+  return (count ?? 0) > 0;
+}
+
+/**
+ * Tira o arquivo do bucket só se nenhum outro documento da família ainda usa o mesmo caminho.
+ * Na dúvida (conferência falhou), o arquivo fica: perder o PDF dos outros boletos é pior que guardar a mais.
+ */
+export async function removeDocFileIfUnused(db: Db, householdId: string, docId: string, path: string): Promise<boolean> {
+  if (!isDocPath(path)) return false;
+  const inUse = await docFileInUse(db, householdId, docId, path);
+  if (inUse !== false) return false;
+  const { error } = await db.storage.from(DOC_BUCKET).remove([path]);
+  return !error;
 }
 
 /**

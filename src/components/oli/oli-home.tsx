@@ -12,7 +12,7 @@ import { confirmOliArquivoFinancas, readOliFile } from "@/app/(app)/inicio/oli-a
 import { saveCard, saveExam, saveMedication, saveProcedure, saveVaccine } from "@/app/(app)/saude/actions";
 import { saveCasaDocument } from "@/app/(app)/casa/documentos-actions";
 import { savePetHealth } from "@/app/(app)/casa/pet-actions";
-import { documentoLidoText, formFieldsFor, OLI_FILE_KEEPS_FILE, type OliFileDest } from "@/lib/oli/arquivo";
+import { documentoLidoText, financeItems, formFieldsFor, OLI_FILE_KEEPS_FILE, type OliFileDest } from "@/lib/oli/arquivo";
 import { OliSphere, type OliSphereState as OliState } from "./oli-sphere";
 import { OliPanels } from "./oli-panels";
 import { OliAddFile } from "./oli-arquivo";
@@ -250,10 +250,17 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
       add({
         id,
         kind: "confirmar_arquivo",
-        data: { leitura: res.leitura, destino: res.destino, opcoes: res.opcoes, nome_arquivo: file.name.slice(0, 80) },
+        data: {
+          leitura: res.leitura,
+          leituras: res.leituras,
+          truncado: res.truncado,
+          destino: res.destino,
+          opcoes: res.opcoes,
+          nome_arquivo: file.name.slice(0, 80),
+        },
         status: "pendente",
       });
-      sendContext(documentoLidoText(res.leitura, res.destino));
+      sendContext(documentoLidoText(res.leituras, res.destino, res.truncado));
     },
     [add, sendContext],
   );
@@ -274,7 +281,10 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
       if (OLI_FILE_KEEPS_FILE[dest]) fd.append("file", file);
       try {
         if (dest === "financas") {
-          fd.append("leitura", JSON.stringify(p.data.leitura));
+          // Vários boletos/comprovantes no arquivo: todos viram documentos pendentes (lote); senão, só o lido.
+          const fin = financeItems(p.data.leituras ?? [p.data.leitura]);
+          if (fin.length > 1) fd.append("leituras", JSON.stringify(fin));
+          else fd.append("leitura", JSON.stringify(p.data.leitura));
           const r = await confirmOliArquivoFinancas(fd);
           if (!r.ok) {
             patch(id, { status: "pendente", erro: r.erro });

@@ -1,5 +1,6 @@
 // Gemini simulado (só nos testes E2E): responde ao generateContent da leitura de documentos.
 // O PDF de teste traz a resposta desejada numa linha "MOCKRESP:<base64 do JSON>"; "MOCKFAIL" devolve erro 500.
+// Leitura com lista (schema com `documentos`): um objeto solto vira lista de um item (ver abaixo).
 // Resumo do Carisma (instrução com "seminário teológico", texto simples): exige os dados da aula e devolve um resumo
 // simulado que cita quantos arquivos vieram inline e traz uma tag HTML (o app precisa removê-la). "MOCKFAIL" → 500.
 // Nunca chama a API real.
@@ -55,7 +56,17 @@ createServer((req, res) => {
     const content = Buffer.from(file.data, "base64").toString("latin1");
     if (content.includes("MOCKFAIL")) return send(res, 500, { error: { code: 500, message: "falha simulada" } });
     const m = content.match(/MOCKRESP:([A-Za-z0-9+/=]+)/);
-    const text = m ? Buffer.from(m[1], "base64").toString("utf8") : JSON.stringify({ tipo: "outro" });
+    let text = m ? Buffer.from(m[1], "base64").toString("utf8") : JSON.stringify({ tipo: "outro" });
+    // Leitura de boletos/comprovantes (Finanças e "+" do Oli): o schema pede { documentos: [...] }. PDF de teste com
+    // um objeto só (formato antigo, um documento) vira lista de um item; quem quer vários manda `documentos`.
+    if (cfg.responseSchema?.properties?.documentos) {
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && !("documentos" in parsed)) text = JSON.stringify({ documentos: [parsed] });
+      } catch {
+        // resposta inválida de propósito: segue como veio
+      }
+    }
     send(res, 200, { candidates: [{ content: { role: "model", parts: [{ text }] }, finishReason: "STOP" }] });
   });
 }).listen(PORT, "127.0.0.1", () => console.log(`gemini-mock em ${PORT}`));

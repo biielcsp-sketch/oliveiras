@@ -125,7 +125,16 @@ export type DocumentoData = DocumentoItem & { descricao: string | null; conta_li
 export type ConfirmStatus = "pendente" | "salvando" | "criado" | "cancelado" | "erro";
 
 /** Arquivo lido pelo "+" do Oli. O arquivo em si fica só na memória da tela (não entra aqui). */
-export type ArquivoPreview = { leitura: OliFileReading; destino: OliFileDest; opcoes: OliFileOptions; nome_arquivo: string };
+export type ArquivoPreview = {
+  leitura: OliFileReading;
+  /** Todos os itens lidos do arquivo (vários boletos num PDF); sem a lista, só `leitura`. */
+  leituras?: OliFileReading[];
+  /** O arquivo tinha mais de 20 documentos (só os 20 primeiros foram lidos). */
+  truncado?: boolean;
+  destino: OliFileDest;
+  opcoes: OliFileOptions;
+  nome_arquivo: string;
+};
 
 export type OliPanel =
   | { id: string; kind: "resumo"; data: ResumoData }

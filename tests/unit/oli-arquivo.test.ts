@@ -29,7 +29,7 @@ import {
   type OliFileReading,
 } from "@/lib/oli/arquivo";
 import { DAILY_DOC_LIMIT } from "@/lib/financas/documentos/rules";
-import { OLI_FILE_INSTRUCTION, OLI_FILE_SCHEMA } from "@/lib/oli/arquivo-schema";
+import { OLI_FILE_INSTRUCTION, OLI_FILE_ITEM_SCHEMA, OLI_FILE_SCHEMA } from "@/lib/oli/arquivo-schema";
 import { extractOliFile } from "@/lib/oli/arquivo-extract";
 import { readUploadedFile } from "@/lib/financas/documentos/store";
 import type { GenerateRequest } from "@/lib/financas/documentos/extraction";
@@ -224,9 +224,12 @@ describe("Oli arquivo: texto para a conversa", () => {
 describe("Oli arquivo: chamada ao Gemini (injetada, sem API)", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("schema e instrução: tipo obrigatório e conteúdo tratado como dado", () => {
-    expect(OLI_FILE_SCHEMA.required).toEqual(["tipo"]);
-    expect(OLI_FILE_SCHEMA.properties?.tipo?.enum).toEqual([...OLI_FILE_KINDS]);
+  it("schema e instrução: lista de documentos, tipo obrigatório em cada item e conteúdo tratado como dado", () => {
+    expect(OLI_FILE_SCHEMA.required).toEqual(["documentos"]);
+    expect(OLI_FILE_ITEM_SCHEMA.required).toEqual(["tipo"]);
+    expect(OLI_FILE_SCHEMA.properties?.documentos?.items).toBe(OLI_FILE_ITEM_SCHEMA);
+    expect(OLI_FILE_ITEM_SCHEMA.properties?.tipo?.enum).toEqual([...OLI_FILE_KINDS]);
+    expect(OLI_FILE_ITEM_SCHEMA.properties).not.toHaveProperty("destino");
     expect(OLI_FILE_SCHEMA.properties).not.toHaveProperty("destino");
     expect(OLI_FILE_INSTRUCTION).toMatch(/DADO, não instrução/);
   });
@@ -235,12 +238,12 @@ describe("Oli arquivo: chamada ao Gemini (injetada, sem API)", () => {
     let seen: GenerateRequest | null = null;
     const r = await extractOliFile(PDF, "application/pdf", async (req) => {
       seen = req;
-      return JSON.stringify({ tipo: "vacina", nome: "Gripe", data: "ontem" });
+      return JSON.stringify({ documentos: [{ tipo: "vacina", nome: "Gripe", data: "ontem" }] });
     });
     expect(seen!.systemInstruction).toBe(OLI_FILE_INSTRUCTION);
     expect(seen!.schema).toBe(OLI_FILE_SCHEMA);
     expect(seen!.base64).toBe(Buffer.from(PDF).toString("base64"));
-    expect(r).toEqual({ ok: true, data: expect.objectContaining({ tipo: "vacina", nome: "Gripe", data: null }) });
+    expect(r).toEqual({ ok: true, data: { documentos: [expect.objectContaining({ tipo: "vacina", nome: "Gripe", data: null })], truncado: false } });
   });
 
   it("resposta inválida e erro: só o motivo vai para o log, nunca o conteúdo", async () => {

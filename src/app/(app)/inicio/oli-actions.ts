@@ -298,6 +298,7 @@ async function dispatch(name: OliToolName, args: unknown): Promise<OliToolResult
     }
     case "ler_arquivo": {
       // Lê o conteúdo de um arquivo guardado (sessão/RLS; Drive só com a conta da própria pessoa), no limite diário do "+".
+      // `pergunta` (opcional, já limpa e com até 500 letras) guia a leitura; o arquivo continua sendo DADO.
       const a = parseLerArquivoArgs(args);
       if (!a.ok) return err(a.erro);
       const r = await lerArquivo(await getAppContext(), a.value);

@@ -92,6 +92,37 @@ export function parseExtraction(text: unknown): Extracted | null {
   return sanitizeExtracted(raw);
 }
 
+/** Máximo de documentos (boletos/comprovantes) lidos de um arquivo só. */
+export const MAX_DOCS_PER_FILE = 20;
+/** Teto da resposta da IA com a lista (até 20 itens). */
+export const DOC_LIST_RAW_CHARS = 100_000;
+
+export type ExtractedList = { documentos: Extracted[]; truncado: boolean };
+
+/**
+ * Lista já decodificada → itens validados. Item que não é objeto é descartado; no máximo 20
+ * (o que passar disso é cortado e marca `truncado`). Lista vazia → null (falha de leitura).
+ */
+export function sanitizeExtractedList(raw: unknown): ExtractedList | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  if (!Array.isArray(o.documentos)) return null;
+  const valid = o.documentos.filter((d) => d && typeof d === "object" && !Array.isArray(d));
+  const documentos = valid.slice(0, MAX_DOCS_PER_FILE).map(sanitizeExtracted);
+  if (documentos.length === 0) return null;
+  return { documentos, truncado: o.truncado === true || valid.length > MAX_DOCS_PER_FILE };
+}
+
+/** Texto bruto da IA ({ documentos: [...], truncado }) → lista validada, ou null (resposta descartada). */
+export function parseExtractionList(text: unknown): ExtractedList | null {
+  if (typeof text !== "string" || text.length === 0 || text.length > DOC_LIST_RAW_CHARS) return null;
+  try {
+    return sanitizeExtractedList(JSON.parse(text));
+  } catch {
+    return null;
+  }
+}
+
 /** Guardado em fin_documents.extracted: só os campos validados (ou {} quando a IA falhou). */
 export function storedExtracted(v: unknown): Extracted | null {
   if (!v || typeof v !== "object" || Array.isArray(v) || Object.keys(v).length === 0) return null;
