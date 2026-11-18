@@ -116,3 +116,42 @@ export async function getDocumentForTransaction(transactionId: string): Promise<
     .maybeSingle();
   return data;
 }
+
+/** Máximo de documentos mostrados num lote (a leitura cria no máximo 20 por arquivo). */
+export const BATCH_MAX = 50;
+
+/**
+ * Documentos do mesmo arquivo do documento `id` (vários boletos/comprovantes lidos de um PDF só).
+ * O documento é lido pela sessão (RLS) e pelo household do servidor; os outros, pelo mesmo arquivo E pela
+ * mesma família. Ordem do envio (created_at), que é a ordem em que a IA leu.
+ */
+export async function getBatchDocuments(id: string): Promise<FinDocument[] | null> {
+  const first = await getDocument(id);
+  if (!first) return null;
+  const { household } = await getAppContext();
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("fin_documents")
+    .select(DOC_COLS)
+    .eq("household_id", household.id)
+    .eq("file_path", first.file_path)
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true })
+    .limit(BATCH_MAX);
+  const list = (data ?? []).map((d) => ({ ...d, amount: num(d.amount), file_size: Number(d.file_size) }) as FinDocument);
+  return list.length ? list : [first];
+}
+
+/** Documentos da família com algum destes códigos (aviso de duplicidade no lote). */
+export async function getDocsByBarcodes(codes: string[]): Promise<DocRef[]> {
+  if (!codes.length) return [];
+  const { household } = await getAppContext();
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("fin_documents")
+    .select("id, kind, status, barcode, bill_id, bill_month, one_off_bill_id")
+    .eq("household_id", household.id)
+    .in("barcode", codes)
+    .limit(200);
+  return (data ?? []) as DocRef[];
+}

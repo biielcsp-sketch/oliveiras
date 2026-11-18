@@ -14,6 +14,8 @@ import {
   OLI_FILE_FIELDS,
   OLI_FILE_KEEPS_FILE,
   OLI_FILE_KIND_LABEL,
+  financeItems,
+  MAX_OLI_FILE_ITEMS,
   prefillFor,
   type OliFileDest,
   type OliFileField,
@@ -87,7 +89,11 @@ export function ArquivoPanel({
   const [dest, setDest] = useState<OliFileDest>(data.destino);
   const open = status === "pendente" || status === "salvando";
   const r = data.leitura;
-  const fields = OLI_FILE_FIELDS[dest];
+  const all = data.leituras?.length ? data.leituras : [r];
+  const fin = financeItems(all);
+  // Vários boletos/comprovantes: Finanças cria um documento por item e abre o lote (cada um tem o próprio tipo).
+  const batch = dest === "financas" && fin.length > 1;
+  const fields = batch ? [] : OLI_FILE_FIELDS[dest];
   const initial = prefillFor(r, dest, data.opcoes);
   const noPets = dest === "pet_saude" && data.opcoes.pets.length === 0;
 
@@ -112,13 +118,44 @@ export function ArquivoPanel({
         <span className="min-w-0 truncate text-[13px] text-muted">{data.nome_arquivo}</span>
       </div>
 
-      {r.resumo && <p className="mb-3 text-[15px] leading-relaxed" data-testid="arquivo-resumo">{r.resumo}</p>}
-      <dl className="mb-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[15px]">
-        {r.beneficiario && (<><dt className="text-muted">Beneficiário</dt><dd className="truncate">{r.beneficiario}</dd></>)}
-        {r.valor !== null && (<><dt className="text-muted">Valor</dt><dd className="tabular-nums">{formatBRL(r.valor)}</dd></>)}
-        {r.vencimento && (<><dt className="text-muted">Vencimento</dt><dd className="tabular-nums">{brDate(r.vencimento)}</dd></>)}
-        {r.data_pagamento && (<><dt className="text-muted">Pago em</dt><dd className="tabular-nums">{brDate(r.data_pagamento)}</dd></>)}
-      </dl>
+      {batch ? (
+        <>
+          <p className="mb-2 text-[15px] font-medium" data-testid="arquivo-lote">
+            {fin.length} documentos encontrados
+          </p>
+          <ul className="mb-3 divide-y divide-line text-[15px]" aria-label="Documentos encontrados">
+            {fin.map((d, i) => (
+              <li key={i} className="flex items-center justify-between gap-3 py-2">
+                <span className="min-w-0 truncate">{d.beneficiario ?? `${OLI_FILE_KIND_LABEL[d.tipo]} sem beneficiário`}</span>
+                <span className="shrink-0 text-right tabular-nums">
+                  {d.valor !== null ? formatBRL(d.valor) : "—"}
+                  <span className="block text-[12px] text-muted">
+                    {d.tipo === "comprovante" ? (d.data_pagamento ? `pago ${brDate(d.data_pagamento)}` : "comprovante") : d.vencimento ? `vence ${brDate(d.vencimento)}` : "sem vencimento"}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <>
+          {r.resumo && <p className="mb-3 text-[15px] leading-relaxed" data-testid="arquivo-resumo">{r.resumo}</p>}
+          <dl className="mb-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[15px]">
+            {r.beneficiario && (<><dt className="text-muted">Beneficiário</dt><dd className="truncate">{r.beneficiario}</dd></>)}
+            {r.valor !== null && (<><dt className="text-muted">Valor</dt><dd className="tabular-nums">{formatBRL(r.valor)}</dd></>)}
+            {r.vencimento && (<><dt className="text-muted">Vencimento</dt><dd className="tabular-nums">{brDate(r.vencimento)}</dd></>)}
+            {r.data_pagamento && (<><dt className="text-muted">Pago em</dt><dd className="tabular-nums">{brDate(r.data_pagamento)}</dd></>)}
+          </dl>
+          {all.length > 1 && (
+            <p className="mb-3 text-[13px] text-muted" data-testid="arquivo-mais-itens">
+              Foram encontrados {all.length} itens neste arquivo; aqui aparece o primeiro.
+            </p>
+          )}
+        </>
+      )}
+      {data.truncado && (
+        <p className="mb-3 text-[13px] text-warning">O arquivo tem mais de {MAX_OLI_FILE_ITEMS} documentos; só os {MAX_OLI_FILE_ITEMS} primeiros foram lidos.</p>
+      )}
 
       {open ? (
         <form onSubmit={submit} className="flex flex-col gap-3">
@@ -137,7 +174,13 @@ export function ArquivoPanel({
               <FieldInput key={f.name} field={f} value={initial[f.name] ?? ""} opcoes={data.opcoes} />
             ))}
           </fieldset>
-          {dest === "financas" && <p className="text-[13px] text-muted">Conta fixa ou avulsa, valor e vencimento você confere na próxima tela.</p>}
+          {dest === "financas" && (
+            <p className="text-[13px] text-muted">
+              {batch
+                ? `Confirmar cria os ${fin.length} documentos para conferir um por um em Finanças.`
+                : "Conta fixa ou avulsa, valor e vencimento você confere na próxima tela."}
+            </p>
+          )}
           {!OLI_FILE_KEEPS_FILE[dest] && dest !== "nenhum" && <p className="text-[13px] text-muted">Este destino guarda só os dados, sem o arquivo.</p>}
           {noPets && <p className="text-[13px] text-danger">Cadastre o pet em Casa › Pet antes.</p>}
           {erro && (
@@ -166,7 +209,9 @@ export function ArquivoPanel({
             ? (erro ?? "Não foi possível concluir.")
             : status === "criado"
               ? dest !== "nenhum"
-                ? DONE[dest]
+                ? batch
+                  ? `${fin.length} documentos criados. Abrindo o lote em Finanças…`
+                  : DONE[dest]
                 : "Pronto."
               : "Nada foi guardado."}
         </p>

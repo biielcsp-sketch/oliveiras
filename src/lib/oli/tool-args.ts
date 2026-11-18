@@ -500,7 +500,29 @@ export function parseArquivoRef(v: unknown): ArquivoRef | null {
   return { tipo: tipo as ArquivoTipo, id: m[2].toLowerCase() };
 }
 
-export function parseLerArquivoArgs(args: unknown): Result<ArquivoRef> {
-  const ref = parseArquivoRef(obj(args).id);
-  return ref ? ok(ref) : fail("Id de arquivo inválido. Use o id que veio da consulta (ex.: exame:…).");
+export const PERGUNTA_MAX = 500;
+
+/**
+ * Pergunta do usuário sobre o arquivo (opcional): uma linha, sem caracteres de controle, marcas de direção
+ * nem < > (não abre nem fecha os blocos marcados do pedido), cortada em 500. Vazia ou de outro tipo → undefined.
+ */
+export function cleanPergunta(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const t = v
+    .replace(/[<>]/g, " ")
+    .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!t) return undefined;
+  return t.length > PERGUNTA_MAX ? t.slice(0, PERGUNTA_MAX).trimEnd() : t;
+}
+
+export type LerArquivoArgs = ArquivoRef & { pergunta?: string };
+
+export function parseLerArquivoArgs(args: unknown): Result<LerArquivoArgs> {
+  const a = obj(args);
+  const ref = parseArquivoRef(a.id);
+  if (!ref) return fail("Id de arquivo inválido. Use o id que veio da consulta (ex.: exame:…).");
+  const pergunta = cleanPergunta(a.pergunta);
+  return ok(pergunta ? { ...ref, pergunta } : ref);
 }

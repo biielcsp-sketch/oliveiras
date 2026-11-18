@@ -190,9 +190,9 @@ describe("extração injetável (sem chamar a API)", () => {
     let seen: GenerateRequest | null = null;
     const r = await runExtraction(async (req) => {
       seen = req;
-      return JSON.stringify({ tipo: "boleto", beneficiario: "Luz SA", valor: 120.5, codigo: BB_LINHA, extra: "x" });
+      return JSON.stringify({ documentos: [{ tipo: "boleto", beneficiario: "Luz SA", valor: 120.5, codigo: BB_LINHA, extra: "x" }] });
     }, PDF, "application/pdf");
-    expect(r).toEqual({ ok: true, data: expect.objectContaining({ tipo: "boleto", beneficiario: "Luz SA", valor: 120.5 }) });
+    expect(r).toEqual({ ok: true, data: { documentos: [expect.objectContaining({ tipo: "boleto", beneficiario: "Luz SA", valor: 120.5 })], truncado: false } });
     expect(seen!.base64).toBe(Buffer.from(PDF).toString("base64"));
     expect(seen!.mime).toBe("application/pdf");
     expect(seen!.systemInstruction).toBe(EXTRACTION_INSTRUCTION);

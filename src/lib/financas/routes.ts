@@ -71,3 +71,15 @@ export const oneOffDeletePath = (id: string, origem?: unknown, mes?: unknown) =>
   const s = q.toString();
   return `${oneOffPath(id)}/excluir${s ? `?${s}` : ""}`;
 };
+
+/**
+ * Lote de documentos lidos do mesmo arquivo (vários boletos num PDF). A rota recebe o id de UM documento do lote;
+ * a tela acha os outros pelo mesmo arquivo, sempre pela sessão (RLS) e pela família.
+ */
+export const docBatchPath = (id: string) => `/financas/documentos/lote/${id}`;
+
+/** Conferência aberta a partir do lote: `lote=1` (só esse valor) volta ao lote depois de confirmar/descartar. */
+export const fromBatch = (v: unknown) => v === "1";
+
+/** Destino depois de conferir: veio do lote → lote; senão o destino de sempre. */
+export const docDonePath = (lote: unknown, docId: string, fallback: string) => (fromBatch(lote) ? docBatchPath(docId) : fallback);

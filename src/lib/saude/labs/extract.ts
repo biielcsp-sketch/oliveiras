@@ -6,7 +6,7 @@ import { LAB_EXTRACT_INSTRUCTION, LAB_EXTRACT_SCHEMA } from "./extract-schema";
 import { parseLabExtraction, type LabExtraction } from "./extraction";
 
 /**
- * Leitura do laudo com o mesmo cliente do Gemini de Finanças/Oli (chave só no servidor, tempo limite de 30 s,
+ * Leitura do laudo com o mesmo cliente do Gemini de Finanças/Oli (chave só no servidor, tempo limite de 60 s,
  * sem novas tentativas). `generate` é injetável nos testes. Só devolve a leitura validada: NÃO grava nada.
  */
 export async function extractLabReport(

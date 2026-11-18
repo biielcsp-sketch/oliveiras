@@ -26,10 +26,13 @@ export function spDayStartIso(todaySp: string) {
   return new Date(`${todaySp}T00:00:00-03:00`).toISOString();
 }
 
-export function dailyLimitError(countToday: number, limit = DAILY_DOC_LIMIT) {
-  return countToday >= limit
-    ? `Limite de ${limit} documentos por dia atingido. Amanhã você pode enviar mais; hoje dá para lançar à mão.`
-    : null;
+/** Erro se os `adding` documentos novos passarem do limite do dia (padrão: 1, o envio de um arquivo com um documento). */
+export function dailyLimitError(countToday: number, limit = DAILY_DOC_LIMIT, adding = 1) {
+  const n = Math.max(1, adding);
+  if (countToday + n <= limit) return null;
+  return n > 1
+    ? `Este arquivo tem ${n} documentos e passa do limite de ${limit} documentos por dia. Nenhum foi criado; amanhã você pode enviar de novo, ou hoje lançar à mão.`
+    : `Limite de ${limit} documentos por dia atingido. Amanhã você pode enviar mais; hoje dá para lançar à mão.`;
 }
 
 const STOP = new Set(["de", "da", "do", "das", "dos", "e", "ltda", "sa", "s/a", "me", "eireli", "cia", "companhia", "the"]);

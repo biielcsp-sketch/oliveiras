@@ -10,7 +10,7 @@ import { formatBRL } from "@/lib/financas/money";
 import { shiftMonth } from "@/lib/financas/period";
 import { todaySP } from "@/lib/financas/today";
 import { UUID_RE } from "@/lib/financas/transaction-input";
-import { casaContasPath, docDeletePath } from "@/lib/financas/routes";
+import { casaContasPath, docBatchPath, docDeletePath } from "@/lib/financas/routes";
 import { getDocument, getRelatedDocs } from "@/lib/financas/documentos/data";
 import { toLinhaDigitavel } from "@/lib/financas/documentos/boleto";
 import { docEditBlock, ORPHAN_BOLETO_EDIT } from "@/lib/financas/documentos/input";
@@ -26,12 +26,16 @@ const br = (iso: string | null) => (iso ? iso.split("-").reverse().join("/") : "
  * /financas/documentos/[id] (Finanças, "+" do Oli) e /casa/contas/documento/[id] (enviado por Casa > Contas,
  * com o menu da Casa). `origem` e `mes` já chegam validados pela rota (lista fechada e AAAA-MM).
  */
-export async function ConferirDocumento({ id, origem, mes }: { id: string; origem: "casa" | null; mes?: string }) {
+export async function ConferirDocumento({ id, origem, mes, lote = false }: { id: string; origem: "casa" | null; mes?: string; lote?: boolean }) {
   if (!UUID_RE.test(id)) notFound();
   const back =
     origem === "casa" ? (
       <Link href={casaContasPath(mes)} className="mt-4 block text-center text-[15px] font-medium text-link">
         Voltar para Contas
+      </Link>
+    ) : lote ? (
+      <Link href={docBatchPath(id)} className="mt-4 block text-center text-[15px] font-medium text-link">
+        Voltar para o lote
       </Link>
     ) : null;
   const { household } = await getAppContext();
@@ -162,6 +166,7 @@ export async function ConferirDocumento({ id, origem, mes }: { id: string; orige
         }
         origem={origem}
         mes={mes}
+        lote={lote && origem !== "casa"}
       />
       <Link href={docDeletePath(doc.id, origem, mes)} className="mt-4 block text-center text-sm text-danger underline">
         Apagar documento

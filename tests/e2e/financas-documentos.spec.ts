@@ -283,3 +283,95 @@ test("Finanças: leitura de boleto e comprovante com conferência", async ({ bro
   expect(problems.filter((p) => /Content Security Policy|Refused to/i.test(p))).toEqual([]);
   await ctxA.close();
 });
+
+/**
+ * Regressão (18/11/2026): um PDF com vários boletos virava UM documento só. Agora cada boleto vira um documento
+ * pendente com o MESMO arquivo, conferido um a um na tela do lote; descartar um não apaga o arquivo dos outros.
+ */
+test("Finanças: PDF com 3 boletos vira lote; descartar 1 não apaga o arquivo dos outros 2", async ({ browser }) => {
+  test.setTimeout(180_000);
+  const ctx = await browser.newContext();
+  const a = await ctx.newPage();
+  const problems = watchConsole(a);
+  const admin = adminClient();
+  const LOTE_URL = /\/financas\/documentos\/lote\/([0-9a-f-]{36})$/;
+
+  await test.step("família autorizada", async () => {
+    const email = uniqueEmail("docs-lote");
+    await createFamilyWithId(E2E_DOCS_HOUSEHOLD_ID, email, PASSWORD);
+    await a.goto("/login");
+    await a.getByLabel("E-mail").fill(email);
+    await a.getByLabel("Senha").fill(PASSWORD);
+    await a.locator("form").getByRole("button", { name: "Entrar" }).click();
+    await expect(a).toHaveURL(/\/inicio$/);
+  });
+
+  let loteId = "";
+  await test.step("envio do PDF com 3 boletos: abre o lote com 3 cards", async () => {
+    await a.goto("/financas/documentos");
+    const box = a.getByRole("region", { name: "Ler PDF ou foto" });
+    await box.getByLabel("PDF", { exact: true }).setInputFiles(
+      pdfWith(
+        {
+          documentos: [
+            { tipo: "boleto", beneficiario: "Luz Lote", valor: 187.9, codigo: BOLETO },
+            { tipo: "boleto", beneficiario: "Gás Lote", valor: 199, codigo: BOLETO_NOVO },
+            { tipo: "boleto", beneficiario: "Água Lote", valor: 66.78, vencimento: "2026-12-15", codigo: AGUA },
+          ],
+          truncado: false,
+        },
+        "lote",
+      ),
+    );
+    await expect(a).toHaveURL(LOTE_URL, { timeout: 45_000 });
+    loteId = a.url().match(LOTE_URL)![1];
+    await expect(a.getByRole("heading", { name: "3 documentos encontrados" })).toBeVisible();
+    await expect(a.getByText("0 de 3 conferidos")).toBeVisible();
+    const cards = a.getByTestId("lote-documentos").getByRole("group");
+    await expect(cards).toHaveCount(3);
+    await expect(cards.nth(0)).toContainText("Luz Lote");
+    await expect(cards.nth(0)).toContainText("187,90");
+    await expect(cards.nth(0)).toContainText("10/12/2026");
+    await expect(cards.nth(1)).toContainText("Gás Lote");
+    await expect(cards.nth(1)).toContainText("199,00");
+    await expect(cards.nth(2)).toContainText("Água Lote");
+    await expect(cards.nth(2)).toContainText("66,78");
+    await expect(a.getByRole("link", { name: /^Conferir / })).toHaveCount(3);
+    const { data } = await admin.from("fin_documents").select("id, status, file_path").eq("household_id", E2E_DOCS_HOUSEHOLD_ID);
+    expect(data).toHaveLength(3);
+    expect(new Set(data!.map((d) => d.file_path)).size).toBe(1);
+    expect(data!.every((d) => d.status === "pendente")).toBe(true);
+  });
+
+  await test.step("conferir → descartar o 2º volta ao lote (1 de 3) e o arquivo continua para os outros 2", async () => {
+    await a.getByRole("link", { name: "Conferir Gás Lote" }).click();
+    await expect(a).toHaveURL(/\/financas\/documentos\/[0-9a-f-]{36}\?lote=1$/);
+    const gasId = new URL(a.url()).pathname.split("/").pop()!;
+    await a.getByRole("button", { name: "Descartar este documento" }).click();
+    await expect(a).toHaveURL(LOTE_URL);
+    await expect(a.getByText("1 de 3 conferidos")).toBeVisible();
+    await expect(a.getByRole("link", { name: /^Conferir / })).toHaveCount(2);
+
+    const { data: rows } = await admin.from("fin_documents").select("id, status, file_path").eq("household_id", E2E_DOCS_HOUSEHOLD_ID);
+    const path = rows![0].file_path as string;
+    expect(rows!.find((r) => r.id === gasId)!.status).toBe("descartado");
+    const { data: files } = await admin.storage.from("financas").list(path.split("/").slice(0, 2).join("/"));
+    expect((files ?? []).map((f) => f.name)).toContain(path.split("/").pop());
+    for (const r of rows!.filter((x) => x.id !== gasId)) {
+      expect(r.status).toBe("pendente");
+      expect((await a.request.get(`/financas/documentos/${r.id}/arquivo`)).status()).toBe(200);
+    }
+  });
+
+  await test.step("outra família não abre o lote", async () => {
+    const ctxB = await browser.newContext();
+    const b = await ctxB.newPage();
+    await createFamily(b, "docs-lote-b");
+    const res = await b.goto(`/financas/documentos/lote/${loteId}`);
+    expect(res?.status()).toBe(404);
+    await ctxB.close();
+  });
+
+  expect(problems.filter((p) => /Content Security Policy|Refused to/i.test(p))).toEqual([]);
+  await ctx.close();
+});
