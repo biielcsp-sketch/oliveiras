@@ -8,7 +8,7 @@ import { Button, Input } from "@/components/ui";
 import { clearPanels, pushPanel, type OliPanel } from "@/lib/oli/panels";
 import { clearOliHistory } from "@/app/(app)/inicio/oli-history-actions";
 import { confirmOliAlteracao, confirmOliConsulta, confirmOliEsquecer, confirmOliEvento, confirmOliLancamento, confirmOliMemoria, runOliTool } from "@/app/(app)/inicio/oli-actions";
-import { confirmOliArquivoFinancas, readOliFile } from "@/app/(app)/inicio/oli-arquivo-actions";
+import { confirmOliArquivoFinancas, lerUltimoArquivoOli, readOliFile } from "@/app/(app)/inicio/oli-arquivo-actions";
 import { saveCard, saveExam, saveMedication, saveProcedure, saveVaccine } from "@/app/(app)/saude/actions";
 import { saveCasaDocument } from "@/app/(app)/casa/documentos-actions";
 import { savePetHealth } from "@/app/(app)/casa/pet-actions";
@@ -18,6 +18,7 @@ import { OliPanels } from "./oli-panels";
 import { OliAddFile } from "./oli-arquivo";
 import { useOliSession, type LogEntry, type ToolCall } from "./use-oli-session";
 import { ALTERAR_STATUS } from "@/lib/oli/alterar";
+import { SEM_ULTIMO_ARQUIVO } from "@/lib/oli/ler-arquivo";
 
 const LABELS: Record<OliState, string> = { idle: "Repouso", listen: "Ouvindo", think: "Pensando", speak: "Falando" };
 
@@ -47,6 +48,8 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
   const pending = useRef(new Map<string, Pending>());
   // Arquivos escolhidos no "+", só na memória da tela, até Confirmar ou Cancelar.
   const files = useRef(new Map<string, File>());
+  // Último arquivo lido pelo "+", só na memória desta tela (nunca salvo por isso), para o ler_ultimo_arquivo.
+  const lastFile = useRef<File | null>(null);
   const seq = useRef(0);
   const panelsRef = useRef<OliPanel[]>([]);
 
@@ -68,6 +71,25 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
   const onTool = useCallback(
     async ({ name, args }: ToolCall): Promise<Record<string, unknown>> => {
       const id = `p${++seq.current}`;
+      if (name === "ler_ultimo_arquivo") {
+        // O arquivo está só aqui: vai com a pergunta para a server action (login, família, bytes, limite diário).
+        const file = lastFile.current;
+        if (!file) {
+          add({ id, kind: "aviso", texto: SEM_ULTIMO_ARQUIVO });
+          return { erro: SEM_ULTIMO_ARQUIVO };
+        }
+        const fd = new FormData();
+        fd.append("file", file);
+        // A pergunta é limpa e cortada no servidor (cleanPergunta); aqui só vai como texto.
+        if (typeof args?.pergunta === "string") fd.append("pergunta", args.pergunta.slice(0, 2000));
+        const r = await lerUltimoArquivoOli(fd).catch(() => ({ ok: false as const, erro: "Não consegui ler o arquivo agora. Tente de novo." }));
+        if (!r.ok) {
+          add({ id, kind: "aviso", texto: r.erro });
+          return { erro: r.erro };
+        }
+        add({ id, kind: "arquivo_lido", data: r.data });
+        return { arquivo: r.data.arquivo, documento_lido: r.data.documento_lido };
+      }
       const res = await runOliTool(String(name ?? ""), args ?? {});
       if (!res.ok) {
         add({ id, kind: "aviso", texto: res.erro });
@@ -108,6 +130,7 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
           add({ id, kind: "consulta", data: res.data });
           return res.data;
         case "ler_arquivo":
+        case "ler_ultimo_arquivo":
           add({ id, kind: "arquivo_lido", data: res.data });
           // Ao modelo, o conteúdo vai só dentro de <documento_lido> (dado, nunca instrução).
           return { arquivo: res.data.arquivo, documento_lido: res.data.documento_lido };
@@ -247,6 +270,7 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
         return;
       }
       files.current.set(id, file);
+      lastFile.current = file;
       add({
         id,
         kind: "confirmar_arquivo",
@@ -317,7 +341,10 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
     }
     setConfirmClear(false);
     const r = await clearOliHistory().catch(() => ({ ok: false }));
-    if (r.ok) oli.clearLog();
+    if (r.ok) {
+      oli.clearLog();
+      lastFile.current = null; // conversa nova: o arquivo do "+" da conversa anterior sai da memória
+    }
   };
 
   const submit = (e: React.FormEvent) => {

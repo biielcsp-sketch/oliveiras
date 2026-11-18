@@ -31,6 +31,7 @@ export const OLI_TOOL_NAMES = [
   "consultar_igreja",
   "buscar_no_app",
   "ler_arquivo",
+  "ler_ultimo_arquivo",
   "alterar_casa",
   "alterar_pet",
   "alterar_igreja",
@@ -525,4 +526,10 @@ export function parseLerArquivoArgs(args: unknown): Result<LerArquivoArgs> {
   if (!ref) return fail("Id de arquivo inválido. Use o id que veio da consulta (ex.: exame:…).");
   const pergunta = cleanPergunta(a.pergunta);
   return ok(pergunta ? { ...ref, pergunta } : ref);
+}
+
+/** ler_ultimo_arquivo: só a pergunta (opcional), com a mesma limpeza do ler_arquivo. O arquivo vem da tela. */
+export function parseLerUltimoArquivoArgs(args: unknown): Result<{ pergunta?: string }> {
+  const pergunta = cleanPergunta(obj(args).pergunta);
+  return ok(pergunta ? { pergunta } : {});
 }

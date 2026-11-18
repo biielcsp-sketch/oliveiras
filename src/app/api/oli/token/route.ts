@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { OLI_API_VERSION, OLI_DEFAULT_MODEL, OLI_DEFAULT_VOICE, oliAllowedFor } from "@/lib/oli/access";
 import { buildSystemInstruction, MAX_PROMPT_HISTORY, MAX_PROMPT_MEMORIES, OLI_TOOLS } from "@/lib/oli/prompt";
 import { getRecentOliMessages } from "@/lib/oli/history";
+import { loadOliVocabulary } from "@/lib/oli/vocabulario-server";
 import { todaySP } from "@/lib/financas/today";
 
 /**
@@ -46,6 +47,9 @@ export async function POST(request: Request) {
   // Conversa recente só desta pessoa (RLS); falha na leitura não derruba o token.
   const history = await getRecentOliMessages(supabase, MAX_PROMPT_HISTORY);
 
+  // Vocabulário da transcrição (até 100 termos): fixos do app + nomes da própria família (RLS). Nunca em log.
+  const customVocabulary = await loadOliVocabulary(supabase, link.household_id);
+
   const model = process.env.GEMINI_LIVE_MODEL || OLI_DEFAULT_MODEL;
   const voice = process.env.GEMINI_LIVE_VOICE || OLI_DEFAULT_VOICE;
 
@@ -65,7 +69,8 @@ export async function POST(request: Request) {
             systemInstruction: buildSystemInstruction(memories ?? [], todaySP(), history),
             tools: OLI_TOOLS,
             speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
-            inputAudioTranscription: {},
+            // Modelos de áudio nativo não aceitam código de idioma (o idioma vai na persona); o vocabulário ajuda nos nomes.
+            inputAudioTranscription: { customVocabulary },
             outputAudioTranscription: {},
           },
         },

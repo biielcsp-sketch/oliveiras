@@ -625,7 +625,7 @@ function ConsultaPanel({ data: d }: { data: ConsultaData }) {
 function ArquivoLidoPanel({ data: d }: { data: LerArquivoData }) {
   const title = d.arquivo.nome ? `${d.arquivo.rotulo}: ${d.arquivo.nome}` : d.arquivo.rotulo;
   return (
-    <Card role="group" aria-label="Arquivo lido pelo Oli (guardado)">
+    <Card role="group" aria-label={d.arquivo.tipo === "enviado" ? "Arquivo lido pelo Oli (enviado pelo +)" : "Arquivo lido pelo Oli (guardado)"}>
       <Head icon={<FileText size={16} aria-hidden />} title={title} aside={d.arquivo.pessoa ? <span className="text-sm text-muted">{d.arquivo.pessoa}</span> : undefined} />
       {d.titulo && <p className="text-[13px] font-medium text-muted">{d.titulo}</p>}
       {d.resposta && (

@@ -66,7 +66,7 @@ import {
 } from "@/lib/oli/panels";
 import { oliAllowedFor } from "@/lib/oli/access";
 import type { ConsultaData } from "@/lib/oli/consultas";
-import type { LerArquivoData } from "@/lib/oli/ler-arquivo";
+import { SEM_ULTIMO_ARQUIVO, type LerArquivoData } from "@/lib/oli/ler-arquivo";
 import { buscarNoApp, consultarCasa, consultarExamesLab, consultarFinancas, consultarIgreja, consultarPet, consultarSaude } from "@/lib/oli/consultas-data";
 import { lerArquivo } from "@/lib/oli/ler-arquivo-server";
 import { ITEM_MUDOU, parseAlterarArgs, previewFingerprint, type AlteracaoPreview, type AlterarAba } from "@/lib/oli/alterar";
@@ -91,7 +91,7 @@ export type OliToolResult =
   | { ok: true; tool: "ler_documento"; data: DocumentoData }
   | { ok: true; tool: "criar_consulta"; data: ConsultaPreview }
   | { ok: true; tool: "consultar_financas" | "consultar_saude" | "consultar_exames_lab" | "consultar_casa" | "consultar_pet" | "consultar_igreja" | "buscar_no_app"; data: ConsultaData }
-  | { ok: true; tool: "ler_arquivo"; data: LerArquivoData }
+  | { ok: true; tool: "ler_arquivo" | "ler_ultimo_arquivo"; data: LerArquivoData }
   | { ok: true; tool: "alterar_casa" | "alterar_pet" | "alterar_igreja" | "alterar_saude" | "alterar_agenda" | "alterar_financas"; data: AlteracaoPreview }
   | { ok: false; erro: string };
 
@@ -304,6 +304,10 @@ async function dispatch(name: OliToolName, args: unknown): Promise<OliToolResult
       const r = await lerArquivo(await getAppContext(), a.value);
       return r.ok ? { ok: true, tool: name, data: r.data } : err(r.erro);
     }
+    case "ler_ultimo_arquivo":
+      // O arquivo do "+" só existe na memória da tela: ela intercepta esta ferramenta e chama lerUltimoArquivoOli.
+      // Chegar aqui é porque não há arquivo para mandar.
+      return err(SEM_ULTIMO_ARQUIVO);
     case "alterar_casa":
     case "alterar_pet":
     case "alterar_igreja":

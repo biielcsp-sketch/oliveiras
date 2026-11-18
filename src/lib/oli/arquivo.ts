@@ -455,5 +455,14 @@ export function documentoLidoText(leitura: OliFileReading | OliFileReading[], de
       ? "O usuário enviou um arquivo pela tela e ele foi lido. Diga quantos documentos encontrou e o total, cite cada um em poucas palavras e lembre que a tela pede para conferir e tocar em Confirmar."
       : "O usuário enviou um arquivo pela tela e ele foi lido. Diga em poucas palavras o que encontrou e lembre que a tela pede para conferir e tocar em Confirmar.",
     `${DOC_LIDO_OPEN}${body}${DOC_LIDO_CLOSE}`,
+    ULTIMO_ARQUIVO_DICA,
   ].join("\n");
 }
+
+/**
+ * Regressão (18/11/2026): a sessão só recebia o resumo acima e, quando o usuário perguntava depois "o número do boleto
+ * de novembro no PDF que te mandei", o Oli dizia que não achou PDF. O arquivo completo fica na memória da tela e é
+ * lido de novo com ler_ultimo_arquivo.
+ */
+export const ULTIMO_ARQUIVO_DICA =
+  "Este é só um resumo. O arquivo completo continua disponível nesta conversa: para qualquer detalhe dele (números, códigos, valores, datas, um item específico), chame ler_ultimo_arquivo com a pergunta do usuário; nunca peça para reenviar.";
