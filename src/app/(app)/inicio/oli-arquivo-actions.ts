@@ -10,6 +10,7 @@ import {
 } from "@/lib/oli/arquivo";
 import { applyExtraction, readUploadedFile, revalidateDocPaths, storePendingDocuments } from "@/lib/financas/documentos/store";
 import { docBatchPath } from "@/lib/financas/routes";
+import { lerArquivoEnviado, type LerArquivoResult } from "@/lib/oli/ler-arquivo-server";
 
 /**
  * "+" do Oli. Ler NÃO grava nada: devolve a leitura validada, o destino da tabela fixa e as opções
@@ -111,4 +112,21 @@ export async function confirmOliArquivoFinancas(form: FormData): Promise<{ ok: t
   revalidateDocPaths();
   // Caminho montado aqui (id do banco); o navegador só navega para ele.
   return { ok: true, url: stored.ids.length > 1 ? docBatchPath(stored.ids[0]) : `/financas/documentos/${stored.ids[0]}` };
+}
+
+/**
+ * ler_ultimo_arquivo do Oli: a tela manda o último arquivo do "+" (que ela guarda só na memória) e a pergunta.
+ * Login (getAppContext → auth.getClaims) e família liberada conferidos aqui; arquivo pelos bytes, limite diário e
+ * leitura em lerArquivoEnviado. Nada é gravado além do registro da leitura no limite diário.
+ */
+export async function lerUltimoArquivoOli(form: FormData): Promise<LerArquivoResult> {
+  const ctx = await getAppContext(); // sem login, vai para /login
+  if (!oliAllowedFor(ctx.household.id)) return { ok: false, erro: NOT_ALLOWED };
+  if (!(form instanceof FormData)) return { ok: false, erro: "Envio inválido." };
+  try {
+    return await lerArquivoEnviado(ctx, form);
+  } catch {
+    console.error("Oli: ler_ultimo_arquivo falhou");
+    return { ok: false, erro: "Não consegui ler o arquivo agora. Tente de novo." };
+  }
 }

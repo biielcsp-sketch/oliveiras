@@ -55,6 +55,22 @@ createServer((req, res) => {
     }
     const content = Buffer.from(file.data, "base64").toString("latin1");
     if (content.includes("MOCKFAIL")) return send(res, 500, { error: { code: 500, message: "falha simulada" } });
+    // Leitura completa guiada pela pergunta (ler_arquivo / ler_ultimo_arquivo: schema com `resposta`). PDF com
+    // "MOCKBOLETOS:<base64 de [{ mes, texto }]>": responde com o item cujo mês aparece na <pergunta_do_usuario>.
+    const boletos = content.match(/MOCKBOLETOS:([A-Za-z0-9+/=]+)/);
+    if (cfg.responseSchema?.properties?.resposta && boletos) {
+      const items = JSON.parse(Buffer.from(boletos[1], "base64").toString("utf8"));
+      const prompt = parts.filter((p) => typeof p.text === "string").map((p) => p.text).join("\n");
+      const pergunta = (/<pergunta_do_usuario>\n([\s\S]*?)\n<\/pergunta_do_usuario>/.exec(prompt)?.[1] ?? "").toLowerCase();
+      const hit = items.find((i) => pergunta.includes(String(i.mes).toLowerCase()));
+      const text = JSON.stringify({
+        titulo: "Boletos",
+        resposta: pergunta ? (hit ? hit.texto : "O documento não traz essa informação.") : null,
+        resumo: `PDF com ${items.length} boletos.`,
+        pontos: items.map((i) => i.texto),
+      });
+      return send(res, 200, { candidates: [{ content: { role: "model", parts: [{ text }] }, finishReason: "STOP" }] });
+    }
     const m = content.match(/MOCKRESP:([A-Za-z0-9+/=]+)/);
     let text = m ? Buffer.from(m[1], "base64").toString("utf8") : JSON.stringify({ tipo: "outro" });
     // Leitura de boletos/comprovantes (Finanças e "+" do Oli): o schema pede { documentos: [...] }. PDF de teste com

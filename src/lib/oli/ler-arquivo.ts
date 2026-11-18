@@ -72,8 +72,13 @@ export function parseOliContent(text: unknown): OliContentReading | null {
   return { titulo: dataLine(o.titulo, CONTENT_LIMITS.titulo), resposta: dataLine(o.resposta, CONTENT_LIMITS.resposta), resumo, pontos };
 }
 
+/** "enviado": o último arquivo do "+" (ler_ultimo_arquivo), que só existe na memória da tela. */
+export type LerArquivoTipo = ArquivoTipo | "enviado";
+
+export const ENVIADO_LABEL = "Arquivo enviado pelo +";
+
 export type LerArquivoData = {
-  arquivo: { id: string; tipo: ArquivoTipo; rotulo: string; nome: string | null; pessoa: string | null };
+  arquivo: { id: string; tipo: LerArquivoTipo; rotulo: string; nome: string | null; pessoa: string | null };
   titulo: string | null;
   /** Pergunta do usuário (já limpa) e a resposta lida do documento. */
   pergunta: string | null;
@@ -98,11 +103,11 @@ export function documentoLidoConteudo(rotulo: string, r: OliContentReading, perg
 }
 
 export function buildLerArquivo(
-  meta: { id: string; tipo: ArquivoTipo; nome?: unknown; pessoa?: unknown },
+  meta: { id: string; tipo: LerArquivoTipo; nome?: unknown; pessoa?: unknown },
   r: OliContentReading,
   pergunta?: string | null,
 ): LerArquivoData {
-  const rotulo = ARQUIVO_TIPO_LABEL[meta.tipo];
+  const rotulo = meta.tipo === "enviado" ? ENVIADO_LABEL : ARQUIVO_TIPO_LABEL[meta.tipo];
   const nome = dataLine(meta.nome, 160);
   const q = dataLine(pergunta, 500);
   return {
@@ -124,6 +129,9 @@ export const CARISMA_REVOGADO = "O acesso ao Google Drive foi desconectado. Reco
 export const ARQUIVO_GRANDE = "Esse arquivo é grande demais para o Oli ler (máximo 10 MB). Use o resumo da aula ou abra o arquivo.";
 export const SEM_ARQUIVO = "Esse item não tem arquivo guardado.";
 export const ARQUIVO_NAO_ENCONTRADO = "Arquivo não encontrado.";
+/** ler_ultimo_arquivo sem arquivo na memória da tela (nada enviado pelo "+" nesta conversa, ou a página foi recarregada). */
+export const SEM_ULTIMO_ARQUIVO =
+  "Nenhum arquivo enviado pelo + nesta conversa. Se o arquivo já está guardado numa aba, procure com a consulta da aba e use ler_arquivo; senão, peça para enviar pelo +.";
 
 /**
  * Decide se o arquivo do Drive pode ser lido, com as MESMAS regras do resumo da aula (summarizeLessonAction):

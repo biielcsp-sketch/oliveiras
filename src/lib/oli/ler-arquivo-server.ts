@@ -10,6 +10,7 @@ import { carismaEnabled, myAccountById, runWithDrive, RevokedError } from "@/lib
 import { DOCX_MIME, headMatches, isDriveId, TXT_MIME, txtToText, type CarismaMime } from "@/lib/igreja/files";
 import { docxToText } from "@/lib/igreja/summarize";
 import { downloadFile } from "@/lib/google/drive";
+import { readUploadedFile } from "@/lib/financas/documentos/store";
 import { checkDailyLimit } from "./file-limit";
 import { contentPrompt, OLI_CONTENT_INSTRUCTION, OLI_CONTENT_SCHEMA } from "./conteudo-schema";
 import {
@@ -20,6 +21,7 @@ import {
   OLI_READ_MAX_DOCX_CHARS,
   parseOliContent,
   SEM_ARQUIVO,
+  SEM_ULTIMO_ARQUIVO,
   type ContentMime,
   type LerArquivoData,
   type OliContentReading,
@@ -170,4 +172,30 @@ export async function lerArquivo(ctx: Ctx, ref: ArquivoRef & { pergunta?: string
   const nome = src.source.nome;
   const pessoa = src.source.kind === "storage" ? src.source.pessoa : null;
   return { ok: true, data: buildLerArquivo({ id: `${ref.tipo}:${ref.id}`, tipo: ref.tipo, nome, pessoa }, r.data, pergunta) };
+}
+
+/**
+ * ler_ultimo_arquivo: relê o último arquivo enviado pelo "+" (que só existe na memória da tela; nada é guardado em
+ * bucket nem banco por causa disso), guiado pela pergunta. Mesmas regras do "+" e do ler_arquivo:
+ * - arquivo conferido pelos BYTES (PDF ou JPG, até 4 MB) por readUploadedFile, antes de gastar leitura;
+ * - limite diário de leituras do Oli (o mesmo do "+"), com a sessão do usuário (RLS), antes da IA;
+ * - a mesma leitura completa (summarizeContent), e o resultado volta como DADO dentro de <documento_lido>.
+ * Login e liberação da família ficam na server action (lerUltimoArquivoOli). `generate` injetável nos testes.
+ */
+export async function lerArquivoEnviado(ctx: Ctx, form: FormData, generate?: Generate): Promise<LerArquivoResult> {
+  const f = form.get("file");
+  if (!(f instanceof File) || f.size === 0) return { ok: false, erro: SEM_ULTIMO_ARQUIVO };
+  const file = await readUploadedFile(form);
+  if (!file.ok) return { ok: false, erro: file.error };
+
+  const db = await createClient();
+  const limit = await checkDailyLimit(db, ctx.household.id);
+  if (limit) return { ok: false, erro: limit };
+
+  const pergunta = cleanPergunta(form.get("pergunta")) ?? null;
+  const r = await summarizeContent(file.bytes, file.kind.mime, generate, pergunta);
+  if (!r.ok) {
+    return { ok: false, erro: r.motivo === "timeout" ? "A leitura demorou demais. Tente de novo." : "Não consegui ler o arquivo agora. Tente de novo." };
+  }
+  return { ok: true, data: buildLerArquivo({ id: "enviado:ultimo", tipo: "enviado", nome: f.name }, r.data, pergunta) };
 }

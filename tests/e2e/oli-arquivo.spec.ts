@@ -793,3 +793,119 @@ test("Oli: consultar_exames_lab responde com status, faixa e tendência, só da 
   await admin.from("households").delete().eq("id", otherHh);
   await ctx.close();
 });
+
+/**
+ * Regressão (18/11/2026): depois de mandar um PDF pelo "+", "veja o número do boleto de novembro no PDF que te mandei"
+ * virava "não encontrei nenhum PDF, reenvie". Agora o arquivo fica na memória da tela e a ferramenta ler_ultimo_arquivo
+ * o relê com a pergunta. Sessão do Gemini Live SIMULADA no navegador: o token é respondido pelo teste e o WebSocket do
+ * Live é interceptado (routeWebSocket), que pede a ferramenta como o modelo pediria e guarda a resposta da tela.
+ * Fica neste arquivo porque usa a família autorizada do Oli (OLI_HOUSEHOLD_ID).
+ */
+test("Oli: ler_ultimo_arquivo relê o PDF do + e acha o boleto de novembro", async ({ browser }) => {
+  test.setTimeout(120_000);
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  const problems = watchConsole(page);
+  const admin = adminClient();
+  const hh = E2E_OLI_HOUSEHOLD_ID;
+
+  const contexts: string[] = [];
+  const outputs: Record<string, unknown>[] = [];
+  let calls = 0;
+  await page.route("**/api/oli/token", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ token: "auth_tokens/e2e", model: "gemini-3.8-live", apiVersion: "v1beta" }) }),
+  );
+  await page.routeWebSocket(/generativelanguage\.googleapis\.com/, (ws) => {
+    ws.onMessage((raw) => {
+      const msg = JSON.parse(String(raw)) as {
+        setup?: unknown;
+        realtimeInput?: { text?: string };
+        toolResponse?: { functionResponses: { response: { output: Record<string, unknown> } }[] };
+      };
+      if (msg.setup) return ws.send(JSON.stringify({ setupComplete: {} }));
+      const text = msg.realtimeInput?.text;
+      if (typeof text === "string") {
+        if (text.includes("<documento_lido>")) {
+          contexts.push(text);
+          return;
+        }
+        // Mensagem do usuário: o "modelo" chama a ferramenta com a pergunta dele.
+        calls++;
+        return ws.send(JSON.stringify({ toolCall: { functionCalls: [{ id: `c${calls}`, name: "ler_ultimo_arquivo", args: { pergunta: "número do boleto de novembro" } }] } }));
+      }
+      if (msg.toolResponse) {
+        outputs.push(msg.toolResponse.functionResponses[0].response.output);
+        ws.send(JSON.stringify({ serverContent: { turnComplete: true } }));
+      }
+    });
+  });
+
+  await test.step("família liberada para o Oli", async () => {
+    const email = uniqueEmail("oli-ultimo");
+    await createFamilyWithId(hh, email, PASSWORD);
+    await page.goto("/login");
+    await page.getByLabel("E-mail").fill(email);
+    await page.getByLabel("Senha").fill(PASSWORD);
+    await page.locator("form").getByRole("button", { name: "Entrar" }).click();
+    await expect(page).toHaveURL(/\/inicio$/);
+    await page.goto("/assistente");
+  });
+
+  const ask = async (text: string) => {
+    await page.getByLabel("Mensagem para o Oli").fill(text);
+    await page.getByRole("button", { name: "Enviar" }).click();
+  };
+
+  await test.step("sem arquivo enviado pelo +: resultado claro, sem chamar a IA", async () => {
+    await ask("veja o boleto de novembro no PDF que te mandei");
+    await expect.poll(() => outputs.length, { timeout: 30_000 }).toBe(1);
+    expect(outputs[0]).toEqual({ erro: expect.stringMatching(/^Nenhum arquivo enviado pelo \+ nesta conversa/) });
+    await expect(page.getByText("Nenhum arquivo enviado pelo + nesta conversa", { exact: false })).toBeVisible();
+    const { count } = await admin.from("oli_file_reads").select("id", { count: "exact", head: true }).eq("household_id", hh);
+    expect(count).toBe(0);
+  });
+
+  const boletos = [
+    { mes: "outubro", texto: "outubro: Água SA, R$ 66,78, linha 11111.11111 11111.111111" },
+    { mes: "novembro", texto: "novembro: Luz SA, R$ 187,90, linha 23790.12345 60000.000005" },
+    { mes: "dezembro", texto: "dezembro: Internet SA, R$ 99,90, linha 33333.33333 33333.333333" },
+  ];
+  const leituraDoMais = {
+    documentos: [
+      { tipo: "boleto", beneficiario: "Água SA", valor: 66.78, vencimento: "2026-10-10" },
+      { tipo: "boleto", beneficiario: "Luz SA", valor: 187.9, vencimento: "2026-11-10" },
+      { tipo: "boleto", beneficiario: "Internet SA", valor: 99.9, vencimento: "2026-12-10" },
+    ],
+  };
+
+  await test.step("+ com PDF de 3 boletos: a sessão recebe o resumo e a dica do ler_ultimo_arquivo; nada é gravado", async () => {
+    const tag = `MOCKBOLETOS:${Buffer.from(JSON.stringify(boletos)).toString("base64")}`;
+    await sendFile(page, pdfWith(leituraDoMais, tag));
+    await expect(page.getByRole("group", { name: "Arquivo lido pelo Oli" }).first()).toBeVisible();
+    await expect.poll(() => contexts.length, { timeout: 30_000 }).toBe(1);
+    expect(contexts[0]).toContain("documentos encontrados: 3");
+    expect(contexts[0]).toContain("ler_ultimo_arquivo");
+    const { count } = await admin.from("fin_documents").select("id", { count: "exact", head: true }).eq("household_id", hh);
+    expect(count).toBe(0);
+  });
+
+  await test.step("ler_ultimo_arquivo com 'boleto de novembro' traz o de novembro, como DADO", async () => {
+    await ask("no PDF que te mandei tem o boleto de novembro, veja o número");
+    await expect.poll(() => outputs.length, { timeout: 30_000 }).toBe(2);
+    const out = outputs[1] as { arquivo: { tipo: string }; documento_lido: string };
+    expect(out.arquivo.tipo).toBe("enviado");
+    expect(out.documento_lido.startsWith("<documento_lido>")).toBe(true);
+    expect(out.documento_lido).toContain("resposta: novembro: Luz SA, R$ 187,90, linha 23790.12345 60000.000005");
+    expect(out.documento_lido).toContain("pergunta: número do boleto de novembro");
+    const p = page.getByRole("group", { name: "Arquivo lido pelo Oli (enviado pelo +)" });
+    await expect(p.getByTestId("arquivo-lido-resposta")).toContainText("novembro: Luz SA, R$ 187,90");
+    // As duas leituras (o + e a releitura) contam no limite diário; nada foi guardado em Finanças nem no Storage.
+    const { count: reads } = await admin.from("oli_file_reads").select("id", { count: "exact", head: true }).eq("household_id", hh);
+    expect(reads).toBe(2);
+    const { count: docs } = await admin.from("fin_documents").select("id", { count: "exact", head: true }).eq("household_id", hh);
+    expect(docs).toBe(0);
+  });
+
+  expect(problems).toEqual([]);
+  await ctx.close();
+});
