@@ -202,7 +202,7 @@ test("Finanças: leitura de boleto e comprovante com conferência", async ({ bro
   await test.step("comprovante: vira lançamento (saída, source documento) e marca Luz paga em 12/2026", async () => {
     comprovanteId = await upload(
       a,
-      "/financas/lancamentos",
+      "/financas/documentos",
       pdfWith({ tipo: "comprovante", beneficiario: "ENEL", valor: 199, data_pagamento: "2026-12-08", codigo: BOLETO_NOVO, descricao: "Conta de luz dezembro" }),
     );
     await expect(a.getByRole("radio", { name: "Comprovante" })).toHaveAttribute("aria-checked", "true");

@@ -94,7 +94,8 @@ test("Open Finance: conectar item, vincular contas e sincronizar sem duplicar", 
     await expect(conta).toContainText("R$ 4.864,50");
     await expect(conta).not.toContainText("Banco informa");
     const cartao = page.locator("li").filter({ hasText: "Cartão Teste" });
-    await expect(cartao).toContainText("-R$ 65,90");
+    await expect(cartao).toContainText("Fatura atual");
+    await expect(cartao).toContainText("R$ 65,90");
     await expect(cartao).not.toContainText("Banco informa");
   });
 
