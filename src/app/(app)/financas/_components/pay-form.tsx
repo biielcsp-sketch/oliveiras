@@ -32,7 +32,7 @@ export function PayForm({ billId, oneOffId, month, expected, due, suggestions }:
           <input type="hidden" name="month" value={month} />
         </>
       )}
-      <fieldset className="flex flex-col gap-2">
+      <fieldset className="flex min-w-0 flex-col gap-2">
         <legend className="mb-2 text-sm text-muted">
           {suggestions.length > 0
             ? "Encontramos estes lançamentos parecidos no extrato:"
