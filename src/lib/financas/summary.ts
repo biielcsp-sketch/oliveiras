@@ -1,5 +1,25 @@
 import type { Category, Transaction } from "./types";
 
+export type Flow = "income" | "expense";
+type FlowTx = Pick<Transaction, "amount" | "category_id" | "account_id"> & { transfer_group?: string | null };
+
+/**
+ * Classifica um lançamento como entrada, saída ou fora dos totais (null). Regra única de `summarize`
+ * e do filtro por fluxo (o `amount` já vem assinado pelo tipo DEBIT/CREDIT na importação).
+ */
+export function classifyFlow(
+  t: FlowTx,
+  kindById: Map<string, Category["kind"]>,
+  cardAccountIds: Set<string> = new Set(),
+): Flow | null {
+  const kind = t.category_id ? kindById.get(t.category_id) : undefined;
+  const cents = Math.round(t.amount * 100);
+  if (kind === "transferencia" || t.transfer_group) return null;
+  if (cents > 0 && !kind && cardAccountIds.has(t.account_id)) return null;
+  if (kind === "despesa" || (cents < 0 && kind !== "receita")) return "expense";
+  return "income";
+}
+
 /**
  * Totais do mês.
  * - Categoria de transferência (ex.: pagamento de cartão) fica fora de entradas e saídas.
@@ -14,11 +34,10 @@ export function summarize(txs: Transaction[], categories: Category[], cardAccoun
   let expense = 0;
   const byCategory = new Map<string | null, number>();
   for (const t of txs) {
-    const kind = t.category_id ? kindById.get(t.category_id) : undefined;
+    const flow = classifyFlow(t, kindById, cardAccountIds);
+    if (!flow) continue;
     const cents = Math.round(t.amount * 100);
-    if (kind === "transferencia" || t.transfer_group) continue;
-    if (cents > 0 && !kind && cardAccountIds.has(t.account_id)) continue;
-    if (kind === "despesa" || (cents < 0 && kind !== "receita")) {
+    if (flow === "expense") {
       expense -= cents;
       byCategory.set(t.category_id, (byCategory.get(t.category_id) ?? 0) - cents);
     } else {

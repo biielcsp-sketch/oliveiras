@@ -9,6 +9,7 @@ import { formatBRL } from "@/lib/financas/money";
 import { parseMonth } from "@/lib/financas/period";
 import { todaySP } from "@/lib/financas/today";
 import { accountLabel } from "@/lib/financas/account-label";
+import { filterByFluxo, FLUXOS, parseFluxo } from "@/lib/financas/fluxo";
 import { parseTipo, splitByTipo, TX_TIPOS } from "@/lib/financas/transfers";
 import { buildTransferFeed, groupByDay, MOSTRAR_STEP, parseMostrar, sliceVisible } from "@/lib/financas/lancamentos-view";
 import { getTransferReview } from "@/lib/financas/transfers-data";
@@ -18,12 +19,13 @@ import { UnlinkButton } from "../_components/transfer-controls";
 
 export const metadata = { title: "Lançamentos" };
 
-type Params = { mes?: string; conta?: string; categoria?: string; q?: string; tipo?: string; aprendeu?: string; mostrar?: string };
+type Params = { mes?: string; conta?: string; categoria?: string; q?: string; tipo?: string; fluxo?: string; aprendeu?: string; mostrar?: string };
 
 export default async function LancamentosPage({ searchParams }: { searchParams: Promise<Params> }) {
   const sp = await searchParams;
   const month = parseMonth(sp.mes);
   const tipo = parseTipo(sp.tipo);
+  const fluxo = tipo === "gastos" ? parseFluxo(sp.fluxo) : undefined;
   const limit = parseMostrar(sp.mostrar);
   const [{ household, members }, { accounts, categories }] = await Promise.all([getAppContext(), getFinanceBase()]);
   const transactions = await getTransactions({
@@ -45,24 +47,27 @@ export default async function LancamentosPage({ searchParams }: { searchParams: 
   const { rows, pairs } = splitByTipo(tipo, transactions, categories, accounts, legs);
   const pendingReview = tipo === "transferencias" ? (await getTransferReview(await createClient(), household.id)).length : 0;
   // Totais sobre TODAS as linhas do mês (não só as exibidas).
-  const { income, expense } = summarize(rows, categories, new Set(accounts.filter((a) => a.kind === "cartao").map((a) => a.id)));
+  const cardIds = new Set(accounts.filter((a) => a.kind === "cartao").map((a) => a.id));
+  const { income, expense } = summarize(rows, categories, cardIds);
+  // O filtro por fluxo só afeta a lista (e o "N lançamentos"); os totais dos chips seguem sobre o mês todo.
+  const visibleRows = filterByFluxo(rows, fluxo, categories, cardIds);
   const learned = Number(sp.aprendeu);
   const today = todaySP();
   const catName = new Map(categories.map((c) => [c.id, c.name]));
 
   const feed = tipo === "transferencias" ? buildTransferFeed(pairs, rows, categories) : null;
-  const { shown, hasMore, total } = feed ? sliceVisible(feed, limit) : sliceVisible(rows, limit);
+  const { shown, hasMore, total } = feed ? sliceVisible(feed, limit) : sliceVisible(visibleRows, limit);
   const days = groupByDay(shown as { date: string }[], today);
 
-  const keep = { conta: sp.conta, categoria: sp.categoria, q: sp.q, tipo: tipo === "gastos" ? undefined : tipo };
+  const keep = { conta: sp.conta, categoria: sp.categoria, q: sp.q, fluxo, tipo: tipo === "gastos" ? undefined : tipo };
   const hrefWith = (extra: Record<string, string | undefined>) => {
     const p = new URLSearchParams({ mes: month });
-    for (const [k, v] of Object.entries({ conta: sp.conta, categoria: sp.categoria, q: sp.q, ...extra })) if (v) p.set(k, v);
+    for (const [k, v] of Object.entries({ conta: sp.conta, categoria: sp.categoria, q: sp.q, fluxo, ...extra })) if (v) p.set(k, v);
     return `/financas/lancamentos?${p.toString()}`;
   };
   const tabHref = (t: string) => hrefWith({ tipo: t === "gastos" ? undefined : t });
   const moreHref = hrefWith({ tipo: tipo === "gastos" ? undefined : tipo, mostrar: String(limit + MOSTRAR_STEP) });
-  const activeFilters = (sp.conta ? 1 : 0) + (sp.categoria ? 1 : 0);
+  const activeFilters = (sp.conta ? 1 : 0) + (sp.categoria ? 1 : 0) + (fluxo ? 1 : 0);
   const conferirHref = `/financas/lancamentos/conferir?mes=${month}`;
 
   return (
@@ -124,10 +129,18 @@ export default async function LancamentosPage({ searchParams }: { searchParams: 
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </Select>
+            {tipo === "gastos" && (
+              <Select name="fluxo" defaultValue={fluxo ?? ""} aria-label="Fluxo">
+                <option value="">Entradas e saídas</option>
+                {FLUXOS.map((f) => (
+                  <option key={f.value} value={f.value}>{f.optionLabel}</option>
+                ))}
+              </Select>
+            )}
             <div className="flex items-center gap-3">
               <button className="h-12 rounded-full border border-line bg-surface-solid px-5 text-[15px] font-medium shadow-soft hover:bg-surface-2">Filtrar</button>
               {activeFilters > 0 && (
-                <Link href={hrefWith({ conta: undefined, categoria: undefined, tipo: tipo === "gastos" ? undefined : tipo })} className="text-sm font-medium text-primary">
+                <Link href={hrefWith({ conta: undefined, categoria: undefined, fluxo: undefined, tipo: tipo === "gastos" ? undefined : tipo })} className="text-sm font-medium text-primary">
                   Limpar filtros
                 </Link>
               )}
@@ -140,13 +153,23 @@ export default async function LancamentosPage({ searchParams }: { searchParams: 
 
       {tipo === "gastos" && (
         <div className="flex flex-wrap items-center gap-2 text-[13px]">
-          <span className="text-muted">{rows.length} lançamentos</span>
-          <span className="rounded-full bg-success-soft px-3 py-1.5 font-semibold text-success">
-            Entradas <span className="tabular-nums">{formatBRL(income)}</span>
-          </span>
-          <span className="rounded-full bg-danger-soft px-3 py-1.5 font-semibold text-danger">
-            Saídas <span className="tabular-nums">{formatBRL(-expense)}</span>
-          </span>
+          <span className="text-muted">{visibleRows.length} lançamentos</span>
+          {FLUXOS.map((f) => {
+            const active = fluxo === f.value;
+            const income_ = f.value === "entradas";
+            return (
+              <Link
+                key={f.value}
+                href={hrefWith({ fluxo: active ? undefined : f.value })}
+                aria-current={active ? "true" : undefined}
+                className={`inline-flex min-h-11 items-center rounded-full px-3 font-semibold ring-inset transition ${
+                  income_ ? "bg-success-soft text-success" : "bg-danger-soft text-danger"
+                } ${active ? (income_ ? "ring-2 ring-success shadow-soft" : "ring-2 ring-danger shadow-soft") : "hover:brightness-95"}`}
+              >
+                {f.label} <span className="tabular-nums">{formatBRL(income_ ? income : -expense)}</span>
+              </Link>
+            );
+          })}
         </div>
       )}
 
@@ -210,7 +233,7 @@ export default async function LancamentosPage({ searchParams }: { searchParams: 
         </div>
       ) : (
         <EmptyState title="Nenhum lançamento encontrado">
-          {tipo === "gastos" ? "Mude o mês ou os filtros, ou importe um extrato." : "Nada neste mês. Sincronize ou importe e confira as transferências."}
+          {fluxo ? FLUXOS.find((f) => f.value === fluxo)!.empty : tipo === "gastos" ? "Mude o mês ou os filtros, ou importe um extrato." : "Nada neste mês. Sincronize ou importe e confira as transferências."}
         </EmptyState>
       )}
     </div>

@@ -63,6 +63,45 @@ test("finanças: aba Transferências junta Pix entre contas do casal e separa do
     expect(brl(await main.innerText())).toContain("2 lançamentos");
   });
 
+  await test.step("filtro por fluxo: chips, select e URL direta", async () => {
+    const main = page.locator("main");
+    await page.goto(`/financas/lancamentos?mes=${mes}`);
+    const entradas = main.getByRole("link", { name: /^Entradas/ });
+    const saidas = main.getByRole("link", { name: /^Saídas/ });
+    await expect(entradas).not.toHaveAttribute("aria-current", "true");
+    await entradas.click();
+    await expect(page).toHaveURL(/fluxo=entradas/);
+    await expect(main.getByRole("link", { name: /^Entradas/ })).toHaveAttribute("aria-current", "true");
+    await expect(main.getByText("Pix recebido de terceiro")).toBeVisible();
+    await expect(main.getByText("FARMACIA BOA")).toHaveCount(0);
+    expect(brl(await main.innerText())).toContain("1 lançamentos");
+    // totais dos chips continuam sobre o mês todo
+    await expect(main.getByRole("link", { name: /^Saídas/ })).toContainText("-R$ 10,00");
+    // tocar de novo no ativo limpa o filtro
+    await main.getByRole("link", { name: /^Entradas/ }).click();
+    await expect(page).not.toHaveURL(/fluxo=/);
+    await expect(main.getByText("FARMACIA BOA")).toBeVisible();
+
+    await page.goto(`/financas/lancamentos?mes=${mes}&fluxo=saidas`);
+    await expect(main.getByRole("link", { name: /^Saídas/ })).toHaveAttribute("aria-current", "true");
+    await expect(main.getByText("FARMACIA BOA")).toBeVisible();
+    await expect(main.getByText("Pix recebido de terceiro")).toHaveCount(0);
+    await expect(page.getByLabel("1 filtros ativos")).toBeVisible();
+    await expect(page.getByLabel("Fluxo", { exact: true })).toHaveValue("saidas");
+    await expect(saidas).toBeVisible();
+
+    await page.getByLabel("Fluxo", { exact: true }).selectOption("entradas");
+    await page.getByRole("button", { name: "Filtrar" }).click();
+    await expect(page).toHaveURL(/fluxo=entradas/);
+    await expect(main.getByText("Pix recebido de terceiro")).toBeVisible();
+    await page.getByRole("link", { name: "Limpar filtros" }).click();
+    await expect(page).not.toHaveURL(/fluxo=/);
+
+    await page.goto(`/financas/lancamentos?mes=${mes}&fluxo=xyz`);
+    await expect(main.getByText("FARMACIA BOA")).toBeVisible();
+    await expect(main.getByText("Pix recebido de terceiro")).toBeVisible();
+  });
+
   await test.step("tipo=cartao antigo cai em Transferências", async () => {
     await page.goto(`/financas/lancamentos?mes=${mes}&tipo=cartao`);
     await expect(page.getByRole("link", { name: "Transferências", exact: true })).toHaveAttribute("aria-current", "page");
