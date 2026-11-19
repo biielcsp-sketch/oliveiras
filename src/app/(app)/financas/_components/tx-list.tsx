@@ -4,17 +4,24 @@ import type { Account, Category, Transaction } from "@/lib/financas/types";
 import { formatBRL } from "@/lib/financas/money";
 import { shortDate } from "@/lib/financas/period";
 import { accountLabel } from "@/lib/financas/account-label";
+import { Badge } from "@/components/ui";
 
 export function TxList({
   transactions,
   accounts,
   categories,
   members = [],
+  showDate = true,
+  badgeFor,
 }: {
   transactions: Transaction[];
   accounts: Account[];
   categories: Category[];
   members?: { id: string; name: string }[];
+  /** Falso quando a lista já vem agrupada por dia. */
+  showDate?: boolean;
+  /** Etiqueta opcional por linha (ex.: "Fatura"). */
+  badgeFor?: (t: Transaction) => string | undefined;
 }) {
   const memberName = new Map(members.map((m) => [m.id, m.name]));
   const account = new Map(accounts.map((a) => [a.id, a]));
@@ -23,13 +30,17 @@ export function TxList({
     <ul className="divide-y divide-line">
       {transactions.map((t) => {
         const cat = t.category_id ? category.get(t.category_id) : undefined;
+        const badge = badgeFor?.(t);
         const transfer = cat?.kind === "transferencia" || Boolean(t.transfer_group);
         return (
           <li key={t.id}>
             <Link href={`/financas/lancamentos/${t.id}`} className="-mx-2 flex items-center gap-3 rounded-2xl px-2 py-2.5 transition hover:bg-accent-soft/60">
-              <span className="w-11 shrink-0 text-[13px] tabular-nums text-muted">{shortDate(t.date)}</span>
+              {showDate && <span className="w-11 shrink-0 text-[13px] tabular-nums text-muted">{shortDate(t.date)}</span>}
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[14px] font-semibold">{t.description}</p>
+                <p className="flex items-center gap-2 text-[14px] font-semibold">
+                  <span className="truncate">{t.description}</span>
+                  {badge && <Badge tone="neutral" className="shrink-0">{badge}</Badge>}
+                </p>
                 <p className="flex items-center gap-1.5 truncate text-[12px] text-muted">
                   <span
                     className="inline-block size-2 shrink-0 rounded-full"

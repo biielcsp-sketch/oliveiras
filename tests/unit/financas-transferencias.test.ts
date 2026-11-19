@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findTransferPairs, firstNames, splitByTipo, type PairTx } from "@/lib/financas/transfers";
+import { findTransferPairs, firstNames, parseTipo, splitByTipo, TX_TIPOS, type PairTx } from "@/lib/financas/transfers";
 import { summarize } from "@/lib/financas/summary";
 import type { Category, Transaction } from "@/lib/financas/types";
 
@@ -108,13 +108,31 @@ describe("splitByTipo", () => {
 
   it("gastos: sem par e sem categoria de transferência", () =>
     expect(splitByTipo("gastos", all, CATS, ACCOUNTS).rows.map((t) => t.id)).toEqual([gasto.id]));
-  it("transferências: par em uma linha + sem par com categoria de transferência", () => {
-    const r = splitByTipo("transferencias", all, CATS, ACCOUNTS);
-    expect(r.pairs.map((p) => [p.out.id, p.in.id, p.kind])).toEqual([[legOut.id, legIn.id, "transferencia"]]);
+  it("gastos nunca traz o pagamento de fatura (evita dupla contagem)", () => {
+    const ids = splitByTipo("gastos", all, CATS, ACCOUNTS).rows.map((t) => t.id);
+    expect(ids).not.toContain(card.id);
+    expect(ids).not.toContain(cardOut.id);
+  });
+  it("transferências: pares (inclusive fatura) em uma linha + sem par com categoria de transferência", () => {
+    const r = splitByTipo("transferencias", all, CATS, ACCOUNTS, [card, cardOut]);
+    expect(r.pairs.map((p) => [p.out.id, p.in.id, p.kind]).sort()).toEqual(
+      [[legOut.id, legIn.id, "transferencia"], [cardOut.id, card.id, "cartao"]].sort(),
+    );
     expect(r.rows.map((t) => t.id)).toEqual([semPar.id]);
   });
-  it("cartão: completa a perna que o filtro não trouxe", () => {
-    const r = splitByTipo("cartao", [card], CATS, ACCOUNTS, [card, cardOut]);
+  it("transferências: completa a perna da fatura que o filtro não trouxe", () => {
+    const r = splitByTipo("transferencias", [card], CATS, ACCOUNTS, [card, cardOut]);
     expect(r.pairs.map((p) => [p.out.id, p.in.id, p.kind])).toEqual([[cardOut.id, card.id, "cartao"]]);
+  });
+});
+
+describe("abas de lançamentos", () => {
+  it("só Gastos e Transferências", () => expect(TX_TIPOS.map((t) => t.value)).toEqual(["gastos", "transferencias"]));
+  it("tipo=cartao antigo cai em Transferências", () => {
+    expect(parseTipo("cartao")).toBe("transferencias");
+    expect(parseTipo("transferencias")).toBe("transferencias");
+    expect(parseTipo("gastos")).toBe("gastos");
+    expect(parseTipo("xyz")).toBe("gastos");
+    expect(parseTipo(undefined)).toBe("gastos");
   });
 });

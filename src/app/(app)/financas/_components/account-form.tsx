@@ -8,10 +8,10 @@ import type { Member } from "@/lib/data";
 
 const money = (v: number | null | undefined) => (v === null || v === undefined ? "" : v.toFixed(2).replace(".", ","));
 
-export function AccountForm({ account, members }: { account?: Account; members: Member[] }) {
+export function AccountForm({ account, members, initialKind }: { account?: Account; members: Member[]; initialKind?: AccountKind }) {
   const [state, action, pending] = useActionState<FormState, FormData>(saveAccount, null);
   const [delState, delAction, deleting] = useActionState<FormState, FormData>(deleteAccount, null);
-  const [kind, setKind] = useState<AccountKind>(account?.kind ?? "corrente");
+  const [kind, setKind] = useState<AccountKind>(account?.kind ?? initialKind ?? "corrente");
   const isCard = kind === "cartao";
 
   return (
