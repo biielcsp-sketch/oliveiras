@@ -19,6 +19,7 @@ import type { ConsultaData } from "./consultas";
 import type { LerArquivoData } from "./ler-arquivo";
 import type { AlteracaoPreview } from "./alterar";
 import type { ConversaData } from "./conversa";
+import type { AnaliseData } from "./analisar";
 
 const cents = (v: number) => Math.round(v * 100);
 const reais = (c: number) => c / 100;
@@ -156,6 +157,7 @@ export type OliPanel =
   | { id: string; kind: "confirmar_arquivo"; data: ArquivoPreview; status: ConfirmStatus; erro?: string }
   | { id: string; kind: "consulta"; data: ConsultaData }
   | { id: string; kind: "arquivo_lido"; data: LerArquivoData }
+  | { id: string; kind: "analise"; data: AnaliseData }
   | { id: string; kind: "confirmar_alteracao"; data: AlteracaoPreview; status: ConfirmStatus; erro?: string; aviso?: string }
   | { id: string; kind: "aviso"; texto: string };
 

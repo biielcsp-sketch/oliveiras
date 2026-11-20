@@ -12,6 +12,7 @@ import {
   rms,
 } from "@/lib/oli/audio-utils";
 import { saveOliMessages } from "@/app/(app)/inicio/oli-history-actions";
+import { novaRodada, rodadaArquivo, rodadaFala, rodadaFecha, rodadaFerramentas, rodadaFimTurno, rodadaReconexao, rodadaTexto } from "@/lib/oli/memoria-fala";
 import type { OliSphereState as OliState } from "./oli-sphere";
 
 /**
@@ -24,7 +25,8 @@ import type { OliSphereState as OliState } from "./oli-sphere";
 
 export type LogEntry = { id: number | string; role: "user" | "model" | "sys"; text: string };
 export type StatusTone = "" | "ok" | "err";
-export type ToolCall = { id?: string; name?: string; args?: Record<string, unknown> };
+/** `rodada`: fala do usuário no turno e se a rodada já teve texto de fora (decide se salvar_memoria grava direto). */
+export type ToolCall = { id?: string; name?: string; args?: Record<string, unknown>; rodada?: { fala: string; externo: boolean } };
 export type ToolHandler = (call: ToolCall) => Promise<Record<string, unknown>>;
 
 const SAMPLES_PER_CHUNK = 640; // ~40 ms a 16 kHz
@@ -83,6 +85,8 @@ export function useOliSession(opts: {
     openBubble: { user: null as number | string | null, model: null as number | string | null },
     // Texto do turno em andamento, acumulado e enviado ao servidor uma vez só (turnComplete/encerramento).
     turnText: { user: "", model: "" },
+    // Rodada atual: fala do usuário (não é zerada pelo flushTurn) e marca de texto de fora.
+    rodada: novaRodada(),
     nextId: 1,
     raf: 0,
   });
@@ -247,6 +251,8 @@ export function useOliSession(opts: {
     }
     s.reconnects++;
     s.connecting = true;
+    // Rodada zerada de forma explícita; a marca de texto de fora fica ligada até a próxima fala depois de um turnComplete.
+    s.rodada = rodadaReconexao();
     setStatus("Reconectando…");
     try {
       // O mesmo token vale para retomar dentro do prazo; se recusar, pede outro.
@@ -281,16 +287,21 @@ export function useOliSession(opts: {
           s.awaiting = false;
         }
         // A resposta começou: a transcrição do usuário está completa.
-        if (sc.outputTranscription?.text || sc.modelTurn?.parts?.length) flushTurn("user");
+        if (sc.outputTranscription?.text || sc.modelTurn?.parts?.length) {
+          flushTurn("user");
+          s.rodada = rodadaFecha(s.rodada);
+        }
         for (const p of sc.modelTurn?.parts ?? []) if (p.inlineData?.data) enqueue(p.inlineData.data);
         if (sc.inputTranscription?.text) {
           appendLog("user", sc.inputTranscription.text);
+          s.rodada = rodadaFala(s.rodada, sc.inputTranscription.text);
           s.awaiting = true;
           s.awaitingAt = performance.now();
         }
         if (sc.outputTranscription?.text) appendLog("model", sc.outputTranscription.text);
         if (sc.turnComplete) {
           s.openBubble = { user: null, model: null };
+          s.rodada = rodadaFimTurno(s.rodada);
           flushTurn();
           s.awaiting = false;
         }
@@ -299,11 +310,14 @@ export function useOliSession(opts: {
         flushTurn("user");
         s.awaiting = true;
         s.awaitingAt = performance.now();
+        // Marca a rodada antes de rodar o lote (as ferramentas rodam em paralelo).
+        s.rodada = rodadaFerramentas(s.rodada, m.toolCall.functionCalls.map((fc) => fc.name));
+        const rodada = { fala: s.rodada.fala, externo: s.rodada.externo };
         const functionResponses = await Promise.all(
           m.toolCall.functionCalls.map(async (fc) => {
             let output: Record<string, unknown>;
             try {
-              output = await optsRef.current.onTool({ id: fc.id, name: fc.name, args: fc.args });
+              output = await optsRef.current.onTool({ id: fc.id, name: fc.name, args: fc.args, rodada });
             } catch {
               output = { erro: "Falha ao executar a ferramenta." };
             }
@@ -398,6 +412,7 @@ export function useOliSession(opts: {
       s.openBubble = { user: null, model: null };
       flushTurn(); // fala anterior ainda aberta vai antes da digitada
       s.turnText.user = text;
+      s.rodada = rodadaTexto(text);
       pushLog("user", text);
       s.awaiting = true;
       s.awaitingAt = performance.now();
@@ -418,6 +433,8 @@ export function useOliSession(opts: {
   const sendContext = useCallback((text: string) => {
     const s = r.current;
     if (!s.session) return false;
+    // Contexto de arquivo do "+": texto de fora nesta rodada.
+    s.rodada = rodadaArquivo(s.rodada);
     s.awaiting = true;
     s.awaitingAt = performance.now();
     s.lastVoice = 0;
@@ -467,6 +484,7 @@ export function useOliSession(opts: {
   const clearLog = useCallback(() => {
     const s = r.current;
     s.turnText = { user: "", model: "" };
+    s.rodada = novaRodada();
     s.openBubble = { user: null, model: null };
     setLog([]);
   }, []);

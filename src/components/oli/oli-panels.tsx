@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { Brain, CalendarClock, MessagesSquare, CalendarDays, Check, Church, FileText, HeartPulse, Home, ListOrdered, Paperclip, PawPrint, PieChart, Search, Trash2, Wallet, X } from "lucide-react";
+import { Brain, CalendarClock, MessagesSquare, CalendarDays, Check, Church, FileText, HeartPulse, Home, ListOrdered, Paperclip, PawPrint, PieChart, Search, Sparkles, Trash2, Wallet, X } from "lucide-react";
 import { brDate, shortDayLabel } from "@/lib/agenda/dates";
 import { safeHex } from "@/lib/agenda/view";
 import type { ReactNode } from "react";
@@ -10,6 +10,7 @@ import { shortDate } from "@/lib/financas/period";
 import type { OliPanel } from "@/lib/oli/panels";
 import type { ConsultaAba, ConsultaData } from "@/lib/oli/consultas";
 import type { LerArquivoData } from "@/lib/oli/ler-arquivo";
+import type { AnaliseData } from "@/lib/oli/analisar";
 import type { OliFileDest } from "@/lib/oli/arquivo";
 import { ArquivoPanel } from "./oli-arquivo";
 import { ALTERAR_DONE, type AlteracaoPreview, type AlterarAcao } from "@/lib/oli/alterar";
@@ -481,6 +482,8 @@ export function PanelView({
       return <ConsultaPanel data={p.data} />;
     case "arquivo_lido":
       return <ArquivoLidoPanel data={p.data} />;
+    case "analise":
+      return <AnalisePanel data={p.data} />;
     case "aviso":
       return (
         <Card className="p-4">
@@ -635,10 +638,42 @@ function ConsultaPanel({ data: d }: { data: ConsultaData }) {
               )}
             </section>
           ))}
+          {d.comparacao && <ComparacaoView data={d.comparacao} />}
           {d.aviso && <p className="text-[12px] text-muted">{d.aviso}</p>}
         </div>
       )}
     </Card>
+  );
+}
+
+/** Análise do `analisar`: texto da IA como texto do React (nunca HTML), com a pergunta e o aviso de origem. */
+function AnalisePanel({ data: d }: { data: AnaliseData }) {
+  return (
+    <Card role="group" aria-label="Análise do Oli">
+      <Head icon={<Sparkles size={16} aria-hidden />} title="Análise" aside={d.periodo ? <span className="text-sm text-muted">{d.periodo}</span> : undefined} />
+      <p className="text-[13px] text-muted">{d.pergunta}</p>
+      <p className="mt-2 whitespace-pre-line text-[15px] leading-relaxed" data-testid="analise-texto">
+        {d.analise}
+      </p>
+      <p className="mt-3 text-[12px] text-muted">Análise feita por IA a partir dos dados do app. Confira os valores nas abas.</p>
+    </Card>
+  );
+}
+
+/** Comparação com os meses anteriores (Finanças/periodo). */
+function ComparacaoView({ data: c }: { data: NonNullable<ConsultaData["comparacao"]> }) {
+  return (
+    <section aria-label="Meses anteriores">
+      <h4 className="text-[13px] font-medium text-muted">{c.categoria ? `${c.categoria} nos meses anteriores` : "Saídas nos meses anteriores"}</h4>
+      <ul className="divide-y divide-line">
+        {c.meses.map((m) => (
+          <li key={m.mes} className="flex items-center justify-between gap-3 py-2 text-[15px]">
+            <span className="min-w-0 truncate">{m.rotulo}</span>
+            <span className="shrink-0 tabular-nums">{m.total === null ? "—" : formatBRL(m.total)}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

@@ -3,6 +3,7 @@
 // Leitura com lista (schema com `documentos`): um objeto solto vira lista de um item (ver abaixo).
 // Resumo do Carisma (instrução com "seminário teológico", texto simples): exige os dados da aula e devolve um resumo
 // simulado que cita quantos arquivos vieram inline e traz uma tag HTML (o app precisa removê-la). "MOCKFAIL" → 500.
+// Reserva do analisar do Oli (schema com `analise`): devolve uma análise simulada se os dados do app vieram.
 // Nunca chama a API real.
 import { createServer } from "node:http";
 
@@ -54,6 +55,12 @@ createServer((req, res) => {
       return send(res, 400, { error: { code: 400, message: "pedido incompleto" } });
     }
     const content = Buffer.from(file.data, "base64").toString("latin1");
+    // Reserva do analisar do Oli (schema com `analise`): exige os dados do app no texto e devolve uma análise simulada.
+    if (cfg.responseSchema?.properties?.analise) {
+      if (!content.includes("<dados_do_app>")) return send(res, 400, { error: { code: 400, message: "sem dados do app" } });
+      const text = JSON.stringify({ analise: "Análise simulada pelo Gemini (reserva) a partir dos dados do app." });
+      return send(res, 200, { candidates: [{ content: { role: "model", parts: [{ text }] }, finishReason: "STOP" }] });
+    }
     if (content.includes("MOCKFAIL")) return send(res, 500, { error: { code: 500, message: "falha simulada" } });
     // Leitura completa guiada pela pergunta (ler_arquivo / ler_ultimo_arquivo: schema com `resposta`). PDF com
     // "MOCKBOLETOS:<base64 de [{ mes, texto }]>": responde com o item cujo mês aparece na <pergunta_do_usuario>.

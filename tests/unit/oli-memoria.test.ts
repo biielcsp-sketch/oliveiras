@@ -99,7 +99,7 @@ describe("persona: memória proativa e procurar antes de dizer que não sabe", (
     for (const s of ['"prefiro"', '"não gosto"', '"sempre"', '"nunca"', '"a partir de agora"', "decisão", "fato da família", "pedido para lembrar depois"]) {
       expect(OLI_PERSONA, s).toContain(s);
     }
-    expect(OLI_PERSONA).toContain("Diga em uma frase o que vai guardar; a tela pede Confirmar");
+    expect(OLI_PERSONA).toContain("Diga em uma frase o que guardou; se a tela pedir Confirmar, avise");
   });
 
   it("consulta memória e depois a conversa antes de dizer que não sabe ou não lembra", () => {

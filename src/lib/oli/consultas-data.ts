@@ -4,10 +4,10 @@ import type { getAppContext } from "@/lib/data";
 import { getFinanceBase } from "@/lib/financas/data";
 import { getBillPayments, getBills, getBudgetRows, getGoals, getOneOffBillsForMonth, getTransactionsAround } from "@/lib/financas/planning-data";
 import { getConfirmedBillDocs } from "@/lib/financas/documentos/data";
-import { currentMonth, monthLabel, monthRange } from "@/lib/financas/period";
+import { currentMonth, monthLabel, monthRange, shiftMonth } from "@/lib/financas/period";
 import { addDays, brDate, spMidnightIso } from "@/lib/agenda/dates";
 import { mondayOf } from "@/lib/casa/menu";
-import type { Transaction } from "@/lib/financas/types";
+import type { Category, Transaction } from "@/lib/financas/types";
 import { buildContasAPagar } from "./panels";
 import {
   buildAula,
@@ -15,6 +15,7 @@ import {
   buildCasa,
   buildFinAvulsas,
   buildFinCategorias,
+  buildFinComparacao,
   buildFinContasFixas,
   buildFinMetas,
   buildFinOrcamento,
@@ -26,6 +27,7 @@ import {
   FIN_INCOMPLETO,
   consulta,
   MAX_BUSCA_POR_ABA,
+  resolveCategoria,
   visibleToMe,
   type AulaFileRow,
   type AulaRow,
@@ -87,7 +89,7 @@ export const TX_MAX_PAGES = 10;
  * Todos os lançamentos do período (de/até inclusivos), paginando até o fim: os totais saem de TODAS as linhas.
  * `completo` = false só se passar do teto de páginas.
  */
-async function allTransactions(db: Db, householdId: string, de: string, ate: string, busca?: string) {
+async function allTransactions(db: Db, householdId: string, de: string, ate: string, busca?: string, categoryId?: string) {
   const txs: Transaction[] = [];
   for (let page = 0; page < TX_MAX_PAGES; page++) {
     let q = db
@@ -101,6 +103,7 @@ async function allTransactions(db: Db, householdId: string, de: string, ate: str
       .order("id", { ascending: true })
       .range(page * TX_PAGE, page * TX_PAGE + TX_PAGE - 1);
     if (busca) q = q.ilike("description", like(busca));
+    if (categoryId) q = q.eq("category_id", categoryId);
     const { data, error } = await q;
     if (error) throw new Error("lançamentos: consulta falhou");
     const rows = (data ?? []) as unknown as Transaction[];
@@ -115,18 +118,51 @@ const monthBounds = (month: string) => {
   return { de: r.start, ate: addDays(r.end, -1) };
 };
 
+/** Meses anteriores comparados na seção periodo (e na análise). */
+export const COMPARACAO_MESES = 3;
+
+/**
+ * Período de Finanças (lançamentos de TODAS as páginas) + comparação com os 3 meses anteriores ao mês do início.
+ * `categoria` (nome) filtra no banco os lançamentos do período e da comparação; ambígua ou inexistente → erro.
+ * `maiores` (só na análise) acrescenta o grupo das maiores saídas.
+ */
+async function finPeriodo(ctx: Ctx, db: Db, a: ConsultarFinancasArgs, opts: { maiores?: number } = {}): Promise<Result> {
+  const month = a.mes ?? currentMonth();
+  const { accounts, categories } = await getFinanceBase();
+  let cat: Category | undefined;
+  if (a.categoria) {
+    const r = resolveCategoria(categories, a.categoria);
+    if (!r.ok) return r;
+    cat = r.categoria;
+  }
+  // de/até já vêm completos e limitados a 92 dias pelo parser; sem eles, o mês.
+  const { de, ate } = a.de && a.ate ? { de: a.de, ate: a.ate } : monthBounds(month);
+  const rotulo = a.de && a.ate ? `${brDate(de)} a ${brDate(ate)}` : monthLabel(month);
+  const base = de.slice(0, 7);
+  const anteriores = Array.from({ length: COMPARACAO_MESES }, (_, i) => shiftMonth(base, -(i + 1)));
+  const [atual, ...prev] = await Promise.all([
+    allTransactions(db, ctx.household.id, de, ate, a.busca, cat?.id),
+    ...anteriores.map((m) => {
+      const b = monthBounds(m);
+      return allTransactions(db, ctx.household.id, b.de, b.ate, a.busca, cat?.id);
+    }),
+  ]);
+  const d = buildFinPeriodo({ de, ate, rotulo, txs: atual.txs, accounts, categories, busca: a.busca, categoria: cat?.name, completo: atual.completo, maiores: opts.maiores });
+  const comparacao = buildFinComparacao(
+    prev.map((p, i) => ({ mes: anteriores[i], txs: p.txs, completo: p.completo })),
+    categories,
+    accounts,
+    cat,
+  );
+  return { ok: true, data: { ...d, comparacao } };
+}
+
 export async function consultarFinancas(ctx: Ctx, a: ConsultarFinancasArgs, today: string): Promise<Result> {
   const month = a.mes ?? currentMonth();
   const db = await createClient();
   switch (a.secao) {
-    case "periodo": {
-      const { accounts, categories } = await getFinanceBase();
-      // de/até já vêm completos e limitados a 92 dias pelo parser; sem eles, o mês.
-      const { de, ate } = a.de && a.ate ? { de: a.de, ate: a.ate } : monthBounds(month);
-      const rotulo = a.de && a.ate ? `${brDate(de)} a ${brDate(ate)}` : monthLabel(month);
-      const { txs, completo } = await allTransactions(db, ctx.household.id, de, ate, a.busca);
-      return { ok: true, data: buildFinPeriodo({ de, ate, rotulo, txs, accounts, categories, busca: a.busca, completo }) };
-    }
+    case "periodo":
+      return finPeriodo(ctx, db, a);
     case "metas": {
       const [{ accounts }, goals] = await Promise.all([getFinanceBase(), getGoals()]);
       return { ok: true, data: buildFinMetas(goals, accounts, today) };
@@ -159,6 +195,23 @@ export async function consultarFinancas(ctx: Ctx, a: ConsultarFinancasArgs, toda
       return { ok: true, data: all.completo ? d : { ...d, aviso: FIN_INCOMPLETO } };
     }
   }
+}
+
+/** Maiores saídas listadas na análise. */
+export const ANALISE_MAIORES = 10;
+
+/**
+ * Finanças para o `analisar`: as MESMAS consultas do consultar_financas (período com comparação e maiores saídas,
+ * orçamento do mês e metas), com a sessão do usuário (RLS) e a família de getAppContext.
+ */
+export async function financasParaAnalise(ctx: Ctx, a: { mes?: string; de?: string; ate?: string }, today: string): Promise<Result[]> {
+  const db = await createClient();
+  const month = a.de ? a.de.slice(0, 7) : (a.mes ?? currentMonth());
+  return Promise.all([
+    finPeriodo(ctx, db, { secao: "periodo", mes: a.mes, de: a.de, ate: a.ate }, { maiores: ANALISE_MAIORES }),
+    consultarFinancas(ctx, { secao: "orcamento", mes: month }, today),
+    consultarFinancas(ctx, { secao: "metas" }, today),
+  ]);
 }
 
 /* ---------- Saúde ---------- */

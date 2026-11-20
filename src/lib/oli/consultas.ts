@@ -11,7 +11,7 @@ import { cleanText } from "@/lib/financas/documentos/schema";
 import { brDate, diffDays, toSpDate, toSpTime } from "@/lib/agenda/dates";
 import { goalProgress, resolveBudgets, billStatus, type BudgetRow, type BillStatus } from "@/lib/financas/planning";
 import { monthLabel } from "@/lib/financas/period";
-import { summarize } from "@/lib/financas/summary";
+import { classifyFlow, summarize } from "@/lib/financas/summary";
 import type { Account, Category, Goal, Transaction } from "@/lib/financas/types";
 import { warrantyStatus } from "@/lib/casa/docs";
 import { DOC_KIND_LABEL, MEAL_LABEL, type Meal } from "@/lib/casa/types";
@@ -49,7 +49,13 @@ export type ConsultaData = {
   grupos: ConsultaGrupo[];
   /** Mensagem curta quando não há dado ou algo ficou de fora. */
   aviso: string | null;
+  /** Finanças/periodo: total dos 3 meses anteriores (da categoria pedida ou das saídas), para comparar. */
+  comparacao?: FinComparacao;
 };
+
+/** Mês anterior na comparação: total null quando a soma não é segura (lançamentos demais). */
+export type FinComparacaoMes = { mes: string; rotulo: string; total: number | null; categorias?: { nome: string; total: number }[] };
+export type FinComparacao = { categoria: string | null; meses: FinComparacaoMes[] };
 
 /* ---------- Utilitários ---------- */
 
@@ -144,8 +150,12 @@ export function buildFinPeriodo(input: {
   accounts: Account[];
   categories: Category[];
   busca?: string;
+  /** Nome da categoria filtrada (os lançamentos já vêm só dela). */
+  categoria?: string;
   /** false: a consulta não trouxe todos os lançamentos do período → sem totais e com aviso. */
   completo?: boolean;
+  /** Só na análise: grupo extra com as N maiores saídas do período. */
+  maiores?: number;
 }): ConsultaData {
   const { txs, accounts, categories } = input;
   const completo = input.completo !== false;
@@ -173,15 +183,73 @@ export function buildFinPeriodo(input: {
       ],
     }),
   );
+  const kindById = new Map(categories.map((c) => [c.id, c.kind]));
+  const maiores = input.maiores
+    ? txs
+        .map((t, i) => ({ t, i, flow: classifyFlow(t, kindById, cardIds) }))
+        .filter((x) => x.flow === "expense" && x.t.amount < 0)
+        .sort((a, b) => a.t.amount - b.t.amount)
+        .map(({ i }) => lanc[i])
+    : [];
+  const filtro = [input.categoria ? `${input.categoria}` : null, input.busca ? `“${input.busca}”` : null].filter(Boolean).join(", ");
   return consulta(
     "financas",
     "periodo",
-    input.busca ? `Finanças: “${input.busca}” em ${input.rotulo}` : `Finanças de ${input.rotulo}`,
+    filtro ? `Finanças: ${filtro} em ${input.rotulo}` : `Finanças de ${input.rotulo}`,
     completo
-      ? [grupo("Resumo", txs.length ? [totais] : []), grupo("Gastos por categoria", cats, 8), grupo("Lançamentos", lanc)]
+      ? [
+          grupo("Resumo", txs.length ? [totais] : []),
+          grupo("Gastos por categoria", cats, 8),
+          ...(input.maiores ? [grupo("Maiores saídas", maiores, input.maiores)] : []),
+          grupo("Lançamentos", lanc),
+        ]
       : [grupo("Lançamentos", lanc)],
     { periodo: `${input.de} a ${input.ate}`, aviso: completo ? undefined : FIN_INCOMPLETO },
   );
+}
+
+/**
+ * Categoria pedida pelo nome, sem acento/caixa: igual primeiro; senão, uma única que contenha o texto (ou que o texto
+ * contenha). Ambígua ou inexistente → erro listando as categorias da família.
+ */
+export function resolveCategoria(categories: Category[], nome: string): { ok: true; categoria: Category } | { ok: false; erro: string } {
+  const lista = categories.map((c) => c.name).join(", ");
+  if (!categories.length) return { ok: false, erro: "A família não tem categorias cadastradas." };
+  const q = normalizeName(nome);
+  const exact = categories.filter((c) => normalizeName(c.name) === q);
+  if (exact.length === 1) return { ok: true, categoria: exact[0] };
+  const partial = exact.length > 1 ? exact : categories.filter((c) => q && (normalizeName(c.name).includes(q) || q.includes(normalizeName(c.name))));
+  if (partial.length === 1) return { ok: true, categoria: partial[0] };
+  if (partial.length > 1) return { ok: false, erro: `Categoria “${nome}” é ambígua (${partial.map((c) => c.name).join(", ")}). Categorias da família: ${lista}.` };
+  return { ok: false, erro: `Categoria “${nome}” não encontrada. Categorias da família: ${lista}.` };
+}
+
+/**
+ * Comparação com meses anteriores. Com categoria: o total dela (receita soma entradas; as outras, saídas). Sem
+ * categoria: as saídas do mês e as maiores categorias. Mês incompleto (lançamentos demais) fica sem total.
+ */
+export function buildFinComparacao(
+  meses: { mes: string; txs: Transaction[]; completo: boolean }[],
+  categories: Category[],
+  accounts: Account[],
+  categoria?: Category,
+): FinComparacao {
+  const cardIds = new Set(accounts.filter((a) => a.kind === "cartao").map((a) => a.id));
+  const catById = new Map(categories.map((c) => [c.id, c.name]));
+  return {
+    categoria: categoria?.name ?? null,
+    meses: meses.map(({ mes, txs, completo }) => {
+      const base = { mes, rotulo: monthLabel(mes) };
+      if (!completo) return { ...base, total: null };
+      const s = summarize(txs, categories, cardIds);
+      if (categoria) return { ...base, total: categoria.kind === "receita" ? s.income : s.expense };
+      return {
+        ...base,
+        total: s.expense,
+        categorias: s.expenseByCategory.slice(0, 8).map((e) => ({ nome: (e.category_id && catById.get(e.category_id)) || "Sem categoria", total: e.total })),
+      };
+    }),
+  };
 }
 
 export function buildFinMetas(goals: Goal[], accounts: Account[], today: string): ConsultaData {

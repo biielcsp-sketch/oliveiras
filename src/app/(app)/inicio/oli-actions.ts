@@ -35,6 +35,7 @@ import {
   parseBuscarNoAppArgs,
   parseLerArquivoArgs,
   parseBuscarConversaArgs,
+  parseAnalisarArgs,
   matchByName,
   type OliToolName,
 } from "@/lib/oli/tool-args";
@@ -74,10 +75,15 @@ import { ITEM_MUDOU, parseAlterarArgs, previewFingerprint, type AlteracaoPreview
 import { executarAlteracao, prepararAlteracao } from "@/lib/oli/alterar-server";
 import type { ConversaData } from "@/lib/oli/conversa";
 import { buscarConversa } from "@/lib/oli/conversa-server";
+import type { AnaliseData } from "@/lib/oli/analisar";
+import { analisar } from "@/lib/oli/analisar-server";
+import { podeSalvarDireto, PRECISA_CONFIRMAR } from "@/lib/oli/memoria-fala";
+import { temInvisivel } from "@/lib/oli/tool-args";
 
 /**
  * Ferramentas do Oli. Rodam com a sessão do usuário (RLS), nunca com chave de serviço.
  * Escritas sensíveis (lançamento, apagar memória) só preparam aqui; gravam nas ações de confirmação.
+ * Exceção: salvarMemoriaOli grava direto quando o conteúdo bate com a fala do usuário no turno (senão, Confirmar).
  */
 export type OliToolResult =
   | { ok: true; tool: "resumo_do_mes"; data: ResumoData }
@@ -96,6 +102,7 @@ export type OliToolResult =
   | { ok: true; tool: "criar_consulta"; data: ConsultaPreview }
   | { ok: true; tool: "consultar_financas" | "consultar_saude" | "consultar_exames_lab" | "consultar_casa" | "consultar_pet" | "consultar_igreja" | "buscar_no_app"; data: ConsultaData }
   | { ok: true; tool: "ler_arquivo" | "ler_ultimo_arquivo"; data: LerArquivoData }
+  | { ok: true; tool: "analisar"; data: AnaliseData }
   | { ok: true; tool: "alterar_casa" | "alterar_pet" | "alterar_igreja" | "alterar_saude" | "alterar_agenda" | "alterar_financas"; data: AlteracaoPreview }
   | { ok: false; erro: string };
 
@@ -173,7 +180,8 @@ async function dispatch(name: OliToolName, args: unknown): Promise<OliToolResult
       return { ok: true, tool: name, data: r.preview };
     }
     case "salvar_memoria": {
-      // Só prepara: grava em confirmOliMemoria, depois do toque do usuário.
+      // Por aqui só prepara (sem a fala do usuário não há como saber se o conteúdo é dele): grava em confirmOliMemoria.
+      // A tela usa salvarMemoriaOli, que grava direto quando o conteúdo bate com a fala do turno.
       const a = parseSalvarMemoriaArgs(args);
       if (!a.ok) return err(a.erro);
       const limit = memoryLimitError(await countMemories());
@@ -317,6 +325,13 @@ async function dispatch(name: OliToolName, args: unknown): Promise<OliToolResult
       const r = await lerArquivo(await getAppContext(), a.value);
       return r.ok ? { ok: true, tool: name, data: r.data } : err(r.erro);
     }
+    case "analisar": {
+      // Junta os dados das abas (sessão/RLS, mesmas funções das consultas) e pede a análise ao Groq (Gemini de reserva).
+      const a = parseAnalisarArgs(args, todaySP());
+      if (!a.ok) return err(a.erro);
+      const r = await analisar(await getAppContext(), a.value, todaySP());
+      return r.ok ? { ok: true, tool: name, data: r.data } : err(r.erro);
+    }
     case "ler_ultimo_arquivo":
       // O arquivo do "+" só existe na memória da tela: ela intercepta esta ferramenta e chama lerUltimoArquivoOli.
       // Chegar aqui é porque não há arquivo para mandar.
@@ -370,6 +385,21 @@ async function countMemories() {
   return count ?? 0;
 }
 
+/** Grava a memória já validada (sessão/RLS, família e membro da sessão). */
+async function insertMemoria(a: MemoriaPreview): Promise<{ ok: true; data: MemoriaData } | { ok: false; erro: string }> {
+  const limit = memoryLimitError(await countMemories());
+  if (limit) return { ok: false, erro: limit };
+  const { household, me } = await getAppContext();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("oli_memories")
+    .insert({ household_id: household.id, member_id: me?.id ?? null, category: a.categoria, content: a.conteudo, source: "oli" })
+    .select("id")
+    .single();
+  if (error || !data) return { ok: false, erro: "Não consegui guardar a memória." };
+  return { ok: true, data: { id: data.id, conteudo: a.conteudo, categoria: a.categoria } };
+}
+
 async function findMemory(id: string): Promise<MemoriaData | null> {
   const { household } = await getAppContext();
   const supabase = await createClient();
@@ -419,24 +449,46 @@ export async function confirmOliLancamento(preview: LancamentoPreview): Promise<
   return { ok: true };
 }
 
+
+export type SalvarMemoriaResult =
+  | { ok: true; status: "salva"; data: MemoriaData }
+  | { ok: true; status: "confirmar"; data: MemoriaPreview; motivo: string }
+  | { ok: false; erro: string };
+
+/**
+ * salvar_memoria pela tela. Grava direto só se `fala` (a fala do usuário no turno atual, mandada pela tela; null quando a
+ * rodada teve texto de fora) cobrir ≥ 50% das palavras relevantes do conteúdo. Senão devolve "confirmar" e a tela abre
+ * o painel de Confirmar (confirmOliMemoria). Mesma validação, limpeza e teto de memórias.
+ */
+export async function salvarMemoriaOli(args: unknown, fala: unknown): Promise<SalvarMemoriaResult> {
+  try {
+    const { household } = await getAppContext();
+    if (!oliAllowedFor(household.id)) return notAllowed();
+    const a = parseSalvarMemoriaArgs(args);
+    if (!a.ok) return { ok: false, erro: a.erro };
+    // Invisível no conteúdo original (ex.: "n\u200bão") → sempre Confirmar, mesmo que o texto limpo bata com a fala.
+    const original = args && typeof args === "object" ? (args as { conteudo?: unknown }).conteudo : undefined;
+    if (temInvisivel(original) || !podeSalvarDireto(a.value.conteudo, fala)) {
+      const limit = memoryLimitError(await countMemories());
+      if (limit) return { ok: false, erro: limit };
+      return { ok: true, status: "confirmar", data: a.value, motivo: PRECISA_CONFIRMAR };
+    }
+    const r = await insertMemoria(a.value);
+    return r.ok ? { ok: true, status: "salva", data: r.data } : r;
+  } catch (e) {
+    console.error("Oli: salvar memória falhou:", e instanceof Error ? e.message : "erro");
+    return { ok: false, erro: "Não consegui guardar a memória." };
+  }
+}
+
 /** Guarda a memória depois do toque em Confirmar. Revalida tamanho, categoria e o teto da família. */
 export async function confirmOliMemoria(preview: MemoriaPreview): Promise<ConfirmResult> {
-  const { household, me } = await getAppContext();
+  const { household } = await getAppContext();
   if (!oliAllowedFor(household.id)) return notAllowed();
   const a = parseSalvarMemoriaArgs(preview);
   if (!a.ok) return { ok: false, erro: a.erro };
-  const limit = memoryLimitError(await countMemories());
-  if (limit) return { ok: false, erro: limit };
-  const supabase = await createClient();
-  const { error } = await supabase.from("oli_memories").insert({
-    household_id: household.id,
-    member_id: me?.id ?? null,
-    category: a.value.categoria,
-    content: a.value.conteudo,
-    source: "oli",
-  });
-  if (error) return { ok: false, erro: "Não consegui guardar a memória." };
-  return { ok: true };
+  const r = await insertMemoria(a.value);
+  return r.ok ? { ok: true } : { ok: false, erro: r.erro };
 }
 
 /** Apaga a memória depois do toque em Confirmar. */
