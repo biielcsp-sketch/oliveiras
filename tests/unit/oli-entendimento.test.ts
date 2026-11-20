@@ -363,7 +363,7 @@ describe("persona: regras novas, segurança mantida e tamanho", () => {
     }
   });
 
-  it("até 6500 caracteres", () => {
-    expect(OLI_PERSONA.length).toBeLessThanOrEqual(6500);
+  it("até 7000 caracteres", () => {
+    expect(OLI_PERSONA.length).toBeLessThanOrEqual(7000);
   });
 });

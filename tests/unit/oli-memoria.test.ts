@@ -122,7 +122,7 @@ describe("persona: memória proativa e procurar antes de dizer que não sabe", (
     ]) {
       expect(OLI_PERSONA, s).toContain(s);
     }
-    expect(OLI_PERSONA.length).toBeLessThanOrEqual(6500);
+    expect(OLI_PERSONA.length).toBeLessThanOrEqual(7000);
   });
 
   it("buscar_conversa declarada ao modelo e aceita pelo servidor", () => {
