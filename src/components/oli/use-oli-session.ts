@@ -12,7 +12,7 @@ import {
   rms,
 } from "@/lib/oli/audio-utils";
 import { saveOliMessages } from "@/app/(app)/inicio/oli-history-actions";
-import { novaRodada, rodadaArquivo, rodadaFala, rodadaFecha, rodadaFerramentas } from "@/lib/oli/memoria-fala";
+import { novaRodada, rodadaArquivo, rodadaFala, rodadaFecha, rodadaFerramentas, rodadaFimTurno, rodadaReconexao, rodadaTexto } from "@/lib/oli/memoria-fala";
 import type { OliSphereState as OliState } from "./oli-sphere";
 
 /**
@@ -251,6 +251,8 @@ export function useOliSession(opts: {
     }
     s.reconnects++;
     s.connecting = true;
+    // Rodada zerada de forma explícita; a marca de texto de fora fica ligada até a próxima fala depois de um turnComplete.
+    s.rodada = rodadaReconexao();
     setStatus("Reconectando…");
     try {
       // O mesmo token vale para retomar dentro do prazo; se recusar, pede outro.
@@ -299,6 +301,7 @@ export function useOliSession(opts: {
         if (sc.outputTranscription?.text) appendLog("model", sc.outputTranscription.text);
         if (sc.turnComplete) {
           s.openBubble = { user: null, model: null };
+          s.rodada = rodadaFimTurno(s.rodada);
           flushTurn();
           s.awaiting = false;
         }
@@ -409,7 +412,7 @@ export function useOliSession(opts: {
       s.openBubble = { user: null, model: null };
       flushTurn(); // fala anterior ainda aberta vai antes da digitada
       s.turnText.user = text;
-      s.rodada = rodadaFala(rodadaFecha(s.rodada), text);
+      s.rodada = rodadaTexto(text);
       pushLog("user", text);
       s.awaiting = true;
       s.awaitingAt = performance.now();
