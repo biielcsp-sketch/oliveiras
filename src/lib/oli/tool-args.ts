@@ -26,6 +26,7 @@ export const OLI_TOOL_NAMES = [
   "ler_documento",
   "criar_consulta",
   "consultar_financas",
+  "analisar",
   "consultar_saude",
   "consultar_exames_lab",
   "consultar_casa",
@@ -395,9 +396,12 @@ function optMes(v: unknown): Result<string | undefined> {
   return ok(r.value);
 }
 
-export type ConsultarFinancasArgs = { secao: FinSecao; mes?: string; de?: string; ate?: string; busca?: string };
+export type ConsultarFinancasArgs = { secao: FinSecao; mes?: string; de?: string; ate?: string; busca?: string; categoria?: string };
 
-/** consultar_financas: seção (padrão periodo), mês AAAA-MM (padrão o atual) ou de/até (só em periodo), busca na descrição. */
+/**
+ * consultar_financas: seção (padrão periodo), mês AAAA-MM (padrão o atual) ou de/até (só em periodo), busca na descrição
+ * e categoria (nome; só em periodo, casada sem acento/caixa com as categorias da família no servidor).
+ */
 export function parseConsultarFinancasArgs(args: unknown, today: string = todaySP()): Result<ConsultarFinancasArgs> {
   const a = obj(args);
   const secao = parseSecao(a.secao, FIN_SECOES, "periodo");
@@ -408,7 +412,42 @@ export function parseConsultarFinancasArgs(args: unknown, today: string = todayS
   if (!per.ok) return per;
   const busca = optText(a.busca, LIMITS.search, "Busca");
   if (!busca.ok) return busca;
-  return ok({ secao: secao.value, mes: mes.value, ...per.value, busca: busca.value });
+  const categoria = optText(a.categoria, LIMITS.name, "Categoria");
+  if (!categoria.ok) return categoria;
+  return ok({ secao: secao.value, mes: mes.value, ...per.value, busca: busca.value, ...(categoria.value ? { categoria: categoria.value } : {}) });
+}
+
+/* ---------- Análise (Groq, com fallback no Gemini) ---------- */
+
+export const ANALISAR_ABAS = ["financas", "saude", "casa", "pet", "igreja", "agenda"] as const;
+export type AnalisarAba = (typeof ANALISAR_ABAS)[number];
+export type AnalisarArgs = { pergunta: string; abas: AnalisarAba[]; mes?: string; de?: string; ate?: string };
+
+/**
+ * analisar: pergunta obrigatória (limpa como no ler_arquivo, até 500), abas opcionais (padrão: todas; sem acento/caixa,
+ * repetidas saem) e mes/de/ate com as mesmas regras de período das consultas.
+ */
+export function parseAnalisarArgs(args: unknown, today: string = todaySP()): Result<AnalisarArgs> {
+  const a = obj(args);
+  const pergunta = cleanPergunta(a.pergunta);
+  if (!pergunta) return fail("Pergunta é obrigatória.");
+  let abas: AnalisarAba[] = [...ANALISAR_ABAS];
+  if (a.abas !== undefined && a.abas !== null) {
+    const raw = typeof a.abas === "string" ? [a.abas] : a.abas;
+    if (!Array.isArray(raw) || raw.length > ANALISAR_ABAS.length * 2) return fail(`Abas inválidas. Use: ${ANALISAR_ABAS.join(", ")}.`);
+    const list: AnalisarAba[] = [];
+    for (const v of raw) {
+      const n = typeof v === "string" && v.length <= 20 ? normalizeName(v) : "";
+      if (!(ANALISAR_ABAS as readonly string[]).includes(n)) return fail(`Aba inválida. Use: ${ANALISAR_ABAS.join(", ")}.`);
+      if (!list.includes(n as AnalisarAba)) list.push(n as AnalisarAba);
+    }
+    if (list.length) abas = list;
+  }
+  const mes = optMes(a.mes);
+  if (!mes.ok) return mes;
+  const per = parsePeriodo(a, today);
+  if (!per.ok) return per;
+  return ok({ pergunta, abas, ...(mes.value ? { mes: mes.value } : {}), ...per.value });
 }
 
 export type ConsultarSaudeArgs = { secao: SaudeSecao; pessoa?: string; busca?: string; de?: string; ate?: string };

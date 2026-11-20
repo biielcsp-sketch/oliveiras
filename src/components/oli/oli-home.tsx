@@ -7,7 +7,7 @@ import { ChevronDown, Mic, SendHorizontal, Square } from "lucide-react";
 import { Button, Input } from "@/components/ui";
 import { clearPanels, pushPanel, type OliPanel } from "@/lib/oli/panels";
 import { clearOliHistory } from "@/app/(app)/inicio/oli-history-actions";
-import { confirmOliAlteracao, confirmOliConsulta, confirmOliEsquecer, confirmOliEvento, confirmOliLancamento, confirmOliMemoria, runOliTool } from "@/app/(app)/inicio/oli-actions";
+import { confirmOliAlteracao, confirmOliConsulta, confirmOliEsquecer, confirmOliEvento, confirmOliLancamento, runOliTool } from "@/app/(app)/inicio/oli-actions";
 import { confirmOliArquivoFinancas, lerUltimoArquivoOli, readOliFile } from "@/app/(app)/inicio/oli-arquivo-actions";
 import { saveCard, saveExam, saveMedication, saveProcedure, saveVaccine } from "@/app/(app)/saude/actions";
 import { saveCasaDocument } from "@/app/(app)/casa/documentos-actions";
@@ -19,6 +19,7 @@ import { OliAddFile } from "./oli-arquivo";
 import { useOliSession, type LogEntry, type ToolCall } from "./use-oli-session";
 import { ALTERAR_STATUS } from "@/lib/oli/alterar";
 import { SEM_ULTIMO_ARQUIVO } from "@/lib/oli/ler-arquivo";
+import { analiseBloco } from "@/lib/oli/analisar";
 
 const LABELS: Record<OliState, string> = { idle: "Repouso", listen: "Ouvindo", think: "Pensando", speak: "Falando" };
 
@@ -133,6 +134,14 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
         case "buscar_no_app":
           add({ id, kind: "consulta", data: res.data });
           return res.data;
+        case "analisar":
+          add({ id, kind: "analise", data: res.data });
+          // Ao modelo, a análise vai só dentro de <analise> (texto gerado dos dados do app; dado, nunca instrução).
+          return { analise: analiseBloco(res.data.analise) };
+        case "salvar_memoria":
+          // Já gravada no servidor (sem Confirmar); o Oli avisa em uma frase o que guardou.
+          add({ id, kind: "memoria", data: res.data, titulo: "Memória guardada" });
+          return { status: "salva", conteudo: res.data.conteudo, categoria: res.data.categoria };
         case "ler_arquivo":
         case "ler_ultimo_arquivo":
           add({ id, kind: "arquivo_lido", data: res.data });
@@ -160,16 +169,13 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
           });
         case "criar_lancamento":
         case "esquecer_memoria":
-        case "salvar_memoria":
           // Escrita: só com o toque do usuário. A resposta ao modelo espera a decisão.
           return new Promise((resolve) => {
             pending.current.set(id, { resolve });
             add(
               res.tool === "criar_lancamento"
                 ? { id, kind: "confirmar_lancamento", data: res.data, status: "pendente" }
-                : res.tool === "salvar_memoria"
-                  ? { id, kind: "confirmar_memoria", data: res.data, status: "pendente" }
-                  : { id, kind: "confirmar_esquecer", data: res.data, status: "pendente" },
+                : { id, kind: "confirmar_esquecer", data: res.data, status: "pendente" },
             );
           });
       }
@@ -217,14 +223,12 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
       const r =
         p.kind === "confirmar_lancamento"
           ? await confirmOliLancamento(p.data)
-          : p.kind === "confirmar_memoria"
-            ? await confirmOliMemoria(p.data)
-            : p.kind === "confirmar_evento"
-              ? await confirmOliEvento(p.data)
-              : await confirmOliEsquecer(p.data.id);
+          : p.kind === "confirmar_evento"
+            ? await confirmOliEvento(p.data)
+            : await confirmOliEsquecer(p.data.id);
       if (r.ok) {
         patch(id, { status: "criado" });
-        settle(id, { status: p.kind === "confirmar_esquecer" ? "apagada" : p.kind === "confirmar_memoria" ? "salva" : "criado" });
+        settle(id, { status: p.kind === "confirmar_esquecer" ? "apagada" : "criado" });
       } else {
         patch(id, { status: "erro", erro: r.erro });
         settle(id, { status: "erro", erro: r.erro });

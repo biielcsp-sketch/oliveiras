@@ -45,6 +45,12 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
     },
     {
+      // Groq simulado para o analisar do Oli (só nos testes; nunca chama a API real)
+      command: "node tests/e2e/groq-mock.mjs",
+      port: 4050,
+      reuseExistingServer: !process.env.CI,
+    },
+    {
       // Google Drive simulado (Carisma; só nos testes): confere os tokens no Google simulado
       command: "node tests/e2e/drive-mock.mjs",
       port: 4040,
@@ -69,6 +75,9 @@ export default defineConfig({
         // Documentos: chave própria + Gemini simulado. O token do Oli lê só GEMINI_API_KEY, então segue em 503.
         GEMINI_DOCS_API_KEY: "test-key",
         GEMINI_API_BASE: "http://127.0.0.1:4030",
+        // analisar do Oli: Groq simulado (GROQ_API_BASE só vale fora da produção); a reserva é o Gemini simulado acima.
+        GROQ_API_KEY: "test-groq-key",
+        GROQ_API_BASE: "http://127.0.0.1:4050",
         DOCS_HOUSEHOLD_ID: E2E_DOCS_HOUSEHOLD_ID,
         // Exames de laboratório: leitura com IA (Gemini simulado acima) só para esta família.
         LABS_HOUSEHOLD_ID: E2E_LABS_HOUSEHOLD_ID,

@@ -35,6 +35,7 @@ import {
   parseBuscarNoAppArgs,
   parseLerArquivoArgs,
   parseBuscarConversaArgs,
+  parseAnalisarArgs,
   matchByName,
   type OliToolName,
 } from "@/lib/oli/tool-args";
@@ -56,7 +57,6 @@ import {
   type LancamentosData,
   memoryLimitError,
   type MemoriaData,
-  type MemoriaPreview,
   type MemoriasData,
   type ResumoData,
   type SaldosData,
@@ -74,10 +74,13 @@ import { ITEM_MUDOU, parseAlterarArgs, previewFingerprint, type AlteracaoPreview
 import { executarAlteracao, prepararAlteracao } from "@/lib/oli/alterar-server";
 import type { ConversaData } from "@/lib/oli/conversa";
 import { buscarConversa } from "@/lib/oli/conversa-server";
+import type { AnaliseData } from "@/lib/oli/analisar";
+import { analisar } from "@/lib/oli/analisar-server";
 
 /**
  * Ferramentas do Oli. Rodam com a sessão do usuário (RLS), nunca com chave de serviço.
  * Escritas sensíveis (lançamento, apagar memória) só preparam aqui; gravam nas ações de confirmação.
+ * Exceção: salvar_memoria grava direto (só o que o usuário disse; mesma validação e teto de memórias).
  */
 export type OliToolResult =
   | { ok: true; tool: "resumo_do_mes"; data: ResumoData }
@@ -85,7 +88,7 @@ export type OliToolResult =
   | { ok: true; tool: "contas_a_pagar"; data: ContasData }
   | { ok: true; tool: "ultimos_lancamentos"; data: LancamentosData }
   | { ok: true; tool: "criar_lancamento"; data: LancamentoPreview }
-  | { ok: true; tool: "salvar_memoria"; data: MemoriaPreview }
+  | { ok: true; tool: "salvar_memoria"; data: MemoriaData }
   | { ok: true; tool: "consultar_memoria"; data: MemoriasData }
   | { ok: true; tool: "esquecer_memoria"; data: MemoriaData }
   | { ok: true; tool: "buscar_conversa"; data: ConversaData }
@@ -96,6 +99,7 @@ export type OliToolResult =
   | { ok: true; tool: "criar_consulta"; data: ConsultaPreview }
   | { ok: true; tool: "consultar_financas" | "consultar_saude" | "consultar_exames_lab" | "consultar_casa" | "consultar_pet" | "consultar_igreja" | "buscar_no_app"; data: ConsultaData }
   | { ok: true; tool: "ler_arquivo" | "ler_ultimo_arquivo"; data: LerArquivoData }
+  | { ok: true; tool: "analisar"; data: AnaliseData }
   | { ok: true; tool: "alterar_casa" | "alterar_pet" | "alterar_igreja" | "alterar_saude" | "alterar_agenda" | "alterar_financas"; data: AlteracaoPreview }
   | { ok: false; erro: string };
 
@@ -173,12 +177,10 @@ async function dispatch(name: OliToolName, args: unknown): Promise<OliToolResult
       return { ok: true, tool: name, data: r.preview };
     }
     case "salvar_memoria": {
-      // Só prepara: grava em confirmOliMemoria, depois do toque do usuário.
-      const a = parseSalvarMemoriaArgs(args);
-      if (!a.ok) return err(a.erro);
-      const limit = memoryLimitError(await countMemories());
-      if (limit) return err(limit);
-      return { ok: true, tool: name, data: a.value };
+      // Grava direto (desde 20/11/2026, sem painel de Confirmar): mesma validação, limpeza e teto de antes, com a
+      // sessão do usuário (RLS). A persona só manda salvar o que o próprio usuário disse.
+      const r = await salvarMemoria(args);
+      return r.ok ? { ok: true, tool: name, data: r.data } : err(r.erro);
     }
     case "consultar_memoria": {
       const a = parseConsultarMemoriaArgs(args);
@@ -317,6 +319,13 @@ async function dispatch(name: OliToolName, args: unknown): Promise<OliToolResult
       const r = await lerArquivo(await getAppContext(), a.value);
       return r.ok ? { ok: true, tool: name, data: r.data } : err(r.erro);
     }
+    case "analisar": {
+      // Junta os dados das abas (sessão/RLS, mesmas funções das consultas) e pede a análise ao Groq (Gemini de reserva).
+      const a = parseAnalisarArgs(args, todaySP());
+      if (!a.ok) return err(a.erro);
+      const r = await analisar(await getAppContext(), a.value, todaySP());
+      return r.ok ? { ok: true, tool: name, data: r.data } : err(r.erro);
+    }
     case "ler_ultimo_arquivo":
       // O arquivo do "+" só existe na memória da tela: ela intercepta esta ferramenta e chama lerUltimoArquivoOli.
       // Chegar aqui é porque não há arquivo para mandar.
@@ -370,6 +379,23 @@ async function countMemories() {
   return count ?? 0;
 }
 
+/** Guarda a memória (salvar_memoria): valida tamanho e categoria, limpa o texto e respeita o teto da família. */
+async function salvarMemoria(args: unknown): Promise<{ ok: true; data: MemoriaData } | { ok: false; erro: string }> {
+  const a = parseSalvarMemoriaArgs(args);
+  if (!a.ok) return { ok: false, erro: a.erro };
+  const limit = memoryLimitError(await countMemories());
+  if (limit) return { ok: false, erro: limit };
+  const { household, me } = await getAppContext();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("oli_memories")
+    .insert({ household_id: household.id, member_id: me?.id ?? null, category: a.value.categoria, content: a.value.conteudo, source: "oli" })
+    .select("id")
+    .single();
+  if (error || !data) return { ok: false, erro: "Não consegui guardar a memória." };
+  return { ok: true, data: { id: data.id, conteudo: a.value.conteudo, categoria: a.value.categoria } };
+}
+
 async function findMemory(id: string): Promise<MemoriaData | null> {
   const { household } = await getAppContext();
   const supabase = await createClient();
@@ -419,25 +445,6 @@ export async function confirmOliLancamento(preview: LancamentoPreview): Promise<
   return { ok: true };
 }
 
-/** Guarda a memória depois do toque em Confirmar. Revalida tamanho, categoria e o teto da família. */
-export async function confirmOliMemoria(preview: MemoriaPreview): Promise<ConfirmResult> {
-  const { household, me } = await getAppContext();
-  if (!oliAllowedFor(household.id)) return notAllowed();
-  const a = parseSalvarMemoriaArgs(preview);
-  if (!a.ok) return { ok: false, erro: a.erro };
-  const limit = memoryLimitError(await countMemories());
-  if (limit) return { ok: false, erro: limit };
-  const supabase = await createClient();
-  const { error } = await supabase.from("oli_memories").insert({
-    household_id: household.id,
-    member_id: me?.id ?? null,
-    category: a.value.categoria,
-    content: a.value.conteudo,
-    source: "oli",
-  });
-  if (error) return { ok: false, erro: "Não consegui guardar a memória." };
-  return { ok: true };
-}
 
 /** Apaga a memória depois do toque em Confirmar. */
 export async function confirmOliEsquecer(id: string): Promise<ConfirmResult> {

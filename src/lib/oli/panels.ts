@@ -19,6 +19,7 @@ import type { ConsultaData } from "./consultas";
 import type { LerArquivoData } from "./ler-arquivo";
 import type { AlteracaoPreview } from "./alterar";
 import type { ConversaData } from "./conversa";
+import type { AnaliseData } from "./analisar";
 
 const cents = (v: number) => Math.round(v * 100);
 const reais = (c: number) => c / 100;
@@ -73,7 +74,6 @@ export type LancamentoPreview = {
 
 export type MemoriaData = { id: string; conteudo: string; categoria: MemoryCategory | string };
 export type MemoriasData = { busca: string; itens: MemoriaData[] };
-export type MemoriaPreview = { conteudo: string; categoria: MemoryCategory };
 
 export type EventoItem = {
   /** Id do evento (para alterar_agenda). */
@@ -147,7 +147,6 @@ export type OliPanel =
   | { id: string; kind: "conversa"; data: ConversaData }
   | { id: string; kind: "confirmar_lancamento"; data: LancamentoPreview; status: ConfirmStatus; erro?: string }
   | { id: string; kind: "confirmar_esquecer"; data: MemoriaData; status: ConfirmStatus; erro?: string }
-  | { id: string; kind: "confirmar_memoria"; data: MemoriaPreview; status: ConfirmStatus; erro?: string }
   | { id: string; kind: "eventos"; data: EventosData }
   | { id: string; kind: "confirmar_evento"; data: EventoPreview; status: ConfirmStatus; erro?: string }
   | { id: string; kind: "confirmar_consulta"; data: ConsultaPreview; status: ConfirmStatus; erro?: string }
@@ -156,6 +155,7 @@ export type OliPanel =
   | { id: string; kind: "confirmar_arquivo"; data: ArquivoPreview; status: ConfirmStatus; erro?: string }
   | { id: string; kind: "consulta"; data: ConsultaData }
   | { id: string; kind: "arquivo_lido"; data: LerArquivoData }
+  | { id: string; kind: "analise"; data: AnaliseData }
   | { id: string; kind: "confirmar_alteracao"; data: AlteracaoPreview; status: ConfirmStatus; erro?: string; aviso?: string }
   | { id: string; kind: "aviso"; texto: string };
 
@@ -497,7 +497,6 @@ export const MAX_PANELS = 4;
 const isPending = (p: OliPanel) =>
   (p.kind === "confirmar_lancamento" ||
     p.kind === "confirmar_esquecer" ||
-    p.kind === "confirmar_memoria" ||
     p.kind === "confirmar_evento" ||
     p.kind === "confirmar_consulta" ||
     p.kind === "confirmar_arquivo" ||

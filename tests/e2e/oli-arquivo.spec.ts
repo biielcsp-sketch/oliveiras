@@ -668,6 +668,9 @@ test("Oli: ferramentas em família não liberada são recusadas no servidor", as
   }
   // Escrita: nem o painel nem os Confirmar (chamados direto, sem passar pela ferramenta) funcionam.
   expect(await callOliTool(page, "alterar_casa", { acao: "criar", secao: "compras", nome: "Bloqueado" })).toEqual({ ok: false, erro: "O Oli ainda não está liberado para esta família." });
+  // salvar_memoria grava direto (sem Confirmar) e analisar chama a IA: família não liberada é recusada antes.
+  expect(await callOliTool(page, "salvar_memoria", { conteudo: "Bloqueado memória", categoria: "geral" })).toEqual({ ok: false, erro: "O Oli ainda não está liberado para esta família." });
+  expect(await callOliTool(page, "analisar", { pergunta: "Bloqueado" })).toEqual({ ok: false, erro: "O Oli ainda não está liberado para esta família." });
   for (const name of ["alterar_saude", "alterar_agenda", "alterar_financas"]) {
     expect(await callOliTool(page, name, { acao: "apagar", secao: name === "alterar_saude" ? "exames" : name === "alterar_agenda" ? "eventos" : "lancamentos", id: randomUUID() }), name).toEqual({ ok: false, erro: "O Oli ainda não está liberado para esta família." });
   }
@@ -676,7 +679,6 @@ test("Oli: ferramentas em família não liberada são recusadas no servidor", as
   for (const [action, arg] of [
     ["confirmOliAlteracao", { aba: "casa", secao: "compras", acao: "criar", id: null, rotulo: "Item de compra", titulo: nome, campos: [{ rotulo: "Item", antes: null, depois: nome }], anexo: null, aviso: null, args: { acao: "criar", secao: "compras", nome } }],
     ["confirmOliLancamento", { descricao: nome, valor: -1, tipo: "saida", data: "2026-11-13", categoria: { id, nome: "x" }, conta: { id, nome: "x" } }],
-    ["confirmOliMemoria", { conteudo: nome, categoria: "geral" }],
     ["confirmOliEsquecer", id],
     ["confirmOliEvento", { titulo: nome, dia_inteiro: true, inicio: "2026-11-13", fim: "2026-11-13", local: null, agenda: { id: "x", nome: "x" } }],
     ["confirmOliConsulta", { pessoa: { id, nome: "x" }, tipo: "consulta", especialidade: null, medico: null, local: null, inicio: "2026-11-20T10:00", observacoes: null }],
@@ -686,6 +688,94 @@ test("Oli: ferramentas em família não liberada são recusadas no servidor", as
   const admin = adminClient();
   expect((await admin.from("casa_shopping_items").select("id").eq("name", nome)).data).toEqual([]);
   expect((await admin.from("oli_memories").select("id").eq("content", nome)).data).toEqual([]);
+  expect((await admin.from("oli_memories").select("id").eq("content", "Bloqueado memória")).data).toEqual([]);
+});
+
+/**
+ * "O Oli é burro" (20/11/2026): gastos com transporte do mês + análise. A sessão simulada pede as ferramentas direto:
+ * consultar_financas com categoria traz só Transporte (e a comparação com os meses anteriores); analisar junta os dados
+ * da família e pede a análise ao Groq SIMULADO (tests/e2e/groq-mock.mjs; 429 cai no Gemini simulado); salvar_memoria
+ * grava direto, sem Confirmar.
+ */
+test("Oli: transporte por categoria, analisar (Groq com reserva no Gemini) e memória gravada direto", async ({ browser }) => {
+  test.setTimeout(120_000);
+  const admin = adminClient();
+  const hh = E2E_OLI_HOUSEHOLD_ID;
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  const email = uniqueEmail("oli-analise");
+  const conta = randomUUID();
+  const transp = randomUUID();
+  const merc = randomUUID();
+
+  await test.step("família do Oli com Transporte e Mercado em novembro e outubro", async () => {
+    await createFamilyWithId(hh, email, PASSWORD);
+    for (const [table, rows] of [
+      ["fin_accounts", [{ id: conta, household_id: hh, name: "Conta Itaú", kind: "corrente" }]],
+      [
+        "fin_categories",
+        [
+          { id: transp, household_id: hh, name: "Transporte", kind: "despesa" },
+          { id: merc, household_id: hh, name: "Mercado", kind: "despesa" },
+        ],
+      ],
+      [
+        "fin_transactions",
+        [
+          { household_id: hh, account_id: conta, date: "2026-11-03", description: "Uber", amount: -20, category_id: transp, source: "manual" },
+          { household_id: hh, account_id: conta, date: "2026-11-10", description: "Gasolina", amount: -150, category_id: transp, source: "manual" },
+          { household_id: hh, account_id: conta, date: "2026-11-05", description: "Feira", amount: -300, category_id: merc, source: "manual" },
+          { household_id: hh, account_id: conta, date: "2026-10-08", description: "Ônibus", amount: -40, category_id: transp, source: "manual" },
+        ],
+      ],
+    ] as const) {
+      const { error } = await admin.from(table).insert(rows as unknown as Record<string, unknown>[]);
+      expect(error, table).toBeNull();
+    }
+    await page.goto("/login");
+    await page.getByLabel("E-mail").fill(email);
+    await page.getByLabel("Senha").fill(PASSWORD);
+    await page.locator("form").getByRole("button", { name: "Entrar" }).click();
+    await expect(page).toHaveURL(/\/inicio$/);
+  });
+
+  await test.step("consultar_financas com categoria Transporte: só Transporte, com comparação", async () => {
+    const r = await callOliTool(page, "consultar_financas", { secao: "periodo", mes: "2026-11", categoria: "transporte" });
+    expect(r.ok).toBe(true);
+    expect(titles(r).filter((t) => t !== "Totais do período").sort()).toEqual(["Gasolina", "Transporte", "Uber"]);
+    expect(JSON.stringify(r)).toContain("Saídas: 170");
+    expect(JSON.stringify(r)).not.toContain("Feira");
+    if (r.ok) expect((r.data.comparacao as { meses: { mes: string; total: number }[] }).meses[0]).toMatchObject({ mes: "2026-10", total: 40 });
+    expect(await callOliTool(page, "consultar_financas", { mes: "2026-11", categoria: "Lazer" })).toEqual({
+      ok: false,
+      erro: "Categoria “Lazer” não encontrada. Categorias da família: Mercado, Transporte.",
+    });
+  });
+
+  await test.step("analisar: Groq simulado recebe os dados da família; tags removidas", async () => {
+    const r = await callOliTool(page, "analisar", { pergunta: "Analise meus gastos com transporte", abas: ["financas"], mes: "2026-11" });
+    expect(r).toMatchObject({ ok: true, tool: "analisar", data: { fonte: "groq", abas: ["financas"], periodo: "Novembro de 2026" } });
+    const analise = r.ok ? String(r.data.analise) : "";
+    expect(analise).toContain("Análise simulada pelo Groq");
+    expect(analise).toContain("Saídas do período: 470");
+    expect(analise).toContain("Mês anterior: 40");
+    expect(analise).not.toMatch(/[<>]/);
+  });
+
+  await test.step("analisar: 429 no Groq cai no Gemini simulado", async () => {
+    const r = await callOliTool(page, "analisar", { pergunta: "MOCK429 compare os meses", abas: ["financas"] });
+    expect(r).toMatchObject({ ok: true, data: { fonte: "gemini", analise: "Análise simulada pelo Gemini (reserva) a partir dos dados do app." } });
+  });
+
+  await test.step("salvar_memoria grava direto, sem Confirmar", async () => {
+    const r = await callOliTool(page, "salvar_memoria", { conteudo: "Prefiro o resumo das finanças às sextas", categoria: "preferencia" });
+    expect(r).toMatchObject({ ok: true, tool: "salvar_memoria", data: { conteudo: "Prefiro o resumo das finanças às sextas", categoria: "preferencia" } });
+    expect((await admin.from("oli_memories").select("content, category, source").eq("household_id", hh)).data).toEqual([
+      { content: "Prefiro o resumo das finanças às sextas", category: "preferencia", source: "oli" },
+    ]);
+  });
+
+  await ctx.close();
 });
 
 /**
