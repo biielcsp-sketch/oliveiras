@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:db": "supabase test db",
     "test:e2e": "playwright test",
+    "eval:oli": "tsx scripts/eval-oli.ts",
     "db:start": "supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor,realtime,postgres-meta,mailpit"
   },
   "dependencies": {
@@ -38,6 +39,7 @@
     "eslint-config-next": "16.4.5",
     "supabase": "^3.0.0",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5",
     "vitest": "^5.1.0"
   }
