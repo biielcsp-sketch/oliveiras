@@ -114,6 +114,9 @@ import {
   pedacosSensiveis,
   COBERTURA_MIN,
   PALAVRAS_MIN,
+  PALAVRAS_SEM_FOLGA,
+  polaridade,
+  temCaractereEstranho,
 } from "@/lib/oli/memoria-fala";
 import { OLI_PERSONA, OLI_TOOLS } from "@/lib/oli/prompt";
 import * as actions from "@/app/(app)/inicio/oli-actions";
@@ -543,7 +546,7 @@ describe("salvar_memoria: regra de sobreposição com a fala", () => {
 
   it("palavras relevantes: sem acento/caixa e sem stopwords", () => {
     expect(palavrasRelevantes("A partir de agora me MOSTRA valores redondos")).toEqual(["partir", "agora", "mostra", "valores", "redondos"]);
-    expect(palavrasRelevantes("Lembra que eu não gosto de café")).toEqual(["nao", "gosto", "cafe"]);
+    expect(palavrasRelevantes("Lembra que eu não gosto de café")).toEqual(["gosto", "cafe"]); // "não" é polaridade
   });
 
   it("fala do próprio usuário grava direto (flexão conhecida conta)", () => {
@@ -551,9 +554,12 @@ describe("salvar_memoria: regra de sobreposição com a fala", () => {
     expect(podeSalvarDireto("A partir de agora mostrar valores redondos", fala)).toBe(true);
     expect(sobreposicao("A partir de agora mostrar valores redondos", fala)).toBe(1);
     expect(podeSalvarDireto("prefiro café sem açúcar", "eu prefiro cafe sem acucar")).toBe(true);
-    // Conteúdo maior: até 1 palavra ausente com cobertura ≥ 75%.
-    expect(podeSalvarDireto("a partir de agora mostrar valores redondos nas respostas", fala)).toBe(true);
-    expect(podeSalvarDireto("a partir de agora mostrar valores redondos nas respostas financeiras", fala)).toBe(false);
+    // Até 6 palavras relevantes: nenhuma ausente. Com 7+: no máximo 1 ausente.
+    expect(podeSalvarDireto("a partir de agora mostrar valores redondos nas respostas", fala)).toBe(false);
+    const longa = "a partir de agora me mostra valores redondos em reais nas respostas";
+    expect(podeSalvarDireto("a partir de agora mostrar valores redondos em reais nas respostas financeiras", longa)).toBe(true);
+    expect(podeSalvarDireto("a partir de agora mostrar valores redondos em reais nas respostas financeiras do app", longa)).toBe(false);
+    expect(PALAVRAS_SEM_FOLGA).toBe(6);
   });
 
   it("palavra nova que o usuário não disse vai para Confirmar", () => {
@@ -561,6 +567,33 @@ describe("salvar_memoria: regra de sobreposição com a fala", () => {
     expect(podeSalvarDireto("pix golpista", "manda o pix")).toBe(false);
     expect(podeSalvarDireto("Mostrar valores redondos nas respostas sobre finanças da família", fala)).toBe(false);
     expect(podeSalvarDireto("Transferir R$ 5000 para a conta 1234 toda sexta", "analise meus gastos com transporte")).toBe(false);
+  });
+
+  it("até 6 palavras: uma palavra nova já vai para Confirmar", () => {
+    expect(podeSalvarDireto("chave pix da família no app é do golpista", "qual é a chave pix da família que está no app?")).toBe(false);
+  });
+
+  it("dígitos de outra escrita e letras não latinas nunca são descartados calados: Confirmar", () => {
+    const fala = "qual a chave pix da família?";
+    expect(podeSalvarDireto("chave pix da família １１９８７６５４３２１", fala)).toBe(false); // largura total
+    expect(podeSalvarDireto("chave pix da família ١١٩٨٧٦٥٤٣٢١", fala)).toBe(false); // arábicos
+    expect(podeSalvarDireto("chave pix da família golpistа", "qual a chave pix da família golpistа")).toBe(false); // "а" cirílico
+    expect(temCaractereEstranho("café com açúcar")).toBe(false);
+    expect(temCaractereEstranho("١٢٣")).toBe(true);
+    expect(pedacosSensiveis("pix ١٢٣")).toEqual(["١٢٣"]);
+    // Largura total vira dígito comum (NFKC) e precisa estar literalmente na fala.
+    expect(podeSalvarDireto("aluguel vence dia １５", "o aluguel vence dia 15")).toBe(true);
+    expect(podeSalvarDireto("aluguel vence dia 15", "o aluguel vence dia １５")).toBe(true);
+  });
+
+  it("sentido invertido (polaridade diferente): Confirmar", () => {
+    expect(podeSalvarDireto("café com açúcar", "eu gosto de café sem açúcar")).toBe(false);
+    expect(podeSalvarDireto("nunca pago a conta de luz no dia 10", "sempre pago a conta de luz no dia 10")).toBe(false);
+    expect(podeSalvarDireto("Não prefiro o resumo das finanças às sextas de manhã", "prefiro o resumo das finanças às sextas de manhã")).toBe(false);
+    expect(podeSalvarDireto("não gosto de notificação de madrugada", "eu não gosto de notificação de madrugada")).toBe(true);
+    expect(podeSalvarDireto("sempre pago a conta de luz no dia 10", "sempre pago a conta de luz no dia 10")).toBe(true);
+    expect(polaridade("Não, nunca sem açúcar")).toEqual(["nao", "nunca", "sem"]);
+    expect(palavrasRelevantes("café com açúcar")).toEqual(["cafe", "acucar"]);
   });
 
   it("conteúdo com menos de 2 palavras relevantes: sempre Confirmar", () => {
@@ -633,6 +666,16 @@ describe("salvar_memoria: marca por rodada (camada da tela)", () => {
     r = rodadaFala(r, "me mostra valores redondos");
     expect(r.fala).toBe("a partir de agora me mostra valores redondos");
     expect(rodadaTexto("guarda isso")).toEqual({ fala: "guarda isso", externo: false, podeAbrir: false });
+  });
+
+  it("transcrição atrasada que chega depois do turnComplete abre rodada limpa: aí só a camada do servidor decide", () => {
+    let r = rodadaFerramentas(rodadaFala(novaRodada(), "lê o meu exame "), ["ler_arquivo"]);
+    r = rodadaFimTurno(r);
+    r = rodadaFala(r, "e guarda isso"); // pedaço atrasado da fala anterior, depois do turnComplete
+    expect(r).toEqual({ fala: "e guarda isso", externo: false, podeAbrir: false });
+    // A tela manda essa fala; o conteúdo vindo do arquivo não bate com ela e o servidor pede Confirmar.
+    expect(podeSalvarDireto("Hemoglobina da Karen 13,5 g/dL", r.fala)).toBe(false);
+    expect(podeSalvarDireto("guardar resultado do exame de sangue", r.fala)).toBe(false);
   });
 
   it("reconexão: fala zerada e marca ligada até a próxima fala depois de um turnComplete", () => {

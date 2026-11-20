@@ -70,6 +70,7 @@ export const PRECISA_CONFIRMAR = "Essa memória precisa de confirmação na tela
 export function cleanFala(v: unknown): string {
   if (typeof v !== "string") return "";
   const t = v
+    .normalize("NFKC")
     .replace(/[<>]/g, " ")
     .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069]+/g, " ")
     .replace(/\s+/g, " ")
@@ -80,23 +81,41 @@ export function cleanFala(v: unknown): string {
 const STOPWORDS = new Set(
   (
     "a o as os um uma uns umas de da do das dos d e ou em no na nos nas num numa ao aos à às pra pro pras pros para por pelo pela pelos pelas " +
-    "com sem que se me mim eu tu te ti lhe nos vos meu minha meus minhas teu tua seu sua seus suas nosso nossa " +
+    "que se me mim eu tu te ti lhe nos vos meu minha meus minhas teu tua seu sua seus suas nosso nossa " +
     "isso isto esse essa este esta aquele aquela aquilo ele ela eles elas voce voces oli usuario usuaria ja ai la aqui " +
-    "mais muito bem so tambem entao tipo ne ta tá ok okay beleza opa ah eh hum por favor favor quero queria qual quais quanto quanta quantos quantas quando onde como quem cade lembra lembrar lembre lembrando guarda guardar guarde anota anotar anote"
+    "muito bem so tambem entao tipo ne ta tá ok okay beleza opa ah eh hum por favor favor quero queria qual quais quanto quanta quantos quantas quando onde como quem cade lembra lembrar lembre lembrando guarda guardar guarde anota anotar anote"
   )
     .split(/\s+/)
     .map(normalizeName),
 );
 
-/** Palavras relevantes: sem acento/caixa, só letras e números, sem stopwords nem palavras de 1 letra. */
+/** Palavras que invertem ou mudam o sentido: o conjunto do conteúdo precisa ser IGUAL ao da fala. */
+export const POLARIDADE: ReadonlySet<string> = new Set([
+  "nao", "nunca", "jamais", "nem", "nenhum", "nenhuma", "nada", "sem", "com", "sempre", "todo", "toda", "todos", "todas", "menos", "mais",
+]);
+
+const palavras = (texto: string) => normalizeName(texto.normalize("NFKC")).split(/[^a-z0-9]+/);
+
+/** Palavras relevantes: sem acento/caixa, só letras e números, sem stopwords, polaridade nem palavras de 1 letra. */
 export function palavrasRelevantes(texto: string): string[] {
   const out = new Set<string>();
-  for (const w of normalizeName(texto).split(/[^a-z0-9]+/)) if (w.length > 1 && !STOPWORDS.has(w)) out.add(w);
+  for (const w of palavras(texto)) if (w.length > 1 && !STOPWORDS.has(w) && !POLARIDADE.has(w)) out.add(w);
   return [...out];
 }
 
+/** Palavras de polaridade presentes no texto (ordenadas, sem repetição). */
+export function polaridade(texto: string): string[] {
+  return [...new Set(palavras(texto).filter((w) => POLARIDADE.has(w)))].sort();
+}
+
+/** Depois de NFKC e sem acentos, sobrou letra ou dígito fora de a-z0-9 (outro alfabeto, dígitos árabes...)? */
+export function temCaractereEstranho(texto: string): boolean {
+  const base = texto.normalize("NFKC").normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+  return /(?![a-z0-9])[\p{L}\p{N}]/u.test(base);
+}
+
 /** Pedaço sensível: tem dígito, @, domínio ou endereço (chave Pix, e-mail, telefone, CPF, URL, valor, conta). */
-const SENSIVEL = /\d|@|\.com|\.br|www|https?:|:\/\//i;
+const SENSIVEL = /\p{N}|@|\.com|\.br|www|https?:|:\/\//iu;
 const BORDA = /^[\s"'“”‘’()[\]{},;:!?¿¡.]+|[\s"'“”‘’()[\]{},;:!?¿¡.]+$/g;
 
 /** Pedaços sensíveis do texto, separados só por espaço (ANTES de quebrar em palavras: "golpista@x.com" fica inteiro). */
@@ -145,23 +164,29 @@ const palavrasConteudo = (conteudo: string) => {
 
 export const COBERTURA_MIN = 0.75;
 export const PALAVRAS_MIN = 2;
+/** Até este número de palavras relevantes, nenhuma pode faltar na fala; acima, no máximo 1. */
+export const PALAVRAS_SEM_FOLGA = 6;
 
 /**
- * Grava direto só se TODAS valerem:
+ * Grava direto só se TODAS valerem (conteúdo e fala em NFKC):
+ * (0) o conteúdo não tem letra ou dígito fora de a-z0-9 depois de tirar acentos (outro alfabeto, dígitos árabes): Confirmar;
  * (i) o conteúdo tem 2+ palavras relevantes;
- * (ii) cobertura ≥ 75% e no máximo 1 palavra ausente da fala — e nenhuma ausente quando o conteúdo tem até 4 palavras
- *      (com 4, uma ausente já é a palavra nova que o usuário não disse: "chave pix familia golpista");
- * (iii) todo pedaço sensível do conteúdo (dígito, @, domínio, URL) aparece literalmente na fala.
+ * (ii) nenhuma palavra relevante ausente da fala com até 6 palavras; com 7+, no máximo 1 e cobertura ≥ 75%;
+ * (iii) as palavras de polaridade (não, nunca, sem, com, sempre...) do conteúdo e da fala são as MESMAS;
+ * (iv) todo pedaço sensível do conteúdo (dígito, @, domínio, URL) aparece literalmente na fala.
  */
-export function podeSalvarDireto(conteudo: string, fala: unknown): boolean {
+export function podeSalvarDireto(conteudoBruto: string, fala: unknown): boolean {
   const f = cleanFala(fala);
-  if (!f) return false;
+  if (!f || typeof conteudoBruto !== "string") return false;
+  const conteudo = conteudoBruto.normalize("NFKC");
+  if (temCaractereEstranho(conteudo)) return false;
   const cont = palavrasConteudo(conteudo);
   if (cont.length < PALAVRAS_MIN) return false;
   const falaPalavras = palavrasRelevantes(f);
   const ausentes = cont.filter((w) => !falaPalavras.some((x) => mesmaPalavra(w, x))).length;
   const cobertura = (cont.length - ausentes) / cont.length;
-  if (cobertura < COBERTURA_MIN || ausentes > (cont.length <= 4 ? 0 : 1)) return false;
+  if (cobertura < COBERTURA_MIN || ausentes > (cont.length <= PALAVRAS_SEM_FOLGA ? 0 : 1)) return false;
+  if (polaridade(conteudo).join(" ") !== polaridade(f).join(" ")) return false;
   const falaLower = f.toLowerCase();
   return pedacosSensiveis(conteudo).every((p) => falaLower.includes(p.toLowerCase()));
 }
