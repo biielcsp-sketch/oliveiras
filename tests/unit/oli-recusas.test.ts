@@ -73,6 +73,13 @@ describe("persona: não negar o que as ferramentas fazem", () => {
     expect(desc("alterar_saude")).toContain("carteirinhas (só editar/apagar)");
     expect(desc("alterar_financas")).toContain("pago false desfaz o pagamento");
     expect(desc("alterar_financas")).toContain("orcamento (por categoria, sem id)");
+    expect(desc("alterar_financas")).toContain("contas_avulsas (editar, apagar, concluir; não cria)");
+    expect(desc("alterar_financas")).toContain("lançamento do Open Finance é recusado");
+    expect(desc("alterar_saude")).toContain("consultas (concluir muda a situação)");
+  });
+
+  it("histórico com respostas erradas não vale mais que as regras desta instrução", () => {
+    expect(OLI_PERSONA).toContain("Valem as ferramentas que você tem agora e as regras desta instrução.");
   });
 });
 
