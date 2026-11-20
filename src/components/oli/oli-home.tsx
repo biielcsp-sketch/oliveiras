@@ -7,7 +7,7 @@ import { ChevronDown, Mic, SendHorizontal, Square } from "lucide-react";
 import { Button, Input } from "@/components/ui";
 import { clearPanels, pushPanel, type OliPanel } from "@/lib/oli/panels";
 import { clearOliHistory } from "@/app/(app)/inicio/oli-history-actions";
-import { confirmOliAlteracao, confirmOliConsulta, confirmOliEsquecer, confirmOliEvento, confirmOliLancamento, runOliTool } from "@/app/(app)/inicio/oli-actions";
+import { confirmOliAlteracao, confirmOliConsulta, confirmOliEsquecer, confirmOliEvento, confirmOliLancamento, confirmOliMemoria, runOliTool, salvarMemoriaOli } from "@/app/(app)/inicio/oli-actions";
 import { confirmOliArquivoFinancas, lerUltimoArquivoOli, readOliFile } from "@/app/(app)/inicio/oli-arquivo-actions";
 import { saveCard, saveExam, saveMedication, saveProcedure, saveVaccine } from "@/app/(app)/saude/actions";
 import { saveCasaDocument } from "@/app/(app)/casa/documentos-actions";
@@ -70,8 +70,26 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
 
   /** Executa a ferramenta no servidor (sessão do usuário) e mostra o painel. */
   const onTool = useCallback(
-    async ({ name, args }: ToolCall): Promise<Record<string, unknown>> => {
+    async ({ name, args, rodada }: ToolCall): Promise<Record<string, unknown>> => {
       const id = `p${++seq.current}`;
+      if (name === "salvar_memoria") {
+        // Grava direto só se a rodada não teve texto de fora; o servidor ainda confere o conteúdo contra a fala do usuário.
+        const fala = rodada && !rodada.externo ? rodada.fala.slice(0, 2000) : null;
+        const r = await salvarMemoriaOli(args ?? {}, fala).catch(() => ({ ok: false as const, erro: "Não consegui guardar a memória." }));
+        if (!r.ok) {
+          add({ id, kind: "aviso", texto: r.erro });
+          return { erro: r.erro };
+        }
+        if (r.status === "salva") {
+          add({ id, kind: "memoria", data: r.data, titulo: "Memória guardada" });
+          return { status: "salva", conteudo: r.data.conteudo, categoria: r.data.categoria };
+        }
+        // Precisa do toque do usuário: a resposta ao modelo espera a decisão.
+        return new Promise((resolve) => {
+          pending.current.set(id, { resolve });
+          add({ id, kind: "confirmar_memoria", data: r.data, status: "pendente" });
+        });
+      }
       if (name === "ler_ultimo_arquivo") {
         // O arquivo está só aqui: vai com a pergunta para a server action (login, família, bytes, limite diário).
         const file = lastFile.current;
@@ -139,9 +157,11 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
           // Ao modelo, a análise vai só dentro de <analise> (texto gerado dos dados do app; dado, nunca instrução).
           return { analise: analiseBloco(res.data.analise) };
         case "salvar_memoria":
-          // Já gravada no servidor (sem Confirmar); o Oli avisa em uma frase o que guardou.
-          add({ id, kind: "memoria", data: res.data, titulo: "Memória guardada" });
-          return { status: "salva", conteudo: res.data.conteudo, categoria: res.data.categoria };
+          // Não chega aqui (tratada acima por salvarMemoriaOli); por segurança, só com Confirmar.
+          return new Promise((resolve) => {
+            pending.current.set(id, { resolve });
+            add({ id, kind: "confirmar_memoria", data: res.data, status: "pendente" });
+          });
         case "ler_arquivo":
         case "ler_ultimo_arquivo":
           add({ id, kind: "arquivo_lido", data: res.data });
@@ -223,12 +243,14 @@ export function OliHome({ initialLog = [] }: { initialLog?: LogEntry[] }) {
       const r =
         p.kind === "confirmar_lancamento"
           ? await confirmOliLancamento(p.data)
-          : p.kind === "confirmar_evento"
-            ? await confirmOliEvento(p.data)
-            : await confirmOliEsquecer(p.data.id);
+          : p.kind === "confirmar_memoria"
+            ? await confirmOliMemoria(p.data)
+            : p.kind === "confirmar_evento"
+              ? await confirmOliEvento(p.data)
+              : await confirmOliEsquecer(p.data.id);
       if (r.ok) {
         patch(id, { status: "criado" });
-        settle(id, { status: p.kind === "confirmar_esquecer" ? "apagada" : "criado" });
+        settle(id, { status: p.kind === "confirmar_esquecer" ? "apagada" : p.kind === "confirmar_memoria" ? "salva" : "criado" });
       } else {
         patch(id, { status: "erro", erro: r.erro });
         settle(id, { status: "erro", erro: r.erro });

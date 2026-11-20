@@ -297,6 +297,23 @@ export function PanelView({
           <p className="text-[15px] leading-relaxed">{p.data.conteudo}</p>
         </Confirm>
       );
+    case "confirmar_memoria":
+      return (
+        <Confirm
+          id={p.id}
+          title="Guardar esta memória?"
+          status={p.status}
+          erro={p.erro}
+          doneText={{ criado: "Memória guardada.", cancelado: "A memória não foi guardada." }}
+          onConfirm={onConfirm}
+          onCancel={onCancel}
+        >
+          <div className="flex items-start gap-3">
+            <p className="min-w-0 flex-1 text-[15px] leading-relaxed">{p.data.conteudo}</p>
+            <CategoryChip value={p.data.categoria} />
+          </div>
+        </Confirm>
+      );
     case "eventos": {
       const d = p.data;
       const title = `Agenda ${d.de === d.ate ? `de ${brDate(d.de)}` : `${brDate(d.de).slice(0, 5)} a ${brDate(d.ate).slice(0, 5)}`}`;

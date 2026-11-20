@@ -34,6 +34,8 @@ type Env = Record<string, string | undefined>;
 
 export const GROQ_DEFAULT_MODEL = "openai/gpt-oss-120b";
 export const GROQ_DEFAULT_BASE = "https://api.groq.com";
+/** Groq: 15 s (rápido; estourou, cai no Gemini). Reserva no Gemini: 30 s. */
+export const GROQ_TIMEOUT_MS = 15_000;
 export const ANALISE_TIMEOUT_MS = 30_000;
 
 export type AnaliseMotivo = "sem_chave" | "limite" | "timeout" | "erro" | "resposta_invalida";
@@ -56,7 +58,7 @@ export async function groqAnalyze(
   const key = env.GROQ_API_KEY?.trim();
   if (!key) return { ok: false, motivo: "sem_chave" };
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? ANALISE_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? GROQ_TIMEOUT_MS);
   try {
     const res = await (opts.fetchImpl ?? fetch)(groqUrl(env), {
       method: "POST",

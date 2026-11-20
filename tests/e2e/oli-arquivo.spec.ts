@@ -322,6 +322,12 @@ test("Oli: consultas leem só a própria família, respeitam o privado e ler_arq
     expect(String(r.data.documento_lido)).toMatch(/^<documento_lido>[^<>]*<\/documento_lido>$/);
     const after = (await admin.from("oli_file_reads").select("id", { count: "exact", head: true }).eq("household_id", hh)).count;
     expect(after).toBe(1);
+    // Memória com texto do arquivo lido na mesma rodada: sem fala (marca ligada) ou com a fala do pedido, só com Confirmar.
+    const conteudo = `Hemoglobina da Karen ${String(r.data.resumo).slice(0, 80)}`;
+    for (const fala of [null, "lê o exame da Karen"]) {
+      expect(await callOliAction(page, "salvarMemoriaOli", [{ conteudo, categoria: "saude" }, fala])).toMatchObject({ ok: true, status: "confirmar" });
+    }
+    expect((await admin.from("oli_memories").select("id").eq("household_id", hh)).data).toEqual([]);
   });
 
   await test.step("ler_arquivo: arquivo de outra família → não encontrado, sem gastar leitura", async () => {
@@ -668,8 +674,9 @@ test("Oli: ferramentas em família não liberada são recusadas no servidor", as
   }
   // Escrita: nem o painel nem os Confirmar (chamados direto, sem passar pela ferramenta) funcionam.
   expect(await callOliTool(page, "alterar_casa", { acao: "criar", secao: "compras", nome: "Bloqueado" })).toEqual({ ok: false, erro: "O Oli ainda não está liberado para esta família." });
-  // salvar_memoria grava direto (sem Confirmar) e analisar chama a IA: família não liberada é recusada antes.
+  // salvar_memoria pode gravar direto e analisar chama a IA: família não liberada é recusada antes.
   expect(await callOliTool(page, "salvar_memoria", { conteudo: "Bloqueado memória", categoria: "geral" })).toEqual({ ok: false, erro: "O Oli ainda não está liberado para esta família." });
+  expect(await callOliAction(page, "salvarMemoriaOli", [{ conteudo: "Bloqueado memória", categoria: "geral" }, "bloqueado memória"])).toEqual({ ok: false, erro: "O Oli ainda não está liberado para esta família." });
   expect(await callOliTool(page, "analisar", { pergunta: "Bloqueado" })).toEqual({ ok: false, erro: "O Oli ainda não está liberado para esta família." });
   for (const name of ["alterar_saude", "alterar_agenda", "alterar_financas"]) {
     expect(await callOliTool(page, name, { acao: "apagar", secao: name === "alterar_saude" ? "exames" : name === "alterar_agenda" ? "eventos" : "lancamentos", id: randomUUID() }), name).toEqual({ ok: false, erro: "O Oli ainda não está liberado para esta família." });
@@ -679,6 +686,7 @@ test("Oli: ferramentas em família não liberada são recusadas no servidor", as
   for (const [action, arg] of [
     ["confirmOliAlteracao", { aba: "casa", secao: "compras", acao: "criar", id: null, rotulo: "Item de compra", titulo: nome, campos: [{ rotulo: "Item", antes: null, depois: nome }], anexo: null, aviso: null, args: { acao: "criar", secao: "compras", nome } }],
     ["confirmOliLancamento", { descricao: nome, valor: -1, tipo: "saida", data: "2026-11-13", categoria: { id, nome: "x" }, conta: { id, nome: "x" } }],
+    ["confirmOliMemoria", { conteudo: nome, categoria: "geral" }],
     ["confirmOliEsquecer", id],
     ["confirmOliEvento", { titulo: nome, dia_inteiro: true, inicio: "2026-11-13", fim: "2026-11-13", local: null, agenda: { id: "x", nome: "x" } }],
     ["confirmOliConsulta", { pessoa: { id, nome: "x" }, tipo: "consulta", especialidade: null, medico: null, local: null, inicio: "2026-11-20T10:00", observacoes: null }],
@@ -695,9 +703,9 @@ test("Oli: ferramentas em família não liberada são recusadas no servidor", as
  * "O Oli é burro" (20/11/2026): gastos com transporte do mês + análise. A sessão simulada pede as ferramentas direto:
  * consultar_financas com categoria traz só Transporte (e a comparação com os meses anteriores); analisar junta os dados
  * da família e pede a análise ao Groq SIMULADO (tests/e2e/groq-mock.mjs; 429 cai no Gemini simulado); salvar_memoria
- * grava direto, sem Confirmar.
+ * só grava direto quando o conteúdo bate com a fala do usuário (depois de texto de fora, só com Confirmar).
  */
-test("Oli: transporte por categoria, analisar (Groq com reserva no Gemini) e memória gravada direto", async ({ browser }) => {
+test("Oli: transporte por categoria, analisar (Groq com reserva no Gemini) e memória direta só com a fala do usuário", async ({ browser }) => {
   test.setTimeout(120_000);
   const admin = adminClient();
   const hh = E2E_OLI_HOUSEHOLD_ID;
@@ -767,12 +775,32 @@ test("Oli: transporte por categoria, analisar (Groq com reserva no Gemini) e mem
     expect(r).toMatchObject({ ok: true, data: { fonte: "gemini", analise: "Análise simulada pelo Gemini (reserva) a partir dos dados do app." } });
   });
 
-  await test.step("salvar_memoria grava direto, sem Confirmar", async () => {
-    const r = await callOliTool(page, "salvar_memoria", { conteudo: "Prefiro o resumo das finanças às sextas", categoria: "preferencia" });
-    expect(r).toMatchObject({ ok: true, tool: "salvar_memoria", data: { conteudo: "Prefiro o resumo das finanças às sextas", categoria: "preferencia" } });
-    expect((await admin.from("oli_memories").select("content, category, source").eq("household_id", hh)).data).toEqual([
-      { content: "Prefiro o resumo das finanças às sextas", category: "preferencia", source: "oli" },
+  const memorias = async () => (await admin.from("oli_memories").select("content, category, source").eq("household_id", hh).order("created_at")).data ?? [];
+
+  await test.step("salvar_memoria depois do analisar na mesma rodada: não grava sem Confirmar", async () => {
+    // A análise foi o texto de fora da rodada: a tela manda fala null (marca ligada) e o servidor pede Confirmar.
+    const r = await callOliTool(page, "analisar", { pergunta: "Analise meus gastos com transporte", abas: ["financas"], mes: "2026-11" });
+    const conteudo = `Lembrar: ${r.ok ? String(r.data.analise).slice(0, 120) : ""}`;
+    const semFala = await callOliAction(page, "salvarMemoriaOli", [{ conteudo, categoria: "financas" }, null]);
+    expect(semFala).toMatchObject({ ok: true, status: "confirmar" });
+    // Mesmo se a tela mandasse a fala do usuário, o conteúdo vindo da análise não bate com ela.
+    const outraFala = await callOliAction(page, "salvarMemoriaOli", [{ conteudo, categoria: "financas" }, "analise meus gastos com transporte"]);
+    expect(outraFala).toMatchObject({ ok: true, status: "confirmar" });
+    // A ferramenta chamada direto (sem fala) também só prepara.
+    expect(await callOliTool(page, "salvar_memoria", { conteudo, categoria: "financas" })).toMatchObject({ ok: true, tool: "salvar_memoria" });
+    expect(await memorias()).toEqual([]);
+    // Com o toque em Confirmar, grava.
+    expect(await callOliAction(page, "confirmOliMemoria", [{ conteudo, categoria: "financas" }])).toEqual({ ok: true });
+    expect((await memorias()).map((m) => m.content)).toEqual([conteudo]);
+  });
+
+  await test.step("fala do próprio usuário: grava direto, sem Confirmar", async () => {
+    const r = await callOliAction(page, "salvarMemoriaOli", [
+      { conteudo: "A partir de agora mostrar valores redondos", categoria: "preferencia" },
+      "a partir de agora me mostra valores redondos",
     ]);
+    expect(r).toMatchObject({ ok: true, status: "salva", data: { conteudo: "A partir de agora mostrar valores redondos", categoria: "preferencia" } });
+    expect((await memorias()).at(-1)).toEqual({ content: "A partir de agora mostrar valores redondos", category: "preferencia", source: "oli" });
   });
 
   await ctx.close();

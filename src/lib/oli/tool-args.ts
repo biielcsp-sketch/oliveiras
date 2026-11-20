@@ -422,16 +422,18 @@ export function parseConsultarFinancasArgs(args: unknown, today: string = todayS
 export const ANALISAR_ABAS = ["financas", "saude", "casa", "pet", "igreja", "agenda"] as const;
 export type AnalisarAba = (typeof ANALISAR_ABAS)[number];
 export type AnalisarArgs = { pergunta: string; abas: AnalisarAba[]; mes?: string; de?: string; ate?: string };
+/** Sem `abas`: tudo menos Saúde (dados de saúde só vão para a IA de análise quando pedidos explicitamente). */
+export const ANALISAR_ABAS_PADRAO: readonly AnalisarAba[] = ["financas", "casa", "pet", "igreja", "agenda"];
 
 /**
- * analisar: pergunta obrigatória (limpa como no ler_arquivo, até 500), abas opcionais (padrão: todas; sem acento/caixa,
+ * analisar: pergunta obrigatória (limpa como no ler_arquivo, até 500), abas opcionais (padrão: ANALISAR_ABAS_PADRAO, sem saúde; sem acento/caixa,
  * repetidas saem) e mes/de/ate com as mesmas regras de período das consultas.
  */
 export function parseAnalisarArgs(args: unknown, today: string = todaySP()): Result<AnalisarArgs> {
   const a = obj(args);
   const pergunta = cleanPergunta(a.pergunta);
   if (!pergunta) return fail("Pergunta é obrigatória.");
-  let abas: AnalisarAba[] = [...ANALISAR_ABAS];
+  let abas: AnalisarAba[] = [...ANALISAR_ABAS_PADRAO];
   if (a.abas !== undefined && a.abas !== null) {
     const raw = typeof a.abas === "string" ? [a.abas] : a.abas;
     if (!Array.isArray(raw) || raw.length > ANALISAR_ABAS.length * 2) return fail(`Abas inválidas. Use: ${ANALISAR_ABAS.join(", ")}.`);

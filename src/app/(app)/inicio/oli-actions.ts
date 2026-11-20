@@ -57,6 +57,7 @@ import {
   type LancamentosData,
   memoryLimitError,
   type MemoriaData,
+  type MemoriaPreview,
   type MemoriasData,
   type ResumoData,
   type SaldosData,
@@ -76,11 +77,12 @@ import type { ConversaData } from "@/lib/oli/conversa";
 import { buscarConversa } from "@/lib/oli/conversa-server";
 import type { AnaliseData } from "@/lib/oli/analisar";
 import { analisar } from "@/lib/oli/analisar-server";
+import { podeSalvarDireto, PRECISA_CONFIRMAR } from "@/lib/oli/memoria-fala";
 
 /**
  * Ferramentas do Oli. Rodam com a sessão do usuário (RLS), nunca com chave de serviço.
  * Escritas sensíveis (lançamento, apagar memória) só preparam aqui; gravam nas ações de confirmação.
- * Exceção: salvar_memoria grava direto (só o que o usuário disse; mesma validação e teto de memórias).
+ * Exceção: salvarMemoriaOli grava direto quando o conteúdo bate com a fala do usuário no turno (senão, Confirmar).
  */
 export type OliToolResult =
   | { ok: true; tool: "resumo_do_mes"; data: ResumoData }
@@ -88,7 +90,7 @@ export type OliToolResult =
   | { ok: true; tool: "contas_a_pagar"; data: ContasData }
   | { ok: true; tool: "ultimos_lancamentos"; data: LancamentosData }
   | { ok: true; tool: "criar_lancamento"; data: LancamentoPreview }
-  | { ok: true; tool: "salvar_memoria"; data: MemoriaData }
+  | { ok: true; tool: "salvar_memoria"; data: MemoriaPreview }
   | { ok: true; tool: "consultar_memoria"; data: MemoriasData }
   | { ok: true; tool: "esquecer_memoria"; data: MemoriaData }
   | { ok: true; tool: "buscar_conversa"; data: ConversaData }
@@ -177,10 +179,13 @@ async function dispatch(name: OliToolName, args: unknown): Promise<OliToolResult
       return { ok: true, tool: name, data: r.preview };
     }
     case "salvar_memoria": {
-      // Grava direto (desde 20/11/2026, sem painel de Confirmar): mesma validação, limpeza e teto de antes, com a
-      // sessão do usuário (RLS). A persona só manda salvar o que o próprio usuário disse.
-      const r = await salvarMemoria(args);
-      return r.ok ? { ok: true, tool: name, data: r.data } : err(r.erro);
+      // Por aqui só prepara (sem a fala do usuário não há como saber se o conteúdo é dele): grava em confirmOliMemoria.
+      // A tela usa salvarMemoriaOli, que grava direto quando o conteúdo bate com a fala do turno.
+      const a = parseSalvarMemoriaArgs(args);
+      if (!a.ok) return err(a.erro);
+      const limit = memoryLimitError(await countMemories());
+      if (limit) return err(limit);
+      return { ok: true, tool: name, data: a.value };
     }
     case "consultar_memoria": {
       const a = parseConsultarMemoriaArgs(args);
@@ -379,21 +384,19 @@ async function countMemories() {
   return count ?? 0;
 }
 
-/** Guarda a memória (salvar_memoria): valida tamanho e categoria, limpa o texto e respeita o teto da família. */
-async function salvarMemoria(args: unknown): Promise<{ ok: true; data: MemoriaData } | { ok: false; erro: string }> {
-  const a = parseSalvarMemoriaArgs(args);
-  if (!a.ok) return { ok: false, erro: a.erro };
+/** Grava a memória já validada (sessão/RLS, família e membro da sessão). */
+async function insertMemoria(a: MemoriaPreview): Promise<{ ok: true; data: MemoriaData } | { ok: false; erro: string }> {
   const limit = memoryLimitError(await countMemories());
   if (limit) return { ok: false, erro: limit };
   const { household, me } = await getAppContext();
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("oli_memories")
-    .insert({ household_id: household.id, member_id: me?.id ?? null, category: a.value.categoria, content: a.value.conteudo, source: "oli" })
+    .insert({ household_id: household.id, member_id: me?.id ?? null, category: a.categoria, content: a.conteudo, source: "oli" })
     .select("id")
     .single();
   if (error || !data) return { ok: false, erro: "Não consegui guardar a memória." };
-  return { ok: true, data: { id: data.id, conteudo: a.value.conteudo, categoria: a.value.categoria } };
+  return { ok: true, data: { id: data.id, conteudo: a.conteudo, categoria: a.categoria } };
 }
 
 async function findMemory(id: string): Promise<MemoriaData | null> {
@@ -445,6 +448,45 @@ export async function confirmOliLancamento(preview: LancamentoPreview): Promise<
   return { ok: true };
 }
 
+
+export type SalvarMemoriaResult =
+  | { ok: true; status: "salva"; data: MemoriaData }
+  | { ok: true; status: "confirmar"; data: MemoriaPreview; motivo: string }
+  | { ok: false; erro: string };
+
+/**
+ * salvar_memoria pela tela. Grava direto só se `fala` (a fala do usuário no turno atual, mandada pela tela; null quando a
+ * rodada teve texto de fora) cobrir ≥ 50% das palavras relevantes do conteúdo. Senão devolve "confirmar" e a tela abre
+ * o painel de Confirmar (confirmOliMemoria). Mesma validação, limpeza e teto de memórias.
+ */
+export async function salvarMemoriaOli(args: unknown, fala: unknown): Promise<SalvarMemoriaResult> {
+  try {
+    const { household } = await getAppContext();
+    if (!oliAllowedFor(household.id)) return notAllowed();
+    const a = parseSalvarMemoriaArgs(args);
+    if (!a.ok) return { ok: false, erro: a.erro };
+    if (!podeSalvarDireto(a.value.conteudo, fala)) {
+      const limit = memoryLimitError(await countMemories());
+      if (limit) return { ok: false, erro: limit };
+      return { ok: true, status: "confirmar", data: a.value, motivo: PRECISA_CONFIRMAR };
+    }
+    const r = await insertMemoria(a.value);
+    return r.ok ? { ok: true, status: "salva", data: r.data } : r;
+  } catch (e) {
+    console.error("Oli: salvar memória falhou:", e instanceof Error ? e.message : "erro");
+    return { ok: false, erro: "Não consegui guardar a memória." };
+  }
+}
+
+/** Guarda a memória depois do toque em Confirmar. Revalida tamanho, categoria e o teto da família. */
+export async function confirmOliMemoria(preview: MemoriaPreview): Promise<ConfirmResult> {
+  const { household } = await getAppContext();
+  if (!oliAllowedFor(household.id)) return notAllowed();
+  const a = parseSalvarMemoriaArgs(preview);
+  if (!a.ok) return { ok: false, erro: a.erro };
+  const r = await insertMemoria(a.value);
+  return r.ok ? { ok: true } : { ok: false, erro: r.erro };
+}
 
 /** Apaga a memória depois do toque em Confirmar. */
 export async function confirmOliEsquecer(id: string): Promise<ConfirmResult> {
