@@ -78,6 +78,7 @@ import { buscarConversa } from "@/lib/oli/conversa-server";
 import type { AnaliseData } from "@/lib/oli/analisar";
 import { analisar } from "@/lib/oli/analisar-server";
 import { podeSalvarDireto, PRECISA_CONFIRMAR } from "@/lib/oli/memoria-fala";
+import { temInvisivel } from "@/lib/oli/tool-args";
 
 /**
  * Ferramentas do Oli. Rodam com a sessão do usuário (RLS), nunca com chave de serviço.
@@ -465,7 +466,9 @@ export async function salvarMemoriaOli(args: unknown, fala: unknown): Promise<Sa
     if (!oliAllowedFor(household.id)) return notAllowed();
     const a = parseSalvarMemoriaArgs(args);
     if (!a.ok) return { ok: false, erro: a.erro };
-    if (!podeSalvarDireto(a.value.conteudo, fala)) {
+    // Invisível no conteúdo original (ex.: "n\u200bão") → sempre Confirmar, mesmo que o texto limpo bata com a fala.
+    const original = args && typeof args === "object" ? (args as { conteudo?: unknown }).conteudo : undefined;
+    if (temInvisivel(original) || !podeSalvarDireto(a.value.conteudo, fala)) {
       const limit = memoryLimitError(await countMemories());
       if (limit) return { ok: false, erro: limit };
       return { ok: true, status: "confirmar", data: a.value, motivo: PRECISA_CONFIRMAR };

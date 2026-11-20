@@ -6,7 +6,7 @@
  *     memória vai para o painel de Confirmar;
  * (b) servidor: só grava direto se o conteúdo bater com a fala do usuário no turno (ver podeSalvarDireto).
  */
-import { normalizeName, type OliToolName } from "./tool-args";
+import { normalizeName, semInvisiveis, temInvisivel, type OliToolName } from "./tool-args";
 
 /** Ferramentas cujo resultado traz texto que não foi dito pelo usuário. */
 export const FERRAMENTAS_EXTERNAS: ReadonlySet<string> = new Set<OliToolName>([
@@ -69,8 +69,7 @@ export const PRECISA_CONFIRMAR = "Essa memória precisa de confirmação na tela
 /** Fala do turno: uma linha, sem controles, marcas de direção nem < >, até 2000. */
 export function cleanFala(v: unknown): string {
   if (typeof v !== "string") return "";
-  const t = v
-    .normalize("NFKC")
+  const t = semInvisiveis(v.normalize("NFKC"))
     .replace(/[<>]/g, " ")
     .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069]+/g, " ")
     .replace(/\s+/g, " ")
@@ -94,7 +93,9 @@ export const POLARIDADE: ReadonlySet<string> = new Set([
   "nao", "nunca", "jamais", "nem", "nenhum", "nenhuma", "nada", "sem", "com", "sempre", "todo", "toda", "todos", "todas", "menos", "mais",
 ]);
 
-const palavras = (texto: string) => normalizeName(texto.normalize("NFKC")).split(/[^a-z0-9]+/);
+/** Pontuação ou invisível entre letras some ("n-ão", "n.ão" → "não"); os pedaços sensíveis já foram tirados antes. */
+const juntaLetras = (texto: string) => semInvisiveis(texto.normalize("NFKC")).replace(/(?<=\p{L})[\p{P}\p{Cf}]+(?=\p{L})/gu, "");
+const palavras = (texto: string) => normalizeName(juntaLetras(texto)).split(/[^a-z0-9]+/);
 
 /** Palavras relevantes: sem acento/caixa, só letras e números, sem stopwords, polaridade nem palavras de 1 letra. */
 export function palavrasRelevantes(texto: string): string[] {
@@ -162,30 +163,25 @@ const palavrasConteudo = (conteudo: string) => {
   return palavrasRelevantes(conteudo.split(/\s+/).filter((t) => !sens.has(t.replace(BORDA, ""))).join(" "));
 };
 
-export const COBERTURA_MIN = 0.75;
 export const PALAVRAS_MIN = 2;
-/** Até este número de palavras relevantes, nenhuma pode faltar na fala; acima, no máximo 1. */
-export const PALAVRAS_SEM_FOLGA = 6;
 
 /**
  * Grava direto só se TODAS valerem (conteúdo e fala em NFKC):
- * (0) o conteúdo não tem letra ou dígito fora de a-z0-9 depois de tirar acentos (outro alfabeto, dígitos árabes): Confirmar;
+ * (0) o conteúdo original não tem caractere invisível, nem letra ou dígito fora de a-z0-9 depois de tirar acentos;
  * (i) o conteúdo tem 2+ palavras relevantes;
- * (ii) nenhuma palavra relevante ausente da fala com até 6 palavras; com 7+, no máximo 1 e cobertura ≥ 75%;
+ * (ii) nenhuma palavra relevante do conteúdo ausente da fala (flexão conhecida conta), qualquer que seja o tamanho;
  * (iii) as palavras de polaridade (não, nunca, sem, com, sempre...) do conteúdo e da fala são as MESMAS;
  * (iv) todo pedaço sensível do conteúdo (dígito, @, domínio, URL) aparece literalmente na fala.
  */
 export function podeSalvarDireto(conteudoBruto: string, fala: unknown): boolean {
   const f = cleanFala(fala);
-  if (!f || typeof conteudoBruto !== "string") return false;
+  if (!f || typeof conteudoBruto !== "string" || temInvisivel(conteudoBruto)) return false;
   const conteudo = conteudoBruto.normalize("NFKC");
   if (temCaractereEstranho(conteudo)) return false;
   const cont = palavrasConteudo(conteudo);
   if (cont.length < PALAVRAS_MIN) return false;
   const falaPalavras = palavrasRelevantes(f);
-  const ausentes = cont.filter((w) => !falaPalavras.some((x) => mesmaPalavra(w, x))).length;
-  const cobertura = (cont.length - ausentes) / cont.length;
-  if (cobertura < COBERTURA_MIN || ausentes > (cont.length <= PALAVRAS_SEM_FOLGA ? 0 : 1)) return false;
+  if (!cont.every((w) => falaPalavras.some((x) => mesmaPalavra(w, x)))) return false;
   if (polaridade(conteudo).join(" ") !== polaridade(f).join(" ")) return false;
   const falaLower = f.toLowerCase();
   return pedacosSensiveis(conteudo).every((p) => falaLower.includes(p.toLowerCase()));

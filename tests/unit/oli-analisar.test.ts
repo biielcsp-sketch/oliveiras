@@ -112,9 +112,7 @@ import {
   sobreposicao,
   mesmaPalavra,
   pedacosSensiveis,
-  COBERTURA_MIN,
   PALAVRAS_MIN,
-  PALAVRAS_SEM_FOLGA,
   polaridade,
   temCaractereEstranho,
 } from "@/lib/oli/memoria-fala";
@@ -554,12 +552,14 @@ describe("salvar_memoria: regra de sobreposição com a fala", () => {
     expect(podeSalvarDireto("A partir de agora mostrar valores redondos", fala)).toBe(true);
     expect(sobreposicao("A partir de agora mostrar valores redondos", fala)).toBe(1);
     expect(podeSalvarDireto("prefiro café sem açúcar", "eu prefiro cafe sem acucar")).toBe(true);
-    // Até 6 palavras relevantes: nenhuma ausente. Com 7+: no máximo 1 ausente.
+    // Nenhuma palavra relevante pode faltar na fala, qualquer que seja o tamanho.
     expect(podeSalvarDireto("a partir de agora mostrar valores redondos nas respostas", fala)).toBe(false);
     const longa = "a partir de agora me mostra valores redondos em reais nas respostas";
-    expect(podeSalvarDireto("a partir de agora mostrar valores redondos em reais nas respostas financeiras", longa)).toBe(true);
-    expect(podeSalvarDireto("a partir de agora mostrar valores redondos em reais nas respostas financeiras do app", longa)).toBe(false);
-    expect(PALAVRAS_SEM_FOLGA).toBe(6);
+    expect(podeSalvarDireto("a partir de agora mostrar valores redondos em reais nas respostas", longa)).toBe(true);
+    expect(podeSalvarDireto("a partir de agora mostrar valores redondos em reais nas respostas financeiras", longa)).toBe(false);
+    expect(
+      podeSalvarDireto("odeio receber o resumo das finanças às sextas de manhã cedo", "prefiro receber o resumo das finanças às sextas de manhã cedo"),
+    ).toBe(false);
   });
 
   it("palavra nova que o usuário não disse vai para Confirmar", () => {
@@ -596,11 +596,23 @@ describe("salvar_memoria: regra de sobreposição com a fala", () => {
     expect(palavrasRelevantes("café com açúcar")).toEqual(["cafe", "acucar"]);
   });
 
+  it("invisível ou pontuação dentro de palavra não esconde a polaridade: Confirmar", () => {
+    const fala = "prefiro o resumo das finanças às sextas de manhã";
+    for (const c of ["n\u200bão", "n\u00adão", "n\u2060ão", "n-ão", "n.ão"]) {
+      expect(podeSalvarDireto(`${c} prefiro o resumo das finanças às sextas de manhã`, fala), JSON.stringify(c)).toBe(false);
+    }
+    expect(polaridade("n-ão prefiro")).toEqual(["nao"]);
+    expect(polaridade("n\u200bão prefiro")).toEqual(["nao"]);
+    // Pedaços sensíveis continuam literais (o e-mail não vira palavra).
+    expect(pedacosSensiveis("pix golpista@x.com")).toEqual(["golpista@x.com"]);
+    // A fala também perde os invisíveis.
+    expect(cleanFala("n\u200bão gosto\u00ad")).toBe("não gosto");
+  });
+
   it("conteúdo com menos de 2 palavras relevantes: sempre Confirmar", () => {
     expect(podeSalvarDireto("pix", "pix")).toBe(false);
     expect(podeSalvarDireto("de a o", "de a o")).toBe(false);
     expect(PALAVRAS_MIN).toBe(2);
-    expect(COBERTURA_MIN).toBe(0.75);
   });
 
   it("pedaço com dígito, e-mail, domínio ou URL precisa aparecer literalmente na fala", () => {
@@ -711,6 +723,19 @@ describe("salvar_memoria no servidor", () => {
     // Confirmar grava.
     expect(await actions.confirmOliMemoria({ conteudo: args.conteudo, categoria: "financas" })).toEqual({ ok: true });
     expect(state.inserts).toHaveLength(1);
+  });
+
+  it("invisível no conteúdo: nunca grava direto; no Confirmar, grava sem o invisível", async () => {
+    const fala = "não prefiro o resumo das finanças às sextas de manhã";
+    for (const c of ["n\u200bão", "n\u00adão", "n\u2060ão"]) {
+      const r = await actions.salvarMemoriaOli({ conteudo: `${c} prefiro o resumo das finanças às sextas de manhã`, categoria: "preferencia" }, fala);
+      expect(r).toMatchObject({ ok: true, status: "confirmar", data: { conteudo: "não prefiro o resumo das finanças às sextas de manhã" } });
+    }
+    expect(state.inserts).toEqual([]);
+    expect(await actions.confirmOliMemoria({ conteudo: "n\u200bão\u3164 prefiro o resumo\u00ad", categoria: "preferencia" })).toEqual({ ok: true });
+    const gravado = String(state.inserts[0].row.content);
+    expect(gravado).toBe("não prefiro o resumo");
+    expect(/[\p{Cf}\u034F\u115F\u1160\u3164\uFFA0\u180E]/u.test(gravado)).toBe(false);
   });
 
   it("respeita a validação e o teto de memórias (nada gravado)", async () => {

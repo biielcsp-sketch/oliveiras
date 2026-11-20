@@ -169,9 +169,14 @@ export function parseLerDocumentoArgs(args: unknown): Result<{ id: string }> {
   return ok({ id: id.trim().toLowerCase() });
 }
 
+/** Caracteres invisíveis (formatação Unicode e preenchimentos): somem do texto antes de validar e gravar. */
+export const INVISIVEIS = /[\p{Cf}\u034F\u115F\u1160\u3164\uFFA0\u180E]/gu;
+export const semInvisiveis = (t: string) => t.replace(INVISIVEIS, "");
+export const temInvisivel = (t: unknown) => typeof t === "string" && new RegExp(INVISIVEIS.source, "u").test(t);
+
 export function parseSalvarMemoriaArgs(args: unknown): Result<{ conteudo: string; categoria: MemoryCategory }> {
   const a = obj(args);
-  const conteudo = reqText(a.conteudo, LIMITS.memoryMax, "Conteúdo");
+  const conteudo = reqText(typeof a.conteudo === "string" ? semInvisiveis(a.conteudo) : a.conteudo, LIMITS.memoryMax, "Conteúdo");
   if (!conteudo.ok) return conteudo;
   if (conteudo.value.length < LIMITS.memoryMin) return fail("Conteúdo muito curto.");
   const cat = typeof a.categoria === "string" ? a.categoria.trim().toLowerCase() : "";
