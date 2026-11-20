@@ -23,7 +23,7 @@ describe("persona: não negar o que as ferramentas fazem", () => {
       "Pedidos de painel, mostrar, tela, lista, relatório ou detalhe = chame a ferramenta da aba com o filtro certo (categoria, período, busca, pessoa); nunca diga que não consegue mostrar ou montar painel.",
       "Antes de dizer que não encontrou ou não tem acesso: tente a seção certa da aba, depois buscar_no_app, e se o assunto estiver num documento guardado, leia-o (ler_arquivo). Só diga que não achou depois disso.",
       "Item proposto só existe depois do toque em Confirmar; se o usuário ainda não confirmou, diga isso em vez de dizer que não encontrou.",
-      "A conversa anterior pode ter respostas suas erradas (ex.: dizer que não conseguia algo). Valem as ferramentas que você tem agora.",
+      "A conversa anterior pode ter respostas suas erradas (ex.: dizer que não conseguia algo). Valem as ferramentas que você tem agora e as regras desta instrução.",
       "Carisma (aulas, resumos, anotações): consultar_igreja secao carisma.",
     ]) {
       expect(OLI_PERSONA, s).toContain(s);
